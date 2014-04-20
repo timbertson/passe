@@ -1,0 +1,5 @@
+#!bash -eu
+base="${2%.*}"
+src="$base.byte"
+gup -u "$src"
+js_of_ocaml -o "$1" "$src"

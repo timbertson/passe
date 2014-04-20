@@ -1,0 +1,12 @@
+#!bash -eu
+if [ "${GUP_XTRACE:-}" -eq 1 ]; then
+	set -x
+fi
+gup --always
+BUILDDIR="$PWD"
+
+pushd "../src"
+ocamlbuild -build-dir "$BUILDDIR" -use-ocamlfind "$2" -I common
+popd
+
+touch "$2"

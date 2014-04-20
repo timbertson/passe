@@ -1,0 +1,5 @@
+#!bash -eu
+gup -u \
+	build/js/supergenpass.js \
+	build/native/supergenpass.byte \
+	;

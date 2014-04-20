@@ -1,0 +1,2 @@
+true: package(js_of_ocaml, js_of_ocaml.syntax), syntax(camlp4o)
+"../common": include
