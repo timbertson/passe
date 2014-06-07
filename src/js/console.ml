@@ -55,3 +55,4 @@ end
 
 let console : console t = Js.Unsafe.variable "console"
 let log s = console##log (string s)
+let error s = console##error (string s)

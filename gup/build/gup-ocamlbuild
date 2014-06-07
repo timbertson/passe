@@ -5,8 +5,8 @@ fi
 gup --always
 BUILDDIR="$PWD"
 
-pushd "../src"
+pushd "../src" >/dev/null
 ocamlbuild -build-dir "$BUILDDIR" -use-ocamlfind "$2" -I common
-popd
+popd >/dev/null
 
 touch "$2"

@@ -1,2 +1,7 @@
 #!bash -eu
-gup -u js/supergenpass.js
+gup -u \
+	lib \
+	index.html \
+	js/supergenpass.js \
+	native/supergenpass.byte \
+	;
