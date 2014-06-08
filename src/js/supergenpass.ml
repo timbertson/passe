@@ -19,18 +19,15 @@ let hold duration =
 	let setTimeout = Js.Unsafe.variable "setTimeout" in
 
 	let condition = Lwt_condition.create () in
-	Js.Unsafe.fun_call setTimeout [|
+	let () = Js.Unsafe.fun_call setTimeout [|
 		Unsafe.inject (Lwt_condition.signal condition);
 		Unsafe.inject duration
-	|];
+	|] in
 	lwt () = Lwt_condition.wait condition in
-	Console.log "Delay!";
 	Lwt.return_unit
 
 let show_form (container:Dom_html.element Js.t) =
 	let doc = document in
-	Console.log ("hasDChil?" ^ (container##firstChild |> Opt.test |>
-	string_of_bool));
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	Console.log "Hello container!";
@@ -55,23 +52,19 @@ let show_form (container:Dom_html.element Js.t) =
 	Dom.appendChild password_section password_input;
 	Dom.appendChild form domain_section;
 	Dom.appendChild form password_section;
-	Dom.appendChild container form;
-	()
+	Ui.withContent container form (fun _ ->
+		Console.log("HELLO");
+		lwt () = hold 3000 in
+		Console.log("FORM WOZ HERE");
+		Lwt.return_unit
+	)
 
 let main () = Lwt.async (fun () ->
 	try_lwt (
 		let main_elem = (document##getElementById (s"main")) in
 		check (Opt.test main_elem) "main_elem not found!";
-		Opt.get main_elem (fun _ -> raise Fail);
-		Opt.iter main_elem show_form;
-		try_lwt
-			lwt () = hold 1000 in
-			Console.log "success!";
-			return_unit
-		with Not_found ->
-			Console.log "failed :/"
-		;
-		Digest.string "sekret" |> Digest.to_hex |> Console.log;
+		let main_elem = Opt.get main_elem (fun _ -> raise Fail) in
+		lwt () = show_form main_elem in
 		return_unit
 	) with e -> (
 		Console.error ("Error: " ^ (Printexc.to_string e) ^ "\n" ^
@@ -82,7 +75,7 @@ let main () = Lwt.async (fun () ->
 
 let () =
 	let listener = ref null in
-	let listener = return @@ Dom_events.listen
+	listener := Opt.return @@ Dom_events.listen
 		window
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->

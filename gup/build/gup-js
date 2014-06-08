@@ -1,6 +1,10 @@
 #!bash -eu
+. "$(dirname "$0")"/env.sh
 base="${2%.*}"
 src="$base.byte"
 gup -u "$src"
-js_of_ocaml -opt 0 -debuginfo -o "$1" "$src"
-# js_of_ocaml -opt 3 -o "$1" "$src"
+if [ "$build_type" = "prod" ]; then
+	js_of_ocaml -opt 3 -o "$1" "$src"
+else
+	js_of_ocaml -opt 0 -debuginfo -o "$1" "$src"
+fi

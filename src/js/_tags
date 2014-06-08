@@ -1,2 +1,2 @@
-true: debug, package(js_of_ocaml, js_of_ocaml.syntax, lwt.syntax), syntax(camlp4o)
+true: debug, package(yojson, js_of_ocaml, js_of_ocaml.syntax, lwt.syntax), syntax(camlp4o)
 "../common": include
