@@ -1,7 +1,6 @@
 open Lwt
 open Js
 open Dom_html
-open Ui
 open Common
 module J = Yojson.Safe
 
@@ -12,7 +11,6 @@ let caml_ml_output_char c = Console.log ("char: " ^ c)
 
 
 exception Fail
-exception AssertionError of string
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -29,19 +27,41 @@ let hold duration =
 	lwt () = Lwt_condition.wait condition in
 	Lwt.return_unit
 
-let db_editor : Dom_html.textAreaElement Ui.content =
-	let elem = plain (createTextarea document) in
-	elem |> mechanism (fun elem ->
+let db_editor () : #Dom_html.element Ui.element =
+	let ((error_text:string option Lwt_stream.t), set_error_text) = Lwt_stream.create () in
+	let set_error_text x =
+		Console.log ("Setting error text to: " ^ (match x with Some x -> "Some "^x | None -> "None"));
+		set_error_text (Some x) in (* never-ending stream *)
+	let textarea = Ui.textArea document in
+	let textarea = textarea#mechanism (fun elem ->
 		Console.log "Mechanism is running!";
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
 			let contents = elem##value |> Js.to_string in
 			begin match Store.parse contents with
-				| Left err -> Console.error err
-				| Right db -> Console.log ("got db: " ^ (Store.to_json db))
+				| Left err ->
+						set_error_text (Some err)
+				| Right db ->
+						set_error_text None;
+						Console.log ("got db: " ^ (Store.to_json db))
 			end;
 			Lwt.return_unit
 		)
-	)
+	) in
+	let error_dom_stream : Dom.node Js.t Lwt_stream.t = error_text |> Lwt_stream.map (fun err ->
+		Console.log("generating new DIV");
+		match err with
+			| Some err ->
+					let div = Dom_html.createDiv document in
+					div##classList##add(s"error");
+					Dom.appendChild div (document##createTextNode(s err));
+					(div:>Dom.node Js.t)
+			| None -> (document##createComment(s"placeholder"):>Dom.node Js.t)
+	) in
+	let error_elem = Ui.stream error_dom_stream in
+	Ui.div ~children:[
+		(error_elem:>Ui.fragment);
+		(textarea:>Ui.fragment)
+	] document
 
 let show_form (container:Dom_html.element Js.t) =
 	let doc = document in
@@ -70,7 +90,7 @@ let show_form (container:Dom_html.element Js.t) =
 	Dom.appendChild form domain_section;
 	Dom.appendChild form password_section;
 	(* Ui.withContent container form (fun _ -> *)
-	Ui.withContent container db_editor (fun _ ->
+	Ui.withContent container (db_editor () :>'a Ui.widget) (fun _ ->
 		Console.log("HELLO");
 		lwt () = hold 50000 in
 		Console.log("FORM WOZ HERE");

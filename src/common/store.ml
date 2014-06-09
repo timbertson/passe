@@ -89,14 +89,15 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 		| _ -> raise (InvalidFormat "can't parse record")
 
 let parse : string -> (string, t) either = fun str ->
-	let json = J.from_string str in
-	match json with
-		| `Assoc (records:(string * J.json) list) -> (
-				try
+	try
+		let json = J.from_string str in
+		match json with
+			| `Assoc (records:(string * J.json) list) ->
 					Right (records |> List.map parse_record)
-				with (InvalidFormat str | Yojson.Json_error str) -> Left str
-			)
-		| _ -> Left ("Expected toplevel object")
+			| _ -> raise (InvalidFormat "Expected toplevel object")
+	with
+		| InvalidFormat str -> Left str
+		| Yojson.Json_error str -> Left str
 
 
 let hai () = "hello!"
