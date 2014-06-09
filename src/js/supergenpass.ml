@@ -35,6 +35,7 @@ let db_editor () : #Dom_html.element Ui.element =
 	let textarea = Ui.textArea document in
 	let textarea = textarea#mechanism (fun elem ->
 		Console.log "Mechanism is running!";
+		elem##focus();
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
 			let contents = elem##value |> Js.to_string in
 			begin match Store.parse contents with
@@ -48,7 +49,6 @@ let db_editor () : #Dom_html.element Ui.element =
 		)
 	) in
 	let error_dom_stream : Dom.node Js.t Lwt_stream.t = error_text |> Lwt_stream.map (fun err ->
-		Console.log("generating new DIV");
 		match err with
 			| Some err ->
 					let div = Dom_html.createDiv document in
@@ -97,6 +97,11 @@ let show_form (container:Dom_html.element Js.t) =
 		Lwt.return_unit
 	)
 
+let () = Lwt.async_exception_hook := (fun e ->
+	Console.error ("Uncaught LWT Error: " ^ (Printexc.to_string e) ^ "\n" ^
+	(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string))
+)
+
 let main () = Lwt.async (fun () ->
 	try_lwt (
 		let main_elem = (document##getElementById (s"main")) in
@@ -105,7 +110,7 @@ let main () = Lwt.async (fun () ->
 		lwt () = show_form main_elem in
 		return_unit
 	) with e -> (
-		Console.error ("Error: " ^ (Printexc.to_string e) ^ "\n" ^
+		Console.error ("Toplevel Error: " ^ (Printexc.to_string e) ^ "\n" ^
 		(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string));
 		return_unit
 	)

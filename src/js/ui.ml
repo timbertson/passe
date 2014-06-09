@@ -1,60 +1,71 @@
 open Common
 open Lwt
-(* module StringMap = Map.Make(String) *)
-(*  *)
-(* type node = *)
-(* 	| Text of string *)
-(* 	| Elem of element *)
-(*  *)
-(* and element = { *)
-(* 	tag: string; *)
-(* 	attrs: StringMap.t; *)
-(* 	children: node list; *)
-(* 	(* mechanism: (Dom.element -> unit Lwt.t) list; *) *)
-(* } *)
 
-(* type content = *)
-(* 	| Plain of Dom_html.element Js.t *)
-(* 	| Active of (Dom_html.element Js.t * (Dom_html.element Js.t -> unit Lwt.t) list) *)
+(* FIXME: only required because raised exceptions don't seem to propagate properly
+ * between #attach and withContent *)
+type mechanism_result =
+	| Complete
+	| Error of exn
 
-(* type 'a content = *)
-(* 	| Plain of 'a Js.t *)
-(* 	| Active of ('a Js.t * ('a Js.t -> unit Lwt.t) list) *)
-(*  *)
+let run_mechanisms : ('a -> unit Lwt.t) list -> 'a -> mechanism_result Lwt.t =
+	fun mechanisms arg -> Lwt.pick (
+		mechanisms |> List.map (fun mech ->
+			try_lwt
+				mech arg >> return Complete
+			with e -> return (Error e)
+		)
+	)
+
+let convert_exception : unit Lwt.t -> mechanism_result Lwt.t =
+	fun thread ->
+		try_lwt
+			thread >> return Complete
+		with e -> return (Error e)
+
+
 class type fragment = object
 	method attach : #Dom.node Js.t -> unit Lwt.t
 end
 
 class type ['a] widget = object
+	inherit fragment
 	method attach_widget : #Dom.node Js.t -> ('a Js.t * unit Lwt.t)
+	method attach_widget_pure : #Dom.node Js.t -> ('a Js.t * mechanism_result Lwt.t)
 end
 
 class ['a] element ?(mechanisms=[]) (cons:unit -> #Dom.node Js.t) (children:#fragment list) =
 object (self)
 	method attach_widget : 'p. (#Dom.node as 'p) Js.t -> ('a Js.t * unit Lwt.t) = fun parent ->
 		let elem: 'a Js.t = cons () in
+		Dom.appendChild parent elem;
 		let attach_child : #fragment -> unit Lwt.t = fun frag -> frag#attach elem in
 		let child_threads = children |> List.map attach_child in
 		let mechanism_threads = mechanisms |> List.map (fun mech -> mech elem) in
-		Dom.appendChild parent elem;
 		(
 			elem,
 			try_lwt
-				Console.log "attach_widget starting";
 				Lwt.join @@ List.concat [
 					child_threads;
 					mechanism_threads
 				]
-			with e -> (
-				Console.log "attach_widget caught ex";
-				raise e
-			)
 			finally (
+				Console.console##log_2(Js.string"attach_widget done, removing", elem);
 				Dom.removeChild parent elem;
 				Lwt.return_unit
 			)
 		)
-	
+
+	method attach_widget_pure : 'p. (#Dom.node as 'p) Js.t -> ('a Js.t * mechanism_result Lwt.t) = fun parent ->
+		let elem: 'a Js.t = cons () in
+		Dom.appendChild parent elem;
+		let attach_child : #fragment -> unit Lwt.t = fun frag -> frag#attach elem in
+		let child_threads = children |> List.map attach_child in
+		let child_results = List.map convert_exception child_threads in
+		(
+			elem,
+			Lwt.pick (run_mechanisms mechanisms elem :: child_results)
+		)
+
 	method attach: 'p. (#Dom.node as 'p) Js.t -> unit Lwt.t = fun parent ->
 		snd @@ self#attach_widget parent
 
@@ -74,21 +85,15 @@ let stream_mechanism s = fun elem ->
 	let current:(Dom.node Js.t ref) = ref elem in
 	let parent = ref None in
 	s |> Lwt_stream.iter (fun new_val ->
-		try
-			Console.console##log_2 (Js.string("got new stream value: "), new_val);
-			let p = (match !parent with
-				| Some p -> p
-				| None ->
-						let p = (!current##parentNode) |> non_null in
-						parent := Some p;
-						p
-			) in
-			Console.log "loop next...";
-			Dom.replaceChild p !current new_val;
-			Console.log "loop next...";
-			current := new_val;
-			Console.log "loop next..."
-		with e -> Console.log "YO, WTF?"; raise e
+		let p = (match !parent with
+			| Some p -> p
+			| None ->
+					let p = (!current##parentNode) |> non_null in
+					parent := Some p;
+					p
+		) in
+		Dom.replaceChild p new_val !current;
+		current := new_val
 	)
 
 let create_blank_node () =
@@ -100,33 +105,24 @@ let stream s = new element ~mechanisms:[stream_mechanism s] create_blank_node []
 let textArea doc = new element (fun () -> Dom_html.createTextarea doc) []
 let div ~children doc = new element (fun () -> Dom_html.createDiv doc) children
 
-(* let mechanism fn node = *)
-(* 	match node with *)
-(* 		| Plain node -> Active (node, [fn]) *)
-(* 		| Active (node, mechanisms) -> Active (node, fn :: mechanisms) *)
-(*  *)
-(* let plain : 'a Js.t -> 'a content = fun e -> Plain e *)
-(*  *)
 let pause () = Lwt.wait () |> fst
 
 let withContent : #Dom.node Js.t -> 'w widget -> ('w Js.t -> unit Lwt.t) -> unit Lwt.t =
 	fun parent content block ->
-		let ((elem:'w Js.t), block_mech) = content#attach_widget parent in
+		let ((elem:'w Js.t), block_mech) = content#attach_widget_pure parent in
 		try_lwt
 			Lwt.pick [
-				(try_lwt
-					Console.log "MECH START";
-					lwt () = block_mech in
-					Console.log "MECH DONE";
-					Lwt.return_unit
-				with e -> (
-					Console.log "MECH caught";
-					raise e
-				)
-				finally (
-					Console.log("Mechanism ENDED")
-				);
-				pause ()
+				(
+					try_lwt
+						Console.log "MECH START";
+						lwt result = block_mech in
+						match result with
+							| Complete -> pause ()
+							| Error e -> Lwt.fail e
+					finally (
+						Console.log("MECH ENDED");
+						Lwt.return_unit
+					)
 				);
 				block elem
 			]
