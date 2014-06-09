@@ -1,6 +1,9 @@
 open Lwt
 open Js
 open Dom_html
+open Ui
+open Common
+module J = Yojson.Safe
 
 let s = Js.string
 
@@ -25,6 +28,20 @@ let hold duration =
 	|] in
 	lwt () = Lwt_condition.wait condition in
 	Lwt.return_unit
+
+let db_editor : Dom_html.textAreaElement Ui.content =
+	let elem = plain (createTextarea document) in
+	elem |> mechanism (fun elem ->
+		Console.log "Mechanism is running!";
+		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
+			let contents = elem##value |> Js.to_string in
+			begin match Store.parse contents with
+				| Left err -> Console.error err
+				| Right db -> Console.log ("got db: " ^ (Store.to_json db))
+			end;
+			Lwt.return_unit
+		)
+	)
 
 let show_form (container:Dom_html.element Js.t) =
 	let doc = document in
@@ -52,9 +69,10 @@ let show_form (container:Dom_html.element Js.t) =
 	Dom.appendChild password_section password_input;
 	Dom.appendChild form domain_section;
 	Dom.appendChild form password_section;
-	Ui.withContent container form (fun _ ->
+	(* Ui.withContent container form (fun _ -> *)
+	Ui.withContent container db_editor (fun _ ->
 		Console.log("HELLO");
-		lwt () = hold 3000 in
+		lwt () = hold 50000 in
 		Console.log("FORM WOZ HERE");
 		Lwt.return_unit
 	)

@@ -1,3 +1,4 @@
+open Common
 module J = Yojson.Safe
 
 exception InvalidFormat of string
@@ -87,12 +88,15 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 		end
 		| _ -> raise (InvalidFormat "can't parse record")
 
-let parse : string -> t = fun str ->
+let parse : string -> (string, t) either = fun str ->
 	let json = J.from_string str in
 	match json with
-		| `Assoc (records:(string * J.json) list) ->
-				records |> List.map parse_record
-		| _ -> raise (InvalidFormat str)
+		| `Assoc (records:(string * J.json) list) -> (
+				try
+					Right (records |> List.map parse_record)
+				with (InvalidFormat str | Yojson.Json_error str) -> Left str
+			)
+		| _ -> Left ("Expected toplevel object")
 
 
 let hai () = "hello!"
