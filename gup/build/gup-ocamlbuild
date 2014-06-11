@@ -1,14 +1,18 @@
 #!bash -eu
+. ../gup/build/env.sh
 ocamlbuild_args="-quiet"
 if [ "${GUP_XTRACE:-}" -eq 1 ]; then
 	set -x
 	ocamlbuild_args=""
 fi
 gup --always
-BUILDDIR="$PWD"
+BUILDDIR="$PWD/$compile_mode"
+target="${2#*/}"
+target="${target#*/}"
 
-pushd "../src" >/dev/null
-ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$2" -I common
+pushd "../src/$compile_mode" >/dev/null
+ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target" -I common
 popd >/dev/null
 
 touch "$2"
+gup --contents "$2"

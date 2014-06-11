@@ -1,5 +1,5 @@
 gup-ocamlbuild:
-	*/*.byte
-	*/*.native
+	**/*.byte
+	**/*.native
 gup-js:
-	*/*.js
+	**/*.js
