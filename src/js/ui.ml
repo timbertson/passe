@@ -1,5 +1,6 @@
 open Common
 open Lwt
+let log = Logging.get_logger "ui"
 
 (* FIXME: only required because raised exceptions don't seem to propagate properly
  * between #attach and withContent *)
@@ -114,13 +115,13 @@ let withContent : #Dom.node Js.t -> 'w widget -> ('w Js.t -> unit Lwt.t) -> unit
 			Lwt.pick [
 				(
 					try_lwt
-						Console.log "MECH START";
+						log#info "MECH START";
 						lwt result = block_mech in
 						match result with
 							| Complete -> pause ()
 							| Error e -> Lwt.fail e
 					finally (
-						Console.log("MECH ENDED");
+						log#info "MECH ENDED";
 						Lwt.return_unit
 					)
 				);

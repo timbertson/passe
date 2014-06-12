@@ -1,1 +1,1 @@
-let () = print_endline (Messages.hello)
+let () = print_endline (Store.hai ())

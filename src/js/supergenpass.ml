@@ -5,10 +5,7 @@ open Common
 module J = Yojson.Safe
 
 let s = Js.string
-
-let () = Console.console##log (s Messages.hello)
-let caml_ml_output_char c = Console.log ("char: " ^ c)
-
+let log = Logging.get_logger "main"
 
 exception Fail
 
@@ -30,11 +27,11 @@ let hold duration =
 let db_editor () : #Dom_html.element Ui.element =
 	let ((error_text:string option Lwt_stream.t), set_error_text) = Lwt_stream.create () in
 	let set_error_text x =
-		Console.log ("Setting error text to: " ^ (match x with Some x -> "Some "^x | None -> "None"));
+		log#info "Setting error text to: %s" (match x with Some x -> "Some "^x | None -> "None");
 		set_error_text (Some x) in (* never-ending stream *)
 	let textarea = Ui.textArea document in
 	let textarea = textarea#mechanism (fun elem ->
-		Console.log "Mechanism is running!";
+		log#info "Mechanism is running!";
 		elem##focus();
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
 			let contents = elem##value |> Js.to_string in
@@ -43,7 +40,7 @@ let db_editor () : #Dom_html.element Ui.element =
 						set_error_text (Some err)
 				| Right db ->
 						set_error_text None;
-						Console.log ("got db: " ^ (Store.to_json db))
+						log#info "got db: %s" (Store.to_json db)
 			end;
 			Lwt.return_unit
 		)
@@ -67,7 +64,7 @@ let show_form (container:Dom_html.element Js.t) =
 	let doc = document in
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
-	Console.log "Hello container!";
+	log#info "Hello container!";
 	let form = createForm document in
 	let domain_label = createLabel doc in
 
@@ -91,16 +88,19 @@ let show_form (container:Dom_html.element Js.t) =
 	Dom.appendChild form password_section;
 	(* Ui.withContent container form (fun _ -> *)
 	Ui.withContent container (db_editor () :>'a Ui.widget) (fun _ ->
-		Console.log("HELLO");
+		log#info "HELLO";
 		lwt () = hold 50000 in
-		Console.log("FORM WOZ HERE");
+		log#info "FORM WOZ HERE";
 		Lwt.return_unit
 	)
 
-let () = Lwt.async_exception_hook := (fun e ->
-	Console.error ("Uncaught LWT Error: " ^ (Printexc.to_string e) ^ "\n" ^
-	(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string))
-)
+let print_exc context e =
+	log#error "Uncaught %s Error: %s\n%s"
+		context
+		(Printexc.to_string e)
+		(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string)
+
+let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
 let main () = Lwt.async (fun () ->
 	try_lwt (
@@ -110,8 +110,7 @@ let main () = Lwt.async (fun () ->
 		lwt () = show_form main_elem in
 		return_unit
 	) with e -> (
-		Console.error ("Toplevel Error: " ^ (Printexc.to_string e) ^ "\n" ^
-		(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string));
+		print_exc "Toplevel" e;
 		return_unit
 	)
 )
@@ -123,10 +122,7 @@ let () =
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->
 			Opt.iter !listener Dom_events.stop_listen;
-			(* Dom_events.stop_listen !listener; *)
-			Console.log ("READY!");
 			main ();
 			false
 		)
-	in ()
 

@@ -59,7 +59,6 @@ open Logging_common
 
 class logger name = object (self)
 	method log s = console##log (Js.string s)
-
 	method error : 'a. ('a, out_channel, unit) format -> 'a = logf name Error
 	method warn  : 'a. ('a, out_channel, unit) format -> 'a = logf name Warn
 	method info  : 'a. ('a, out_channel, unit) format -> 'a = logf name Info

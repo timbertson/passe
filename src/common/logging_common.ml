@@ -29,11 +29,12 @@ let current_formatter = ref default_formatter
 let current_level = ref (ord Debug)
 
 let logf = fun name lvl ->
-		if (ord lvl) >= !current_level then
-			let (pre, post) = !current_formatter name lvl in
-			let print_post = fun _ -> prerr_endline post in
-			prerr_string pre;
-			Printf.kfprintf print_post stderr
-		else
-			Printf.ifprintf stdout
+	if (ord lvl) >= !current_level then (
+		let dest = IFDEF JS THEN if (ord lvl) > (ord Info) then stderr else stdout ELSE stderr END in
+		let (pre, post) = !current_formatter name lvl in
+		let print_post = fun _ -> output_string dest post; output_char dest '\n'; flush dest in
+		output_string dest pre;
+		Printf.kfprintf print_post dest
+	) else
+		Printf.ifprintf stderr
 
