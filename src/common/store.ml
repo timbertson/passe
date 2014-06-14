@@ -153,11 +153,10 @@ let json_of_record r : (string * J.json) =
 		store_field digest d.digest
 	])
 
-let to_json : t -> string = fun db ->
-	J.to_string (
-		`Assoc (db |> List.map json_of_record)
-	)
+let to_json : t -> J.json = fun db ->
+	`Assoc (db |> List.map json_of_record)
 
+let to_json_string db = J.to_string (to_json db)
 
 let parse_record : (string * J.json) -> record = fun (id, r) ->
 	let open Format in

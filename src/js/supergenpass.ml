@@ -24,27 +24,34 @@ let hold duration =
 	lwt () = Lwt_condition.wait condition in
 	Lwt.return_unit
 
-let db_editor () : #Dom_html.element Ui.element =
+let local_db = new Local_storage.record "db"
+
+let db_editor () : #Dom_html.element Ui.widget =
 	let ((error_text:string option Lwt_stream.t), set_error_text) = Lwt_stream.create () in
 	let set_error_text x =
 		log#info "Setting error text to: %s" (match x with Some x -> "Some "^x | None -> "None");
 		set_error_text (Some x) in (* never-ending stream *)
 	let textarea = Ui.textArea document in
-	let textarea = textarea#mechanism (fun elem ->
+	textarea#attr "rows" "10";
+	textarea#attr "cols" "60";
+	textarea#mechanism (fun elem ->
 		log#info "Mechanism is running!";
+		elem##value <- local_db#get_str;
 		elem##focus();
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
 			let contents = elem##value |> Js.to_string in
+			log#info "got input text: %s" contents;
 			begin match Store.parse contents with
 				| Left err ->
 						set_error_text (Some err)
 				| Right db ->
 						set_error_text None;
-						log#info "got db: %s" (Store.to_json db)
+						log#info "got db: %s" (Store.to_json_string db);
+						local_db#save (Store.to_json db)
 			end;
 			Lwt.return_unit
 		)
-	) in
+	);
 	let error_dom_stream : Dom.node Js.t Lwt_stream.t = error_text |> Lwt_stream.map (fun err ->
 		match err with
 			| Some err ->
@@ -55,42 +62,49 @@ let db_editor () : #Dom_html.element Ui.element =
 			| None -> (document##createComment(s"placeholder"):>Dom.node Js.t)
 	) in
 	let error_elem = Ui.stream error_dom_stream in
-	Ui.div ~children:[
-		(error_elem:>Ui.fragment);
-		(textarea:>Ui.fragment)
-	] document
+	let result = Ui.div document in
+	result#append error_elem;
+	result#append textarea;
+	result
+
+let password_form () : #Dom_html.element Ui.widget =
+	let doc = document in
+	let form = Ui.form doc in
+	let domain_label = Ui.label doc in
+
+	let domain_section = Ui.div doc in
+	domain_section#attr "class" "test";
+
+	let password_section = Ui.div doc in
+	password_section#attr "class" "test";
+
+	domain_label#append @@ Ui.text "domain:" doc;
+	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
+	let password_label = Ui.label doc in
+	password_label#append @@ Ui.text "password:" doc;
+	let password_input = Ui.element (fun () -> createInput doc ~_type:(s"password") ~name:(s"password")) in
+
+	domain_section#append domain_label;
+	domain_section#append domain_input;
+
+	password_section#append password_label;
+	password_section#append password_input;
+	form#append domain_section;
+	form#append password_section;
+	form
 
 let show_form (container:Dom_html.element Js.t) =
 	let doc = document in
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	log#info "Hello container!";
-	let form = createForm document in
-	let domain_label = createLabel doc in
-
-	let domain_section = createDiv doc in
-	domain_section##setAttribute((s"class"), (s"test"));
-
-	let password_section = createDiv doc in
-	password_section##setAttribute((s"class"), (s"test"));
-
-	Dom.appendChild domain_label (document##createTextNode (s"domain:"));
-	let domain_input = createInput doc ~_type:(s"text") ~name:(s"domain") in
-	let password_label = createLabel doc in
-	Dom.appendChild password_label (document##createTextNode (s"password:"));
-	let password_input = createInput doc ~_type:(s"password") ~name:(s"password") in
-
-	Dom.appendChild domain_section domain_label;
-	Dom.appendChild domain_section domain_input;
-	Dom.appendChild password_section password_label;
-	Dom.appendChild password_section password_input;
-	Dom.appendChild form domain_section;
-	Dom.appendChild form password_section;
 	(* Ui.withContent container form (fun _ -> *)
-	Ui.withContent container (db_editor () :>'a Ui.widget) (fun _ ->
-		log#info "HELLO";
-		lwt () = hold 50000 in
-		log#info "FORM WOZ HERE";
+	let all_content = Ui.div doc in
+	all_content#append @@ db_editor ();
+	all_content#append @@ password_form ();
+	Ui.withContent container all_content (fun _ ->
+		lwt () = Ui.pause () in
+		log#info "ALL DONE";
 		Lwt.return_unit
 	)
 
