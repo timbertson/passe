@@ -8,18 +8,6 @@ module J = struct
 	let print = Yojson.Safe.pretty_to_channel ~std:false
 	let print_str () = pretty_to_string ~std:false
 	let find_safe fn l = try Some (List.find fn l) with Not_found -> None
-	(* let find_value key pairs = *)
-	(* 	pairs |> find_safe (fun (k,v) -> k = key) |> Option.map Tuple.snd *)
-
-	(* let find_string k pairs = find_value k pairs |> Option.map (fun j -> match j with *)
-	(* 	| `String s -> s *)
-	(* 	| x -> raise_invalid_format "Expected string[%s], got %a" k print_ret x *)
-	(* ) *)
-
-	(* let find_int k pairs = find_value k pairs |> Option.map (fun j -> match j with *)
-	(* 	| `Int s -> s *)
-	(* 	| x -> raise_invalid_format "Expected int[%s], got %a" k print_ret x *)
-	(* ) *)
 end
 
 type digest =
@@ -44,14 +32,14 @@ let default_length = 10 (* TODO: put in DB *)
 let default_digest = MD5 (* TODO: put in DB *)
 
 type domain = {
-	id: string;
+	domain: string;
 	hint: string option;
 	length: int;
 	digest: digest;
 }
 
 type alias = {
-	id: string;
+	alias: string;
 	destination: string;
 }
 
@@ -59,7 +47,28 @@ type record =
 	| Domain of domain
 	| Alias of alias
 
+let id_of record = match record with
+	| Domain d -> d.domain
+	| Alias a -> a.alias
+
+let record_for key record = key = (id_of record)
+
 type t = record list
+
+let get domain db : record option =
+	try
+		Some (db |> List.find (record_for domain))
+	with Not_found -> None
+
+let lookup domain db : domain option =
+	let rec _lookup domain =
+		let record = db |> List.find (record_for domain) in
+		match record with
+			| Alias a -> _lookup a.destination
+			| Domain d -> d
+	in
+	try Some (_lookup domain)
+	with Not_found -> None
 
 let string_of_digest = function
 	| MD5 -> "md5"
@@ -142,11 +151,11 @@ let build_assoc pairs : J.json =
 let json_of_record r : (string * J.json) =
 	let open Format in
 	match r with
-	| Alias a -> (a.id, build_assoc [
+	| Alias a -> (a.alias, build_assoc [
 		store_field record_type `Alias;
 		store_field destination a.destination
 	])
-	| Domain d -> (d.id, build_assoc [
+	| Domain d -> (d.domain, build_assoc [
 		store_field record_type `Domain;
 		store_field hint d.hint;
 		store_field length d.length;
@@ -162,12 +171,11 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 	let open Format in
 	log#info "Parsing: %a" J.print r;
 	match r with
-		(* | `String alias -> (Alias {id=id; destination=alias}) *)
 		| `Assoc pairs -> begin
 			match parse_field Format.record_type pairs with
-				| `Alias -> Alias { id=id; destination=parse_field destination pairs }
+				| `Alias -> Alias { alias=id; destination=parse_field destination pairs }
 				| `Domain -> Domain {
-					id=id;
+					domain=id;
 					hint = parse_field hint pairs;
 					length = parse_field length pairs;
 					digest = parse_field digest pairs
@@ -177,16 +185,16 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 			log#error "can't parse!";
 			raise (InvalidFormat "can't parse record")
 
+let parse_json json : t =
+	match json with
+		| `Assoc (records:(string * J.json) list) ->
+				(records |> List.map parse_record)
+		| _ -> raise (InvalidFormat "Expected toplevel object")
+
 let parse : string -> (string, t) either = fun str ->
 	try
-		let json = J.from_string str in
-		match json with
-			| `Assoc (records:(string * J.json) list) ->
-					Right (records |> List.map parse_record)
-			| _ -> raise (InvalidFormat "Expected toplevel object")
+		Right (J.from_string str |> parse_json)
 	with
 		| InvalidFormat str -> Left str
 		| Yojson.Json_error str -> Left str
 
-
-let hai () = "hello!"

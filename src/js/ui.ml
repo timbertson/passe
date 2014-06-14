@@ -52,8 +52,6 @@ class type ['a] widget_t = object
 	method attach_widget_pure : #Dom.node Js.t -> ('a Js.t * mechanism_result Lwt.t)
 end
 
-module StringMap = Map.Make(String)
-
 class virtual ['a] widget_base mechanisms (children:#fragment_t list ref) =
 	let mechanisms = ref mechanisms in
 object (self)
@@ -156,7 +154,13 @@ let textArea = wrap Dom_html.createTextarea
 let div = wrap Dom_html.createDiv
 let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
+let a = wrap Dom_html.createA
+let input = wrap Dom_html.createInput
 let text t doc : Dom.text leaf_widget = new leaf_widget (fun () -> doc##createTextNode (Js.string t))
+
+let stop event =
+	Dom.preventDefault event;
+	Dom_html.stopPropagation event
 
 let withContent : #Dom.node Js.t -> 'w #widget_t -> ('w Js.t -> unit Lwt.t) -> unit Lwt.t =
 	fun parent content block ->

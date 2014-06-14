@@ -2,6 +2,7 @@ open Lwt
 open Js
 open Dom_html
 open Common
+open Lwt_react
 module J = Yojson.Safe
 
 let s = Js.string
@@ -25,6 +26,10 @@ let hold duration =
 	Lwt.return_unit
 
 let local_db = new Local_storage.record "db"
+let db_signal =
+	let signal, update = S.create local_db#get in
+	local_db#watch update;
+	signal
 
 let db_editor () : #Dom_html.element Ui.widget =
 	let ((error_text:string option Lwt_stream.t), set_error_text) = Lwt_stream.create () in
@@ -38,7 +43,7 @@ let db_editor () : #Dom_html.element Ui.widget =
 		log#info "Mechanism is running!";
 		elem##value <- local_db#get_str;
 		elem##focus();
-		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt rv ->
+		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt _ ->
 			let contents = elem##value |> Js.to_string in
 			log#info "got input text: %s" contents;
 			begin match Store.parse contents with
@@ -78,8 +83,21 @@ let password_form () : #Dom_html.element Ui.widget =
 	let password_section = Ui.div doc in
 	password_section#attr "class" "test";
 
+	let submit_button = Ui.input doc in
+	submit_button#attr "type" "submit";
+	submit_button#attr "class" "btn btn-primary";
+	submit_button#append @@ Ui.text "generate" doc;
+
 	domain_label#append @@ Ui.text "domain:" doc;
 	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
+	domain_input#mechanism (fun elem ->
+		log#info "domain watcher running";
+		Lwt_js_events.inputs elem (fun event _ ->
+			let contents = elem##value |> Js.to_string in
+			log#info "got domain: %s" contents;
+			Lwt.return_unit
+		)
+	);
 	let password_label = Ui.label doc in
 	password_label#append @@ Ui.text "password:" doc;
 	let password_input = Ui.element (fun () -> createInput doc ~_type:(s"password") ~name:(s"password")) in
@@ -91,6 +109,31 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_section#append password_input;
 	form#append domain_section;
 	form#append password_section;
+	form#append submit_button;
+	form#mechanism (fun elem ->
+		Lwt_js_events.submits elem (fun event _ ->
+			Ui.stop event;
+			log#info "form submitted";
+			let db = S.value db_signal |> Store.parse_json in
+			let field_values = Form.get_form_contents elem |> StringMap.from_pairs in
+			let domain_text = StringMap.find "domain" field_values in
+
+			(* TODO: store & retrieve defaults in DB *)
+			let domain = match Store.lookup domain_text db with
+				| Some d -> d
+				| None -> Store.({
+					domain=domain_text;
+					hint=None;
+					length= 10;
+					digest = MD5;
+				})
+			in
+			let password = StringMap.find "password" field_values in
+			let password = Password.generate ~domain password in
+			log#warn "generated: %s" password;
+			Lwt.return_unit
+		)
+	);
 	form
 
 let show_form (container:Dom_html.element Js.t) =

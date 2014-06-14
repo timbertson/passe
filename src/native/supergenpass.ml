@@ -1,1 +1,1 @@
-let () = print_endline (Store.hai ())
+let () = print_endline ("hai")
