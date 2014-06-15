@@ -1,5 +1,5 @@
 #!bash -eu
-. ../gup/build/env.sh
+. "$(dirname "$0")"/env.sh
 ocamlbuild_args="-quiet"
 if [ "${GUP_XTRACE:-}" -eq 1 ]; then
 	set -x
