@@ -1,6 +1,6 @@
 #!bash -eu
 gup -u \
-	lib \
+	res \
 	index.html \
 	js/supergenpass.js \
 	native/supergenpass.byte \

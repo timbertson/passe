@@ -27,16 +27,23 @@ let hold duration =
 
 let local_db = new Local_storage.record "db"
 let db_signal =
-	let signal, update = S.create local_db#get in
-	local_db#watch update;
+	let initial = local_db#get |> Store.parse_json in
+	let signal, update = S.create initial in
+	local_db#watch (fun db -> update (Store.parse_json db));
 	signal
 
+let optional_signal_content : ('a -> #Dom.node Js.t) -> 'a option React.signal -> Dom.node Js.t signal =
+	fun f signal ->
+		let empty = (document##createComment(s"placeholder"):>Dom.node Js.t) in
+		signal |> S.map (fun value -> match value with
+			| Some value -> ((f value):>Dom.node Js.t)
+			| None -> empty
+		)
+
 let db_editor () : #Dom_html.element Ui.widget =
-	let ((error_text:string option Lwt_stream.t), set_error_text) = Lwt_stream.create () in
-	let set_error_text x =
-		log#info "Setting error text to: %s" (match x with Some x -> "Some "^x | None -> "None");
-		set_error_text (Some x) in (* never-ending stream *)
 	let textarea = Ui.textArea document in
+	let error_text, set_error_text = S.create None in
+
 	textarea#attr "rows" "10";
 	textarea#attr "cols" "60";
 	textarea#mechanism (fun elem ->
@@ -57,14 +64,11 @@ let db_editor () : #Dom_html.element Ui.widget =
 			Lwt.return_unit
 		)
 	);
-	let error_dom_stream : Dom.node Js.t Lwt_stream.t = error_text |> Lwt_stream.map (fun err ->
-		match err with
-			| Some err ->
-					let div = Dom_html.createDiv document in
-					div##classList##add(s"error");
-					Dom.appendChild div (document##createTextNode(s err));
-					(div:>Dom.node Js.t)
-			| None -> (document##createComment(s"placeholder"):>Dom.node Js.t)
+	let error_dom_stream = error_text |> optional_signal_content (fun err ->
+		let div = Dom_html.createDiv document in
+		div##classList##add(s"error");
+		Dom.appendChild div (document##createTextNode(s err));
+		div
 	) in
 	let error_elem = Ui.stream error_dom_stream in
 	let result = Ui.div document in
@@ -88,6 +92,8 @@ let password_form () : #Dom_html.element Ui.widget =
 	submit_button#attr "class" "btn btn-primary";
 	submit_button#append @@ Ui.text "generate" doc;
 
+	let domain_sig, set_domain_sig = S.create "" in
+
 	domain_label#append @@ Ui.text "domain:" doc;
 	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
 	domain_input#mechanism (fun elem ->
@@ -95,6 +101,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		Lwt_js_events.inputs elem (fun event _ ->
 			let contents = elem##value |> Js.to_string in
 			log#info "got domain: %s" contents;
+			set_domain_sig contents;
 			Lwt.return_unit
 		)
 	);
@@ -102,11 +109,40 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_label#append @@ Ui.text "password:" doc;
 	let password_input = Ui.element (fun () -> createInput doc ~_type:(s"password") ~name:(s"password")) in
 
+	let domain_validity = domain_sig |> S.map (fun dom ->
+		let db = S.value db_signal in
+		let found = Store.lookup dom db in
+		match found with
+			| None -> "[new...]"
+			| Some _ -> "ok"
+	) |> Ui.text_stream in
+
 	domain_section#append domain_label;
 	domain_section#append domain_input;
+	domain_section#append domain_validity;
+
+	let current_password, set_current_password = S.create None in
+
+	let password_display = current_password |> optional_signal_content (fun p ->
+		let container = Dom_html.createDiv document in
+		container##setAttribute (s "class", s "password-display");
+		Dom.appendChild container document##createTextNode(s p);
+		container
+	) |> Ui.stream in
+
+	let invalidate_password = fun elem ->
+		Lwt_js_events.inputs elem (fun event _ ->
+			set_current_password None;
+			Lwt.return_unit
+		) in
 
 	password_section#append password_label;
 	password_section#append password_input;
+	password_section#append password_display;
+
+	password_input#mechanism invalidate_password;
+	domain_input#mechanism invalidate_password;
+
 	form#append domain_section;
 	form#append password_section;
 	form#append submit_button;
@@ -114,7 +150,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		Lwt_js_events.submits elem (fun event _ ->
 			Ui.stop event;
 			log#info "form submitted";
-			let db = S.value db_signal |> Store.parse_json in
+			let db = S.value db_signal in
 			let field_values = Form.get_form_contents elem |> StringMap.from_pairs in
 			let domain_text = StringMap.find "domain" field_values in
 
@@ -131,6 +167,8 @@ let password_form () : #Dom_html.element Ui.widget =
 			let password = StringMap.find "password" field_values in
 			let password = Password.generate ~domain password in
 			log#warn "generated: %s" password;
+			set_current_password (Some password);
+			(* TODO: highlight generated password *)
 			Lwt.return_unit
 		)
 	);

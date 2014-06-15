@@ -1,5 +1,6 @@
 open Common
 open Lwt
+open Lwt_react
 let log = Logging.get_logger "ui"
 
 (* FIXME: only required because raised exceptions don't seem to propagate properly
@@ -124,10 +125,24 @@ end
 
 let non_null o = Js.Opt.get o (fun () -> raise (AssertionError "unexpected null"))
 
+(* let stream_mechanism s = fun elem -> *)
+(* 	let current:(Dom.node Js.t ref) = ref elem in *)
+(* 	let parent = ref None in *)
+(* 	s |> Lwt_stream.iter (fun new_val -> *)
+(* 		let p = (match !parent with *)
+(* 			| Some p -> p *)
+(* 			| None -> *)
+(* 					let p = (!current##parentNode) |> non_null in *)
+(* 					parent := Some p; *)
+(* 					p *)
+(* 		) in *)
+(* 		Dom.replaceChild p new_val !current; *)
+(* 		current := new_val *)
+(* 	) *)
 let stream_mechanism s = fun elem ->
 	let current:(Dom.node Js.t ref) = ref elem in
 	let parent = ref None in
-	s |> Lwt_stream.iter (fun new_val ->
+	let effect = s |> S.map (fun new_val ->
 		let p = (match !parent with
 			| Some p -> p
 			| None ->
@@ -137,13 +152,23 @@ let stream_mechanism s = fun elem ->
 		) in
 		Dom.replaceChild p new_val !current;
 		current := new_val
-	)
+	) in
+	try_lwt
+		pause ()
+	finally
+		S.stop ~strong:true effect;
+		Lwt.return_unit
+
+let node_signal_of_string str_sig = str_sig |> S.map (fun str ->
+	((Dom_html.document##createTextNode(Js.string str)):>Dom.node Js.t)
+)
 
 let create_blank_node () =
 	let elem = Dom_html.document##createComment(Js.string "placeholder") in
 	(elem:>Dom.node Js.t)
 
 let stream s = new leaf_widget ~mechanisms:[stream_mechanism s] create_blank_node
+let text_stream s = new leaf_widget ~mechanisms:[stream_mechanism (node_signal_of_string s)] create_blank_node
 
 let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ?children:(fragment_t list as 'c) -> Dom_html.document Js.t -> 'a widget =
 	fun cons ?(children=[]) doc ->
