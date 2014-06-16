@@ -32,12 +32,12 @@ let db_signal =
 	local_db#watch (fun db -> update (Store.parse_json db));
 	signal
 
-let optional_signal_content : ('a -> #Dom.node Js.t) -> 'a option React.signal -> Dom.node Js.t signal =
+let optional_signal_content : ('a -> #Dom.node Ui.widget_t) -> 'a option React.signal -> Dom.node Ui.widget_t signal =
 	fun f signal ->
-		let empty = (document##createComment(s"placeholder"):>Dom.node Js.t) in
+		let empty = Ui.none document in
 		signal |> S.map (fun value -> match value with
-			| Some value -> ((f value):>Dom.node Js.t)
-			| None -> empty
+			| Some value -> ((f value):>#Dom.node Ui.widget_t)
+			| None -> (empty:>Dom.node Ui.widget_t)
 		)
 
 let db_editor () : #Dom_html.element Ui.widget =
@@ -65,10 +65,10 @@ let db_editor () : #Dom_html.element Ui.widget =
 		)
 	);
 	let error_dom_stream = error_text |> optional_signal_content (fun err ->
-		let div = Dom_html.createDiv document in
-		div##classList##add(s"error");
-		Dom.appendChild div (document##createTextNode(s err));
-		div
+		let div = Ui.div document in
+		div#attr "class" "error";
+		div#append @@ Ui.text err document;
+		(div:>Dom.node Ui.widget_t) (* XXX remove cast *)
 	) in
 	let error_elem = Ui.stream error_dom_stream in
 	let result = Ui.div document in
@@ -97,6 +97,7 @@ let password_form () : #Dom_html.element Ui.widget =
 	domain_label#append @@ Ui.text "domain:" doc;
 	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
 	domain_input#mechanism (fun elem ->
+		elem##focus();
 		log#info "domain watcher running";
 		Lwt_js_events.inputs elem (fun event _ ->
 			let contents = elem##value |> Js.to_string in
@@ -124,10 +125,14 @@ let password_form () : #Dom_html.element Ui.widget =
 	let current_password, set_current_password = S.create None in
 
 	let password_display = current_password |> optional_signal_content (fun p ->
-		let container = Dom_html.createDiv document in
-		container##setAttribute (s "class", s "password-display");
-		Dom.appendChild container document##createTextNode(s p);
-		container
+		let container = Ui.div document in
+		container#attr "class" "password-display";
+		container#append @@ Ui.text p document;
+		container#mechanism (fun elem ->
+			Selection.select elem;
+			Lwt.return_unit
+		);
+		(container:>Dom.node Ui.widget_t)
 	) |> Ui.stream in
 
 	let invalidate_password = fun elem ->
