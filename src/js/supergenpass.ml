@@ -115,10 +115,12 @@ let password_form () : #Dom_html.element Ui.widget =
 	) domain_record domain_sig in
 
 	let domain_display = Ui.div () in
+	let domain_is_unknown = (S.map Option.is_none domain_record) in
 	let () =
 		let open Store in
-		let domain_validity = domain_record |> S.map (fun dom ->
-			if Option.is_some dom then "ok" else "[new]"
+		domain_display#class_s "unknown" domain_is_unknown;
+		let domain_validity = domain_is_unknown |> S.map (fun unknown ->
+			if unknown then " [new domain]" else ""
 		) |> Ui.text_stream in
 
 		let domain_section = Ui.div () in
@@ -139,6 +141,11 @@ let password_form () : #Dom_html.element Ui.widget =
 		let length_label_span = Ui.span () in
 		length_section#append length_label_span;
 		length_label_span#append @@ Ui.text "length:";
+
+		let items : #Ui.fragment_t list = [domain_section; length_section; length_label_span]
+		in
+		domain_display#append_all ([domain_section; length_section;
+		length_label_span]:>Ui.fragment_t list);
 
 		let length_span = Ui.span () in
 		length_section#append length_span;

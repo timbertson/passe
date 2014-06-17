@@ -94,6 +94,30 @@ object (self)
 	method mechanism mech = mechanisms := mech::!mechanisms
 end
 
+let effectful_stream_mechanism effect : unit Lwt.t =
+	try_lwt
+		log#info "starting effectful mechanism";
+		pause ()
+	finally
+		log#info "stopping effectful mechanism";
+		S.stop ~strong:true effect;
+		Lwt.return_unit
+	
+
+let stream_attribute_mechanism name value = fun elem ->
+	let set v = elem##setAttribute(name, Js.string v) in
+	effectful_stream_mechanism (value |> S.map set)
+
+let stream_class_mechanism name value = fun elem ->
+	let name_js = Js.string name in
+	let set v =
+		log#info "setting class %s to %b" name v;
+		let cls = elem##classList in
+		if v then cls##add(name_js) else cls##remove(name_js)
+	in
+	effectful_stream_mechanism (value |> S.map set)
+
+
 (* an Element based widget - can have attrs and children *)
 class ['a] widget ?(mechanisms=[]) (cons:unit -> #Dom_html.element Js.t) (children:#fragment_t list) =
 	let children = ref children in
@@ -108,6 +132,8 @@ object (self)
 		elem
 
 	method attr (name:string) (value:string) = attrs := StringMap.add name value !attrs
+	method attr_s (name:string) (value:string signal) = self#mechanism (stream_attribute_mechanism name value)
+	method class_s (name:string) (value:bool signal) = self#mechanism (stream_class_mechanism name value)
 	method append : 'c. (#fragment_t as 'c) -> unit = fun child -> children := List.append !children [(child:>fragment_t)]
 	method append_all (new_children:#fragment_t list) = children := List.append !children new_children
 	method prepend : 'c. (#fragment_t as 'c) -> unit = fun child -> children := (child:>fragment_t)::!children
@@ -128,25 +154,39 @@ let create_blank_node _ =
 	let elem = Dom_html.document##createComment(Js.string "placeholder") in
 	(elem:>Dom.node Js.t)
 
-let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ?children:(fragment_t list as 'c) -> unit -> 'a widget =
-	fun cons ?(children=[]) () ->
-		new widget (fun () -> cons Dom_html.document) (children:>(fragment_t list))
-
 let wrap_leaf : (Dom_html.document Js.t -> 'a Js.t)
 	-> 'a leaf_widget
 	=
 	fun cons -> new leaf_widget (fun () -> cons Dom_html.document)
 
+let text t : Dom.text leaf_widget = new leaf_widget (fun () -> Dom_html.document##createTextNode (Js.string t))
+let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
+
+type ('a,'b) listy = (('a * 'b) list)
+type 'a children = #fragment_t list as 'a
+
+type 'w widget_constructor = (?children:(fragment_t list)
+	-> ?text:(string)
+	-> ?cls:(string)
+	-> ?attrs:((string * string) list)
+	-> unit -> 'w widget)
+
+let wrap : (Dom_html.document Js.t -> 'a Js.t) -> 'a widget_constructor =
+	fun cons ?(children=[]) ?text:t ?cls ?attrs () ->
+		let rv = new widget (fun () -> cons Dom_html.document) (children:>(fragment_t list)) in
+		t |> Option.may (fun t -> rv#append (text t));
+		cls |> Option.may (fun t -> rv#attr "class" t);
+		attrs |> Option.may (fun attrs -> attrs |> List.iter (fun (k,v) -> rv#attr k v));
+		rv
+
 let element cons = new widget cons []
-let textArea = wrap Dom_html.createTextarea
+let textArea: Dom_html.textAreaElement widget_constructor = wrap Dom_html.createTextarea
 let div = wrap Dom_html.createDiv
 let span = wrap Dom_html.createSpan
 let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
 let input = wrap Dom_html.createInput
-let text t : Dom.text leaf_widget = new leaf_widget (fun () -> Dom_html.document##createTextNode (Js.string t))
-let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
 
 let stop event =
 	Dom.preventDefault event;
