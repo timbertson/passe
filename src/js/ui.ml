@@ -191,3 +191,15 @@ let node_signal_of_string str_sig = str_sig |> S.map (fun str ->
 let stream s = new leaf_widget ~mechanisms:[stream_mechanism s] create_blank_node
 let text_stream s = new leaf_widget ~mechanisms:[stream_mechanism (node_signal_of_string s)] create_blank_node
 
+let input_signal ?(events=Lwt_js_events.inputs) widget =
+	let signal, update = S.create "" in
+	let update elem = update (elem##value |> Js.to_string) in
+	widget#mechanism (fun elem ->
+		update elem;
+		events elem (fun event _ ->
+			update elem;
+			Lwt.return_unit
+		)
+	);
+	signal
+

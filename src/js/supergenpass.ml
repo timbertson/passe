@@ -92,20 +92,10 @@ let password_form () : #Dom_html.element Ui.widget =
 	submit_button#attr "class" "btn btn-primary";
 	submit_button#append @@ Ui.text "generate" doc;
 
-	let domain_sig, set_domain_sig = S.create "" in
-
 	domain_label#append @@ Ui.text "domain:" doc;
 	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
-	domain_input#mechanism (fun elem ->
-		elem##focus();
-		log#info "domain watcher running";
-		Lwt_js_events.inputs elem (fun event _ ->
-			let contents = elem##value |> Js.to_string in
-			log#info "got domain: %s" contents;
-			set_domain_sig contents;
-			Lwt.return_unit
-		)
-	);
+	let domain_sig = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
+
 	let password_label = Ui.label doc in
 	password_label#append @@ Ui.text "password:" doc;
 	let password_input = Ui.element (fun () -> createInput doc ~_type:(s"password") ~name:(s"password")) in
