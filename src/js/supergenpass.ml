@@ -78,31 +78,22 @@ let db_editor () : #Dom_html.element Ui.widget =
 	result
 
 let password_form () : #Dom_html.element Ui.widget =
-	let form = Ui.form () in
-	let domain_label = Ui.label () in
+	let open Ui in
 
-	let domain_section = Ui.div () in
-	domain_section#attr "class" "test";
+	let current_password, set_current_password = S.create None in
+	let invalidate_password = fun elem ->
+		Lwt_js_events.inputs elem (fun event _ ->
+			set_current_password None;
+			Lwt.return_unit
+		) in
 
-	let password_section = Ui.div () in
-	password_section#attr "class" "test";
+	let domain_input =   element (fun () -> createInput document ~_type:(s"text")     ~name:(s"domain")) in
+	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
+	domain_input#mechanism (fun elem -> elem##focus(); invalidate_password elem);
+	password_input#mechanism invalidate_password;
 
-	let submit_button = Ui.input () in
-	submit_button#attr "type" "submit";
-	submit_button#attr "class" "btn btn-primary";
-	submit_button#append @@ Ui.text "generate";
-
-	domain_label#append @@ Ui.text "domain:";
-	let domain_input = Ui.element (fun () -> createInput document ~_type:(s"text") ~name:(s"domain")) in
-	domain_input#mechanism (fun elem -> elem##focus(); Lwt.return_unit);
-	let domain_sig = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
-
-	let domain_record = S.l2 (fun db dom -> log#info "looking up!"; Store.lookup dom db) db_signal domain_sig in
-
-	let password_label = Ui.label () in
-	password_label#append @@ Ui.text "password:";
-	let password_input = Ui.element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
-
+	let domain = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
+	let domain_record = S.l2 (fun db dom -> log#info "looking up!"; Store.lookup dom db) db_signal domain in
 	let domain_info = S.l2 (fun domain text ->
 		match domain with
 			| Some d -> d
@@ -112,10 +103,22 @@ let password_form () : #Dom_html.element Ui.widget =
 				length= 10;
 				digest = MD5;
 			})
-	) domain_record domain_sig in
+	) domain_record domain in
+	let domain_is_unknown = (S.map Option.is_none domain_record) in
+
+	let form = Ui.form ~children:[
+		child div ~children:[
+			child label ~text:"domain:" ();
+			frag domain_input;
+		] ();
+		child div ~children:[
+			child label ~text:"password:" ();
+			frag password_input;
+		] ();
+		child input ~cls:"btn btn-primary" ~text:"generate" ~attrs:[("type", "submit")] ();
+	] () in
 
 	let domain_display = Ui.div () in
-	let domain_is_unknown = (S.map Option.is_none domain_record) in
 	let () =
 		let open Store in
 		let open Ui in
@@ -123,53 +126,31 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_display#append_all [
 			child div ~children:[
 				child span ~cls: "domain" ~text: "Domain: " ();
-				frag (domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
-				frag (domain_is_unknown
+				(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
+				(domain_is_unknown
 					|> S.map (fun unknown -> if unknown then " [new domain]" else "")
 					|> Ui.text_stream);
 			] ();
 
 			child div ~children:[
 				child span ~cls: "length" ~text: "Length: " ();
-				frag (domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+				(domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
 			] ();
 		];
 	in
 
 
-	domain_section#append domain_label;
-	domain_section#append domain_input;
-	domain_section#append domain_display;
-
-	let current_password, set_current_password = S.create None in
-
 	let password_display = current_password |> optional_signal_content (fun p ->
-		let container = Ui.div () in
-		container#attr "class" "password-display";
-		container#append @@ Ui.text p;
-		container#mechanism (fun elem ->
-			Selection.select elem;
-			Lwt.return_unit
-		);
+		let container = div
+			~cls:"password-display"
+			~text:p
+			~mechanism:(fun elem ->
+				Selection.select elem;
+				Lwt.return_unit
+			) () in
 		(container:>Dom.node Ui.widget_t)
 	) |> Ui.stream in
 
-	let invalidate_password = fun elem ->
-		Lwt_js_events.inputs elem (fun event _ ->
-			set_current_password None;
-			Lwt.return_unit
-		) in
-
-	password_section#append password_label;
-	password_section#append password_input;
-	password_section#append password_display;
-
-	password_input#mechanism invalidate_password;
-	domain_input#mechanism invalidate_password;
-
-	form#append domain_section;
-	form#append password_section;
-	form#append submit_button;
 	form#mechanism (fun elem ->
 		Lwt_js_events.submits elem (fun event _ ->
 			Ui.stop event;
@@ -196,7 +177,7 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt.return_unit
 		)
 	);
-	form
+	div ~children:[ frag form; frag domain_display; frag password_display ] ()
 
 let show_form (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in

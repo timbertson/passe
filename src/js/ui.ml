@@ -49,7 +49,9 @@ end
 class type ['a] widget_t = object
 	inherit fragment_t
 	method attach_widget : #Dom.node Js.t -> ('a Js.t * unit Lwt.t)
-	method attach_widget_pure : #Dom.node Js.t -> ('a Js.t * mechanism_result Lwt.t)
+	method attach_widget_pure :
+		?before:(Dom.node Js.t) ->
+		#Dom.node Js.t -> ('a Js.t * mechanism_result Lwt.t)
 end
 
 class virtual ['a] widget_base mechanisms (children:#fragment_t list ref) =
@@ -75,9 +77,15 @@ object (self)
 			]
 		)
 
-	method attach_widget_pure : 'p. (#Dom.node as 'p) Js.t -> ('a Js.t * mechanism_result Lwt.t) = fun parent ->
+	method attach_widget_pure : 'p.
+		?before:(Dom.node Js.t) ->
+		(#Dom.node as 'p) Js.t ->
+		('a Js.t * mechanism_result Lwt.t)
+		=
+		fun ?before parent ->
 		let elem: 'a Js.t = self#create_elem in
-		Dom.appendChild parent elem;
+		let before = Js.Opt.option before in
+		Dom.insertBefore parent elem before;
 		let attach_child : #fragment_t -> unit Lwt.t = fun frag -> frag#attach elem in
 		let run_mechanism mech = mech elem in
 		(
@@ -154,19 +162,19 @@ let create_blank_node _ =
 	let elem = Dom_html.document##createComment(Js.string "placeholder") in
 	(elem:>Dom.node Js.t)
 
-let wrap_leaf : (Dom_html.document Js.t -> 'a Js.t)
-	-> 'a leaf_widget
-	=
-	fun cons -> new leaf_widget (fun () -> cons Dom_html.document)
+let create_text_node t _ =
+	let elem = Dom_html.document##createTextNode (Js.string t) in
+	(elem:>Dom.node Js.t)
 
-let text t : Dom.text leaf_widget = new leaf_widget (fun () -> Dom_html.document##createTextNode (Js.string t))
+let text t : Dom.node leaf_widget = new leaf_widget (create_text_node t)
 let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
 
 type ('a,'b) listy = (('a * 'b) list)
 type 'a children = #fragment_t list as 'a
 
-type 'w widget_constructor = (
+type ('m, 'w) widget_constructor = (
 	?children:(fragment_t list)
+	-> ?mechanism:('m Js.t -> unit Lwt.t)
 	-> ?text:(string)
 	-> ?cls:(string)
 	-> ?attrs:((string * string) list)
@@ -174,17 +182,18 @@ type 'w widget_constructor = (
 
 let frag f = (f:>fragment_t)
 
-let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ('a widget) widget_constructor =
-	fun cons ?(children=[]) ?text:t ?cls ?attrs () ->
+let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ('a, 'a widget) widget_constructor =
+	fun cons ?(children=[]) ?mechanism ?text:t ?cls ?attrs () ->
 		let rv = new widget (fun () -> cons Dom_html.document) (children:>(fragment_t list)) in
 		t |> Option.may (fun t -> rv#append (text t));
 		cls |> Option.may (fun t -> rv#attr "class" t);
+		mechanism |> Option.may (fun m -> rv#mechanism m);
 		attrs |> Option.may (fun attrs -> attrs |> List.iter (fun (k,v) -> rv#attr k v));
 		rv
 
-let child f : fragment_t widget_constructor =
-	fun ?children ?text ?cls ?attrs () ->
-		((f ?children ?text ?cls ?attrs ()):>fragment_t)
+let child f : ('a, fragment_t) widget_constructor =
+	fun ?children ?mechanism ?text ?cls ?attrs () ->
+	((f ?children ?mechanism ?text ?cls ?attrs ()):>fragment_t)
 
 let element cons = new widget cons []
 let textArea = wrap Dom_html.createTextarea
@@ -199,8 +208,12 @@ let stop event =
 	Dom.preventDefault event;
 	Dom_html.stopPropagation event
 
-let withContent : #Dom.node Js.t -> 'w #widget_t -> ('w Js.t -> unit Lwt.t) -> unit Lwt.t =
-	fun parent content block ->
+let withContent :
+	#Dom.node Js.t ->
+	?before:(#Dom.node Js.t) ->
+	'w #widget_t -> ('w Js.t -> unit Lwt.t) -> unit Lwt.t
+	=
+	fun parent ?before content block ->
 		let ((elem:'w Js.t), block_mech) = content#attach_widget_pure parent in
 		try_lwt
 			Lwt.pick [
@@ -217,14 +230,16 @@ let withContent : #Dom.node Js.t -> 'w #widget_t -> ('w Js.t -> unit Lwt.t) -> u
 			Lwt.return_unit
 		)
 
-let stream_mechanism s = fun (elem:#Dom.node Js.t) ->
+let stream_mechanism s = fun (placeholder:#Dom.node Js.t) ->
 	let new_widget = Lwt_condition.create () in
 	let effect : unit S.t = s |> S.map (Lwt_condition.signal new_widget) in
+	let p = (placeholder##parentNode) |> non_null in
+	let elem = ref placeholder in
 	try_lwt
-		let p = (elem##parentNode) |> non_null in
 		let widget = ref @@ S.value s in
 		while_lwt true do
-			withContent p !widget (fun _ ->
+			withContent p ~before:placeholder !widget (fun new_elem ->
+				elem := new_elem;
 				(* wait until next update *)
 				lwt w = Lwt_condition.wait new_widget in
 				widget := w;
@@ -235,10 +250,15 @@ let stream_mechanism s = fun (elem:#Dom.node Js.t) ->
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
-let node_signal_of_string str_sig = str_sig |> S.map text
 
-let stream s = new leaf_widget ~mechanisms:[stream_mechanism s] create_blank_node
-let text_stream s = new leaf_widget ~mechanisms:[stream_mechanism (node_signal_of_string s)] create_blank_node
+let stream s =
+	let w = new leaf_widget
+		~mechanisms:[stream_mechanism s]
+		create_blank_node in
+	(w:>fragment_t)
+
+let node_signal_of_string str_sig : (Dom.node leaf_widget) signal = str_sig |> S.map text
+let text_stream s : fragment_t = stream (node_signal_of_string s)
 
 let input_signal ?(events=Lwt_js_events.inputs) widget =
 	let signal, update = S.create "" in
