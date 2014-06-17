@@ -118,38 +118,22 @@ let password_form () : #Dom_html.element Ui.widget =
 	let domain_is_unknown = (S.map Option.is_none domain_record) in
 	let () =
 		let open Store in
+		let open Ui in
 		domain_display#class_s "unknown" domain_is_unknown;
-		let domain_validity = domain_is_unknown |> S.map (fun unknown ->
-			if unknown then " [new domain]" else ""
-		) |> Ui.text_stream in
+		domain_display#append_all [
+			child div ~children:[
+				child span ~cls: "domain" ~text: "Domain: " ();
+				frag (domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
+				frag (domain_is_unknown
+					|> S.map (fun unknown -> if unknown then " [new domain]" else "")
+					|> Ui.text_stream);
+			] ();
 
-		let domain_section = Ui.div () in
-		domain_display#append domain_section;
-
-		let domain_label_span = Ui.span () in
-		domain_label_span#append @@ Ui.text "Domain:";
-		domain_section#append domain_label_span;
-
-		let domain_span = Ui.span () in
-		domain_span#append (domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
-		domain_section#append domain_span;
-		domain_section#append domain_validity;
-
-		let length_section = Ui.div () in
-		domain_display#append length_section;
-
-		let length_label_span = Ui.span () in
-		length_section#append length_label_span;
-		length_label_span#append @@ Ui.text "length:";
-
-		let items : #Ui.fragment_t list = [domain_section; length_section; length_label_span]
-		in
-		domain_display#append_all ([domain_section; length_section;
-		length_label_span]:>Ui.fragment_t list);
-
-		let length_span = Ui.span () in
-		length_section#append length_span;
-		length_span#append (domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+			child div ~children:[
+				child span ~cls: "length" ~text: "Length: " ();
+				frag (domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+			] ();
+		];
 	in
 
 

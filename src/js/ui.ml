@@ -165,13 +165,16 @@ let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
 type ('a,'b) listy = (('a * 'b) list)
 type 'a children = #fragment_t list as 'a
 
-type 'w widget_constructor = (?children:(fragment_t list)
+type 'w widget_constructor = (
+	?children:(fragment_t list)
 	-> ?text:(string)
 	-> ?cls:(string)
 	-> ?attrs:((string * string) list)
-	-> unit -> 'w widget)
+	-> unit -> 'w)
 
-let wrap : (Dom_html.document Js.t -> 'a Js.t) -> 'a widget_constructor =
+let frag f = (f:>fragment_t)
+
+let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ('a widget) widget_constructor =
 	fun cons ?(children=[]) ?text:t ?cls ?attrs () ->
 		let rv = new widget (fun () -> cons Dom_html.document) (children:>(fragment_t list)) in
 		t |> Option.may (fun t -> rv#append (text t));
@@ -179,8 +182,12 @@ let wrap : (Dom_html.document Js.t -> 'a Js.t) -> 'a widget_constructor =
 		attrs |> Option.may (fun attrs -> attrs |> List.iter (fun (k,v) -> rv#attr k v));
 		rv
 
+let child f : fragment_t widget_constructor =
+	fun ?children ?text ?cls ?attrs () ->
+		((f ?children ?text ?cls ?attrs ()):>fragment_t)
+
 let element cons = new widget cons []
-let textArea: Dom_html.textAreaElement widget_constructor = wrap Dom_html.createTextarea
+let textArea = wrap Dom_html.createTextarea
 let div = wrap Dom_html.createDiv
 let span = wrap Dom_html.createSpan
 let form = wrap Dom_html.createForm
