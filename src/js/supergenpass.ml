@@ -40,8 +40,9 @@ let optional_signal_content : ('a -> #Dom.node Ui.widget_t) -> 'a option React.s
 			| None -> (empty:>Dom.node Ui.widget_t)
 		)
 
+
 let db_editor () : #Dom_html.element Ui.widget =
-	let textarea = Ui.textArea document in
+	let textarea = Ui.textArea () in
 	let error_text, set_error_text = S.create None in
 
 	textarea#attr "rows" "10";
@@ -65,59 +66,96 @@ let db_editor () : #Dom_html.element Ui.widget =
 		)
 	);
 	let error_dom_stream = error_text |> optional_signal_content (fun err ->
-		let div = Ui.div document in
+		let div = Ui.div () in
 		div#attr "class" "error";
-		div#append @@ Ui.text err document;
+		div#append @@ Ui.text err;
 		(div:>Dom.node Ui.widget_t) (* XXX remove cast *)
 	) in
 	let error_elem = Ui.stream error_dom_stream in
-	let result = Ui.div document in
+	let result = Ui.div () in
 	result#append error_elem;
 	result#append textarea;
 	result
 
 let password_form () : #Dom_html.element Ui.widget =
-	let doc = document in
-	let form = Ui.form doc in
-	let domain_label = Ui.label doc in
+	let form = Ui.form () in
+	let domain_label = Ui.label () in
 
-	let domain_section = Ui.div doc in
+	let domain_section = Ui.div () in
 	domain_section#attr "class" "test";
 
-	let password_section = Ui.div doc in
+	let password_section = Ui.div () in
 	password_section#attr "class" "test";
 
-	let submit_button = Ui.input doc in
+	let submit_button = Ui.input () in
 	submit_button#attr "type" "submit";
 	submit_button#attr "class" "btn btn-primary";
-	submit_button#append @@ Ui.text "generate" doc;
+	submit_button#append @@ Ui.text "generate";
 
-	domain_label#append @@ Ui.text "domain:" doc;
-	let domain_input = Ui.element (fun () -> createInput doc ~_type:(s"text") ~name:(s"domain")) in
+	domain_label#append @@ Ui.text "domain:";
+	let domain_input = Ui.element (fun () -> createInput document ~_type:(s"text") ~name:(s"domain")) in
+	domain_input#mechanism (fun elem -> elem##focus(); Lwt.return_unit);
 	let domain_sig = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
 
-	let password_label = Ui.label doc in
-	password_label#append @@ Ui.text "password:" doc;
-	let password_input = Ui.element (fun () -> createInput doc ~_type:(s"password") ~name:(s"password")) in
+	let domain_record = S.l2 (fun db dom -> log#info "looking up!"; Store.lookup dom db) db_signal domain_sig in
 
-	let domain_validity = domain_sig |> S.map (fun dom ->
-		let db = S.value db_signal in
-		let found = Store.lookup dom db in
-		match found with
-			| None -> "[new...]"
-			| Some _ -> "ok"
-	) |> Ui.text_stream in
+	let password_label = Ui.label () in
+	password_label#append @@ Ui.text "password:";
+	let password_input = Ui.element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
+
+	let domain_info = S.l2 (fun domain text ->
+		match domain with
+			| Some d -> d
+			| None -> Store.({
+				domain=text;
+				hint=None;
+				length= 10;
+				digest = MD5;
+			})
+	) domain_record domain_sig in
+
+	let domain_display = Ui.div () in
+	let () =
+		let open Store in
+		let domain_validity = domain_record |> S.map (fun dom ->
+			if Option.is_some dom then "ok" else "[new]"
+		) |> Ui.text_stream in
+
+		let domain_section = Ui.div () in
+		domain_display#append domain_section;
+
+		let domain_label_span = Ui.span () in
+		domain_label_span#append @@ Ui.text "Domain:";
+		domain_section#append domain_label_span;
+
+		let domain_span = Ui.span () in
+		domain_span#append (domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
+		domain_section#append domain_span;
+		domain_section#append domain_validity;
+
+		let length_section = Ui.div () in
+		domain_display#append length_section;
+
+		let length_label_span = Ui.span () in
+		length_section#append length_label_span;
+		length_label_span#append @@ Ui.text "length:";
+
+		let length_span = Ui.span () in
+		length_section#append length_span;
+		length_span#append (domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+	in
+
 
 	domain_section#append domain_label;
 	domain_section#append domain_input;
-	domain_section#append domain_validity;
+	domain_section#append domain_display;
 
 	let current_password, set_current_password = S.create None in
 
 	let password_display = current_password |> optional_signal_content (fun p ->
-		let container = Ui.div document in
+		let container = Ui.div () in
 		container#attr "class" "password-display";
-		container#append @@ Ui.text p document;
+		container#append @@ Ui.text p;
 		container#mechanism (fun elem ->
 			Selection.select elem;
 			Lwt.return_unit
@@ -170,12 +208,11 @@ let password_form () : #Dom_html.element Ui.widget =
 	form
 
 let show_form (container:Dom_html.element Js.t) =
-	let doc = document in
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	log#info "Hello container!";
 	(* Ui.withContent container form (fun _ -> *)
-	let all_content = Ui.div doc in
+	let all_content = Ui.div () in
 	all_content#append @@ db_editor ();
 	all_content#append @@ password_form ();
 	Ui.withContent container all_content (fun _ ->

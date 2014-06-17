@@ -42,7 +42,6 @@ let run_mechanisms : ('a -> unit Lwt.t) list -> 'a -> mechanism_result Lwt.t =
 	)
 
 
-
 class type fragment_t = object
 	method attach : #Dom.node Js.t -> unit Lwt.t
 end
@@ -129,18 +128,24 @@ let create_blank_node _ =
 	let elem = Dom_html.document##createComment(Js.string "placeholder") in
 	(elem:>Dom.node Js.t)
 
-let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ?children:(fragment_t list as 'c) -> Dom_html.document Js.t -> 'a widget =
-	fun cons ?(children=[]) doc ->
-		new widget (fun () -> cons doc) (children:>(fragment_t list))
+let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ?children:(fragment_t list as 'c) -> unit -> 'a widget =
+	fun cons ?(children=[]) () ->
+		new widget (fun () -> cons Dom_html.document) (children:>(fragment_t list))
+
+let wrap_leaf : (Dom_html.document Js.t -> 'a Js.t)
+	-> 'a leaf_widget
+	=
+	fun cons -> new leaf_widget (fun () -> cons Dom_html.document)
 
 let element cons = new widget cons []
 let textArea = wrap Dom_html.createTextarea
 let div = wrap Dom_html.createDiv
+let span = wrap Dom_html.createSpan
 let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
 let input = wrap Dom_html.createInput
-let text t doc : Dom.text leaf_widget = new leaf_widget (fun () -> doc##createTextNode (Js.string t))
+let text t : Dom.text leaf_widget = new leaf_widget (fun () -> Dom_html.document##createTextNode (Js.string t))
 let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
 
 let stop event =
@@ -169,9 +174,8 @@ let stream_mechanism s = fun (elem:#Dom.node Js.t) ->
 	let new_widget = Lwt_condition.create () in
 	let effect : unit S.t = s |> S.map (Lwt_condition.signal new_widget) in
 	try_lwt
-		lwt widget = Lwt_condition.wait new_widget in
 		let p = (elem##parentNode) |> non_null in
-		let widget = ref widget in
+		let widget = ref @@ S.value s in
 		while_lwt true do
 			withContent p !widget (fun _ ->
 				(* wait until next update *)
@@ -184,16 +188,16 @@ let stream_mechanism s = fun (elem:#Dom.node Js.t) ->
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
-let node_signal_of_string str_sig = str_sig |> S.map (fun str ->
-	text str Dom_html.document
-)
+let node_signal_of_string str_sig = str_sig |> S.map text
 
 let stream s = new leaf_widget ~mechanisms:[stream_mechanism s] create_blank_node
 let text_stream s = new leaf_widget ~mechanisms:[stream_mechanism (node_signal_of_string s)] create_blank_node
 
 let input_signal ?(events=Lwt_js_events.inputs) widget =
 	let signal, update = S.create "" in
-	let update elem = update (elem##value |> Js.to_string) in
+	let update elem =
+		log#info "Updating text value: %s" (elem##value |> Js.to_string);
+		update (elem##value |> Js.to_string) in
 	widget#mechanism (fun elem ->
 		update elem;
 		events elem (fun event _ ->

@@ -11,3 +11,5 @@ let print sub_printer chan v = match v with
 let print_str sub_printer () v = match v with
 	| Some x -> "Some(" ^ (sub_printer () x) ^ ")"
 	| None -> "None()"
+
+let is_some = function Some _ -> true | None -> false
