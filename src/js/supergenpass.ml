@@ -50,7 +50,6 @@ let db_editor () : #Dom_html.element Ui.widget =
 	textarea#mechanism (fun elem ->
 		log#info "Mechanism is running!";
 		elem##value <- local_db#get_str;
-		elem##focus();
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt _ ->
 			let contents = elem##value |> Js.to_string in
 			log#info "got input text: %s" contents;
@@ -72,7 +71,7 @@ let db_editor () : #Dom_html.element Ui.widget =
 		(div:>Dom.node Ui.widget_t) (* XXX remove cast *)
 	) in
 	let error_elem = Ui.stream error_dom_stream in
-	let result = Ui.div () in
+	let result = Ui.div ~cls:"db-editor" () in
 	result#append error_elem;
 	result#append textarea;
 	result
@@ -89,10 +88,13 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	let domain_input =   element (fun () -> createInput document ~_type:(s"text")     ~name:(s"domain")) in
 	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
+	domain_input#attr "class" "form-control";
 	domain_input#mechanism (fun elem -> elem##focus(); invalidate_password elem);
+	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
 	let domain = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
+	let empty_domain = domain |> S.map (fun d -> d = "") in
 	let domain_record = S.l2 (fun db dom -> log#info "looking up!"; Store.lookup dom db) db_signal domain in
 	let domain_info = S.l2 (fun domain text ->
 		match domain with
@@ -106,30 +108,88 @@ let password_form () : #Dom_html.element Ui.widget =
 	) domain_record domain in
 	let domain_is_unknown = (S.map Option.is_none domain_record) in
 
-	let form = Ui.form ~children:[
-		child div ~children:[
-			child label ~text:"domain:" ();
-			frag domain_input;
+	let password_display = current_password |> optional_signal_content (fun p ->
+		let length = String.length p in
+		let is_selected, set_is_selected = S.create true in
+		let dummy = span ~cls:"dummy"
+			~text:(String.make length '*') ()
+		in
+		dummy#class_s "selected" is_selected;
+
+		let container = div
+			~cls:"password-display"
+			~mechanism:(fun elem ->
+				let child = elem##querySelector(Js.string ".secret") |> non_null in
+				let select () =
+					Selection.select child;
+					set_is_selected true
+				in
+				let update_highlight () =
+					set_is_selected @@ Selection.is_fully_selected ~length child;
+				in
+
+
+				select ();
+
+				Lwt_js_events.clicks ~use_capture:true document (fun e _ ->
+					update_highlight ();
+					Lwt.return_unit
+				) <&>
+				Lwt_js_events.keyups ~use_capture:true document (fun e _ ->
+					if e##shiftKey == Js._true then
+						update_highlight ();
+					Lwt.return_unit
+				) <&>
+				Lwt_js_events.clicks ~use_capture:true elem (fun e _ ->
+					select ();
+					Lwt.return_unit
+				)
+			)
+			~children:[
+				child span ~cls:"secret" ~text:p ();
+				frag dummy;
+			]() in
+
+		(container:>Dom.node Ui.widget_t)
+	) |> Ui.stream in
+
+
+	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
+		child div ~cls:"form-group" ~children:[
+			child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
+			child div ~cls:"col-xs-10" ~children:[
+				frag domain_input;
+			] ();
 		] ();
-		child div ~children:[
-			child label ~text:"password:" ();
-			frag password_input;
+		child div ~cls:"form-group" ~children:[
+			child label ~cls:"col-xs-2 control-label" ~text:"Password" ();
+			child div ~cls:"col-xs-10" ~children:[
+				frag password_input;
+			] ();
 		] ();
-		child input ~cls:"btn btn-primary" ~text:"generate" ~attrs:[("type", "submit")] ();
+		child div ~cls:"form-group" ~children:[
+			child div ~cls:"col-xs-offset-2 col-xs-2" ~children:[
+				child input ~cls:"btn btn-primary" ~attrs:[("type", "submit");("value","Generate")] ();
+			] ();
+			child div ~cls:"col-xs-8" ~children:[
+				frag password_display;
+			] ();
+		] ();
 	] () in
 
-	let domain_display = Ui.div () in
+	let domain_display = Ui.div ~cls:"domain-info" () in
 	let () =
 		let open Store in
 		let open Ui in
 		domain_display#class_s "unknown" domain_is_unknown;
+		domain_display#class_s "hidden" empty_domain;
 		domain_display#append_all [
 			child div ~children:[
 				child span ~cls: "domain" ~text: "Domain: " ();
 				(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
-				(domain_is_unknown
-					|> S.map (fun unknown -> if unknown then " [new domain]" else "")
-					|> Ui.text_stream);
+				(* (domain_is_unknown *)
+				(* 	|> S.map (fun unknown -> if unknown then " [new domain]" else "") *)
+				(* 	|> Ui.text_stream); *)
 			] ();
 
 			child div ~children:[
@@ -138,18 +198,6 @@ let password_form () : #Dom_html.element Ui.widget =
 			] ();
 		];
 	in
-
-
-	let password_display = current_password |> optional_signal_content (fun p ->
-		let container = div
-			~cls:"password-display"
-			~text:p
-			~mechanism:(fun elem ->
-				Selection.select elem;
-				Lwt.return_unit
-			) () in
-		(container:>Dom.node Ui.widget_t)
-	) |> Ui.stream in
 
 	form#mechanism (fun elem ->
 		Lwt_js_events.submits elem (fun event _ ->
@@ -177,7 +225,22 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt.return_unit
 		)
 	);
-	div ~children:[ frag form; frag domain_display; frag password_display ] ()
+	div ~children:[
+		child div ~cls:"row" ~children:[
+			child div ~cls:"col-sm-8" ~children:[
+				child h1 ~text:"SuperGenPass" ();
+			] ();
+		] ();
+
+		child div ~cls:"row" ~children:[
+			child div ~cls:"col-sm-8" ~children:[
+				frag form;
+			] ();
+			child div ~cls:"col-sm-4" ~children:[
+				frag domain_display;
+			] ();
+		] ();
+	] ()
 
 let show_form (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
@@ -185,8 +248,8 @@ let show_form (container:Dom_html.element Js.t) =
 	log#info "Hello container!";
 	(* Ui.withContent container form (fun _ -> *)
 	let all_content = Ui.div () in
-	all_content#append @@ db_editor ();
 	all_content#append @@ password_form ();
+	all_content#append @@ db_editor ();
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
 		log#info "ALL DONE";

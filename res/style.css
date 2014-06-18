@@ -1,6 +1,44 @@
 .password-display {
-	border: 2px solid red;
+	font-size: 1.5em;
+	background: #eee;
+	text-align:center;
+	/* visibility:hidden; */
+	padding-top: 0.3em;
 }
+.password-display .dummy {
+	padding-top: 0.3em;
+
+}
+
+.password-display .dummy.selected {
+	color: white;
+	background: rgb(59, 133, 202);
+}
+
+.password-display .secret {
+	display:block;
+	height:1px;
+	overflow:hidden;
+	width:1px;
+	color:transparent;
+}
+
+.domain-info {
+}
+
+.db-editor {
+	margin-top:2em;
+}
+
+.db-editor textarea {
+	width:100%;
+	margin:0;
+	padding:0;
+	border:0;
+	background: #111118;
+	color: #bbb;
+}
+
 .unknown {
 	border: 3px solid red;
 }
