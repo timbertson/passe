@@ -54,6 +54,7 @@ let id_of record = match record with
 let record_for key record = key = (id_of record)
 
 type t = record list
+let empty:t = []
 
 let get domain db : record option =
 	try
@@ -98,10 +99,6 @@ module Format = struct
 
 	let get_int j = match j with `Int i -> i | j -> fail "number" j
 	let set_int i = Some (`Int i)
-
-	(* let default getter v = match v with *)
-	(* 	| None -> default *)
-	(* 	| Some v -> getter v *)
 
 	let optional fn v = match v with
 		| None -> None

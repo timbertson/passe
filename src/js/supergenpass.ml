@@ -27,7 +27,8 @@ let hold duration =
 
 let local_db = new Local_storage.record "db"
 let db_signal =
-	let initial = local_db#get |> Store.parse_json in
+	let initial = local_db#get
+		|> Option.map Store.parse_json |> Option.default Store.empty in
 	let signal, update = S.create initial in
 	local_db#watch (fun db -> update (Store.parse_json db));
 	signal
@@ -49,7 +50,7 @@ let db_editor () : #Dom_html.element Ui.widget =
 	textarea#attr "cols" "60";
 	textarea#mechanism (fun elem ->
 		log#info "Mechanism is running!";
-		elem##value <- local_db#get_str;
+		local_db#get_str |> Option.may (fun s -> elem##value <- s);
 		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt _ ->
 			let contents = elem##value |> Js.to_string in
 			log#info "got input text: %s" contents;
@@ -203,20 +204,10 @@ let password_form () : #Dom_html.element Ui.widget =
 		Lwt_js_events.submits elem (fun event _ ->
 			Ui.stop event;
 			log#info "form submitted";
-			let db = S.value db_signal in
 			let field_values = Form.get_form_contents elem |> StringMap.from_pairs in
-			let domain_text = StringMap.find "domain" field_values in
 
 			(* TODO: store & retrieve defaults in DB *)
-			let domain = match Store.lookup domain_text db with
-				| Some d -> d
-				| None -> Store.({
-					domain=domain_text;
-					hint=None;
-					length= 10;
-					digest = MD5;
-				})
-			in
+			let domain = S.value domain_info in
 			let password = StringMap.find "password" field_values in
 			let password = Password.generate ~domain password in
 			log#warn "generated: %s" password;
@@ -278,12 +269,14 @@ let main () = Lwt.async (fun () ->
 )
 
 let () =
+	log#info "main";
 	let listener = ref null in
 	listener := Opt.return @@ Dom_events.listen
 		window
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->
 			Opt.iter !listener Dom_events.stop_listen;
+			log#info "main";
 			main ();
 			false
 		)

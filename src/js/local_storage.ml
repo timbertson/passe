@@ -11,7 +11,7 @@ module Json = Yojson.Safe
 }; *)
 
 class type local_storage = object
-  method getItem : js_string t -> js_string t meth
+  method getItem : js_string t -> js_string t opt meth
   method setItem : js_string t -> js_string t -> unit meth
   method removeItem : js_string t -> unit meth
   method clear : unit meth
@@ -26,8 +26,8 @@ class record key =
   let key = Js.string key in
   let listeners: (Json.json -> unit) list ref = ref [] in
   object (self)
-  method get_str = local_storage##getItem(key)
-  method get = self#get_str |> to_string |> Json.from_string
+  method get_str = local_storage##getItem(key) |> Opt.to_option
+  method get = self#get_str |> Option.map to_string |> Option.map Json.from_string
 
   method save v =
     local_storage##setItem(key, Js.string (Json.to_string v));
