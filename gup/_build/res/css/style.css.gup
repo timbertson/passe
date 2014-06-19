@@ -1,0 +1,6 @@
+#!bash -eu
+
+input="../../../src/css/style.less"
+gup -u ../bootstrap ../lessc
+gup -u ../bootstrap/package.json "$input"
+../lessc --clean-css "$input" "$1"

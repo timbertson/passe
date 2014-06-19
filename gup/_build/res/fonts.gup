@@ -1,0 +1,3 @@
+#!bash -eu
+gup -u bootstrap
+ln -s bootstrap/fonts "$1"

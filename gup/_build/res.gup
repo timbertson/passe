@@ -1,2 +1,0 @@
-#!bash -eu
-ln -s ../res "$1"

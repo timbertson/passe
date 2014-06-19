@@ -1,5 +1,0 @@
-#!bash -eu
-npm install --production less
-[ -e node_modules/.bin/lessc ]
-ln -s node_modules/.bin/lessc "$1"
-

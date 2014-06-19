@@ -1,4 +1,0 @@
-#!bash -eu
-npm install --production bootstrap@3.1.1
-[ -d node_modules/bootstrap ]
-ln -s node_modules/bootstrap "$1"

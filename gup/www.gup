@@ -1,0 +1,2 @@
+#!bash -eu
+gup -u res _build/{index.html,js/supergenpass.js}
