@@ -21,8 +21,6 @@
 exception Invalid_char
 exception Invalid_table
 
-external unsafe_char_of_int : int -> char = "%identity"
-
 type encoding_table = char array
 type decoding_table = int array
 
@@ -35,7 +33,7 @@ let chars = [|
 
 let string_of_char c = String.make 1 c
 
-let encode ?(tbl=chars) input =
+let encode ?(tbl=chars) ?(pad) input =
 	let result = ref "" in
 	if Array.length tbl <> 64 then raise Invalid_table;
 	let data = ref 0 in
@@ -43,7 +41,10 @@ let encode ?(tbl=chars) input =
 	let flush() =
 		if !count > 0 then begin
 			let d = (!data lsl (6 - !count)) land 63 in
-			result := !result ^ (string_of_char (Array.unsafe_get tbl d))
+			result := !result ^ (string_of_char (Array.unsafe_get tbl d));
+			match pad with
+				| Some c -> result := !result ^ (String.make ((6 - !count) / 2) c)
+				| None -> ()
 		end;
 	in
 	let write c =
@@ -56,7 +57,6 @@ let encode ?(tbl=chars) input =
 			result := !result ^ (string_of_char (Array.unsafe_get tbl d))
 		done;
 	in
-	(* XXX why len - 1? *)
 	String.iter write input;
 	flush();
 	!result
