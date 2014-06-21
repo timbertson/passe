@@ -178,24 +178,30 @@ let password_form () : #Dom_html.element Ui.widget =
 		] ();
 	] () in
 
-	let domain_display = Ui.div ~cls:"domain-info" () in
+	let domain_panel = Ui.div ~cls:"domain-info panel" () in
 	let () =
 		let open Store in
 		let open Ui in
-		domain_display#class_s "unknown" domain_is_unknown;
-		domain_display#class_s "hidden" empty_domain;
-		domain_display#append_all [
-			child div ~children:[
-				child span ~cls: "domain" ~text: "Domain: " ();
-				(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
-				(* (domain_is_unknown *)
-				(* 	|> S.map (fun unknown -> if unknown then " [new domain]" else "") *)
-				(* 	|> Ui.text_stream); *)
+		domain_panel#class_s "unknown" domain_is_unknown;
+		domain_panel#class_s "hidden" empty_domain;
+		domain_panel#append_all [
+			child div ~cls:"panel-heading" ~children:[
+				child h3 ~children: [
+					(domain_is_unknown
+						|> S.map (fun unknown -> if unknown then "New domain:" else "Saved domain:")
+						|> Ui.text_stream);
+				] ();
 			] ();
+			child div ~cls:"panel-body" ~children: [
+				child div ~children:[
+					child strong ~cls: "name" ~text: "Domain: " ();
+					(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
+				] ();
 
-			child div ~children:[
-				child span ~cls: "length" ~text: "Length: " ();
-				(domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+				child div ~children:[
+					child strong ~cls: "length" ~text: "Length: " ();
+					(domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+				] ();
 			] ();
 		];
 	in
@@ -205,6 +211,11 @@ let password_form () : #Dom_html.element Ui.widget =
 			Ui.stop event;
 			log#info "form submitted";
 			let field_values = Form.get_form_contents elem |> StringMap.from_pairs in
+			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList
+				|> List.iter (fun elem ->
+						let input = CoerceTo.input(elem) |> non_null in
+						input##blur()
+				);
 
 			(* TODO: store & retrieve defaults in DB *)
 			let domain = S.value domain_info in
@@ -228,7 +239,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				frag form;
 			] ();
 			child div ~cls:"col-sm-4" ~children:[
-				frag domain_display;
+				frag domain_panel;
 			] ();
 		] ();
 	] ()

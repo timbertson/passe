@@ -202,6 +202,7 @@ let span = wrap Dom_html.createSpan
 let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
+let strong = wrap Dom_html.createStrong
 let h1 = wrap Dom_html.createH1
 let h2 = wrap Dom_html.createH2
 let h3 = wrap Dom_html.createH3

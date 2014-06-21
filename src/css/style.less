@@ -2,46 +2,55 @@
 
 @import "../bootstrap/less/bootstrap.less";
 
+@text-highlight-color: rgb(59, 133, 202);
+
 .password-display {
+	&:extend(.well, .well-sm);
 	font-size: 1.5em;
-	background: #eee;
 	text-align:center;
-	padding-top: 0.3em;
-}
-.password-display .dummy {
-	padding-top: 0.3em;
+	padding:1px;
+	width:auto;
+	display:block-inline;
+	margin-left:1em;
 
-}
+	.dummy {
+		padding-top: 0.1em;
+		&.selected {
+			color: white;
+			background: @text-highlight-color;
+		}
+	}
 
-.password-display .dummy.selected {
-	color: white;
-	background: rgb(59, 133, 202);
-}
-
-.password-display .secret {
-	display:block;
-	height:1px;
-	overflow:hidden;
-	width:1px;
-	color:transparent;
+	.secret {
+		display:block;
+		height:1px;
+		overflow:hidden;
+		width:1px;
+		color:transparent;
+	}
 }
 
 .domain-info {
+	strong {
+		&:extend(.text-muted);
+	}
+	&:extend(.panel-info all);
+	&.unknown {
+		&:extend(.panel-warning all);
+	}
+	h3 {
+		&:extend(.panel-title all);
+	}
 }
 
 .db-editor {
 	margin-top:2em;
-}
-
-.db-editor textarea {
-	width:100%;
-	margin:0;
-	padding:0;
-	border:0;
-	background: #111118;
-	color: #bbb;
-}
-
-.unknown {
-	border: 3px solid red;
+	textarea {
+		width:100%;
+		margin:0;
+		padding:0;
+		border:0;
+		background: #111118;
+		color: #bbb;
+	}
 }
