@@ -145,19 +145,22 @@ let password_form () : #Dom_html.element Ui.widget =
 				);
 				let which = Unsafe.get e "which" in
 				let select_current () =
+					let selected = ref false in
 					S.value suggestion_idx |> Option.may (fun idx ->
 						log#info "%d" idx;
 						S.value _domain_suggestions |> Option.may (fun l ->
 							try (
-								set_domain @@ (List.nth l idx)
+								set_domain @@ (List.nth l idx);
+								selected := true
 							) with Not_found -> ()
 						)
-					)
+					);
+					!selected
 				in
 
 				begin match which with
-					| 9 -> select_current ()
-					| 13 -> stop e; select_current ()
+					| 9 -> ignore (select_current ())
+					| 13 -> if (select_current ()) then stop e;
 					| _ -> ()
 				end;
 				Console.console##log(e);
@@ -217,11 +220,25 @@ let password_form () : #Dom_html.element Ui.widget =
 		~get:(fun d -> d.suffix |> default_empty_string)
 		~set:(fun v -> {S.value saved_domain_info with suffix=non_empty_string v}) in
 
-	let password_display = current_password |> optional_signal_content (fun p ->
+	let show_plaintext_password, set_show_plaintext_password = S.create false in
+	let plaintext_toggle_mech = (fun elem ->
+		Lwt_js_events.clicks ~use_capture:true elem (fun e _ ->
+			Ui.stop e;
+			set_show_plaintext_password (not @@ S.value show_plaintext_password);
+			return_unit
+		)
+	) in
+
+	let password_display = current_password |> optional_signal_content (fun (p:string) ->
 		let length = String.length p in
 		let is_selected, set_is_selected = S.create true in
+		let dummy_text = (String.make length '*') in
 		let dummy = span ~cls:"dummy"
-			~text:(String.make length '*') ()
+			~children: [
+				frag (Ui.text_stream (show_plaintext_password |>
+				S.map (fun plain -> if plain then p else dummy_text)))
+			]
+			()
 		in
 		dummy#class_s "selected" is_selected;
 
@@ -256,6 +273,9 @@ let password_form () : #Dom_html.element Ui.widget =
 			~children:[
 				child span ~cls:"secret" ~text:p ();
 				frag dummy;
+				child span ~cls:"toggle" ~mechanism:plaintext_toggle_mech ~children:[
+					child span ~cls:"glyphicon glyphicon-eye-open" ();
+				] ();
 			]() in
 
 		(container:>Dom.node Ui.widget_t)

@@ -29,6 +29,28 @@
 		width:1px;
 		color:transparent;
 	}
+
+	padding-right: 2em;
+	position:relative;
+
+	.toggle {
+		position:absolute;
+		top:0;
+		right:0;
+		bottom:0;
+		width: 2em;
+		background: darken(@well-bg, 4%);
+		border-left: 1px solid darken(@well-bg, 15%);
+
+		background: @input-bg;
+		color: mix(@input-color, @input-bg, 80%);
+		border-left: 1px solid @well-border;
+		border-top-right-radius: 3px;
+		border-bottom-right-radius: 3px;
+		cursor: pointer;
+		padding: 4px 4px 0 4px;
+		font-size: 0.9em;
+	}
 }
 
 .domain-info {
