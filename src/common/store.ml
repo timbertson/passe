@@ -34,8 +34,17 @@ let default_digest = MD5 (* TODO: put in DB *)
 type domain = {
 	domain: string;
 	hint: string option;
+	suffix: string option;
 	length: int;
 	digest: digest;
+}
+
+let default domain = {
+	domain = domain;
+	hint = None;
+	suffix = None;
+	length = default_length;
+	digest = default_digest;
 }
 
 type alias = {
@@ -55,6 +64,7 @@ let record_for key record = key = (id_of record)
 
 type t = record list
 let empty:t = []
+let eq:record -> record -> bool = fun a b -> a = b
 
 let get domain db : record option =
 	try
@@ -111,6 +121,7 @@ module Format = struct
 	let string_key k = { key=k; getter=mandatory get_string; setter=set_string }
 
 	let hint = {key="hint"; getter=optional get_string; setter=optional json_string}
+	let suffix = {key="suffix"; getter=optional get_string; setter=optional json_string}
 	let length = {key="length"; getter=mandatory get_int; setter=set_int }
 	let digest = { key="digest";
 		getter = mandatory (fun d -> get_string d |> digest_of_string);
@@ -155,6 +166,7 @@ let json_of_record r : (string * J.json) =
 	| Domain d -> (d.domain, build_assoc [
 		store_field record_type `Domain;
 		store_field hint d.hint;
+		store_field suffix d.suffix;
 		store_field length d.length;
 		store_field digest d.digest
 	])
@@ -163,6 +175,8 @@ let to_json : t -> J.json = fun db ->
 	`Assoc (db |> List.map json_of_record)
 
 let to_json_string db = J.to_string (to_json db)
+
+let json_string_of_domain d = to_json_string [Domain d]
 
 let parse_record : (string * J.json) -> record = fun (id, r) ->
 	let open Format in
@@ -174,6 +188,7 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 				| `Domain -> Domain {
 					domain=id;
 					hint = parse_field hint pairs;
+					suffix = parse_field suffix pairs;
 					length = parse_field length pairs;
 					digest = parse_field digest pairs
 				}
@@ -195,3 +210,6 @@ let parse : string -> (string, t) either = fun str ->
 		| InvalidFormat str -> Left str
 		| Yojson.Json_error str -> Left str
 
+let update db record =
+	let key = id_of record in
+	record :: (db |> List.filter (fun r -> id_of r <> key))

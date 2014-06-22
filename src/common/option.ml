@@ -19,3 +19,5 @@ let print_str sub_printer () v = match v with
 let is_some = function Some _ -> true | None -> false
 let is_none = function Some _ -> false | None -> true
 let get default = function Some x -> x | None -> default
+
+let non_empty ~zero v = if v = zero then None else Some v

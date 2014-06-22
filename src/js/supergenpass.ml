@@ -7,6 +7,8 @@ module J = Yojson.Safe
 
 let s = Js.string
 let log = Logging.get_logger "main"
+let non_empty_string : string -> string option = Option.non_empty ~zero:""
+let default_empty_string : string option -> string = Option.default ""
 
 exception Fail
 
@@ -14,16 +16,11 @@ let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
 	)
 
-let hold duration =
-	let setTimeout = Js.Unsafe.variable "setTimeout" in
-
-	let condition = Lwt_condition.create () in
-	let () = Js.Unsafe.fun_call setTimeout [|
-		Unsafe.inject (Lwt_condition.signal condition);
-		Unsafe.inject duration
-	|] in
-	lwt () = Lwt_condition.wait condition in
-	Lwt.return_unit
+let editable_signal source =
+	let derived, update = S.create (S.value source) in
+	let effect = source |> S.map update in
+	ignore @@ S.retain derived (fun () -> ignore effect; ());
+	(derived, update)
 
 let local_db = new Local_storage.record "db"
 let db_signal =
@@ -94,20 +91,33 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
-	let domain = Ui.input_signal ~events:Lwt_js_events.inputs domain_input in
+	let domain = Ui.signal_of_input ~events:Lwt_js_events.inputs domain_input in
+	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
 	let empty_domain = domain |> S.map (fun d -> d = "") in
-	let domain_record = S.l2 (fun db dom -> log#info "looking up!"; Store.lookup dom db) db_signal domain in
-	let domain_info = S.l2 (fun domain text ->
+	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_signal domain in
+	let saved_domain_info = S.l2 (fun domain text ->
 		match domain with
 			| Some d -> d
-			| None -> Store.({
-				domain=text;
-				hint=None;
-				length= 10;
-				digest = MD5;
-			})
+			| None -> Store.default text
 	) domain_record domain in
 	let domain_is_unknown = (S.map Option.is_none domain_record) in
+
+	let domain_info, update_domain_info = editable_signal saved_domain_info in
+	let update_domain_info = fun v ->
+		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
+
+	let open Store in
+	let hint_input = input_of_signal
+		~update:(fun v -> update_domain_info ({S.value saved_domain_info with hint=non_empty_string v}))
+		(saved_domain_info |> S.map (fun d -> d.hint |> default_empty_string)) in
+
+	let length_input = input_of_signal
+		~update:(fun v -> update_domain_info ({S.value saved_domain_info with length=int_of_string v}))
+		(saved_domain_info |> S.map (fun d -> d.length |> string_of_int)) in
+
+	let suffix_input = input_of_signal
+		~update:(fun v -> update_domain_info ({S.value saved_domain_info with suffix=non_empty_string v}))
+		(saved_domain_info |> S.map (fun d -> d.suffix |> default_empty_string)) in
 
 	let password_display = current_password |> optional_signal_content (fun p ->
 		let length = String.length p in
@@ -128,7 +138,6 @@ let password_form () : #Dom_html.element Ui.widget =
 				let update_highlight () =
 					set_is_selected @@ Selection.is_fully_selected ~length child;
 				in
-
 
 				select ();
 
@@ -154,42 +163,39 @@ let password_form () : #Dom_html.element Ui.widget =
 		(container:>Dom.node Ui.widget_t)
 	) |> Ui.stream in
 
-
-	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
-		child div ~cls:"form-group" ~children:[
-			child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
-			child div ~cls:"col-xs-10" ~children:[
-				frag domain_input;
-			] ();
-		] ();
-		child div ~cls:"form-group" ~children:[
-			child label ~cls:"col-xs-2 control-label" ~text:"Password" ();
-			child div ~cls:"col-xs-10" ~children:[
-				frag password_input;
-			] ();
-		] ();
-		child div ~cls:"form-group" ~children:[
-			child div ~cls:"col-xs-offset-2 col-xs-2" ~children:[
-				child input ~cls:"btn btn-primary" ~attrs:[("type", "submit");("value","Generate")] ();
-			] ();
-			child div ~cls:"col-xs-8" ~children:[
-				frag password_display;
-			] ();
-		] ();
-	] () in
-
 	let domain_panel = Ui.div ~cls:"domain-info panel" () in
 	let () =
 		let open Store in
 		let open Ui in
 		domain_panel#class_s "unknown" domain_is_unknown;
 		domain_panel#class_s "hidden" empty_domain;
+
+		let save_button = input ~attrs:[("type","button");("value","save")] () in
+		let unchanged_domain = S.l2 (fun db_dom domain_info ->
+			match db_dom with
+				| Some db -> Store.eq (Domain db) (Domain domain_info)
+				| None -> false
+		) domain_record domain_info in
+		save_button#class_s "hidden" unchanged_domain;
+		save_button#mechanism (fun elem ->
+			Lwt_js_events.clicks elem (fun event _ ->
+				Ui.stop event;
+				let current_db = S.value db_signal in
+				let new_db = Store.update current_db (Domain (S.value domain_info)) in
+				log#info "Saving new DB: %s" (Store.to_json_string new_db);
+				local_db#save (Store.to_json new_db);
+				Lwt.return_unit
+			)
+		);
+
 		domain_panel#append_all [
 			child div ~cls:"panel-heading" ~children:[
 				child h3 ~children: [
 					(domain_is_unknown
 						|> S.map (fun unknown -> if unknown then "New domain:" else "Saved domain:")
 						|> Ui.text_stream);
+
+					frag save_button;
 				] ();
 			] ();
 			child div ~cls:"panel-body" ~children: [
@@ -198,19 +204,78 @@ let password_form () : #Dom_html.element Ui.widget =
 					(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
 				] ();
 
-				child div ~children:[
-					child strong ~cls: "length" ~text: "Length: " ();
-					(domain_info |> S.map (fun i -> string_of_int i.length) |> Ui.text_stream);
+				child div ~cls:"inline" ~children:[
+					child strong ~text: "Hint: " ();
+					child span ~children:[
+						frag hint_input;
+					] ();
 				] ();
+
+				child div ~cls:"inline" ~children:[
+					child strong ~text: "Length: " ();
+					child span ~children:[
+						frag length_input;
+					] ();
+				] ();
+
+				child div ~cls:"inline" ~children:[
+					child strong ~text: "Suffix: " ();
+					child span ~children:[
+						frag suffix_input;
+					] ();
+				] ();
+
 			] ();
 		];
 	in
+
+
+
+	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
+		child div ~cls:"row" ~children:[
+			child div ~cls:"col-sm-7" ~children:[
+				child div ~cls:"col-xs-offset-2" ~children:[
+					child h1 ~text:"SuperGenPass" ();
+				] ();
+			] ();
+		] ();
+
+		child div ~cls:"row" ~children:[
+			child div ~cls:"col-sm-7" ~children:[
+				child div ~cls:"form-group" ~children:[
+					child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
+					child div ~cls:"col-xs-10" ~children:[
+						frag domain_input;
+					] ();
+				] ();
+				child div ~cls:"form-group" ~children:[
+					child label ~cls:"col-xs-2 control-label" ~text:"Password" ();
+					child div ~cls:"col-xs-10" ~children:[
+						frag password_input;
+					] ();
+				] ();
+
+				child div ~cls:"form-group" ~children:[
+					child div ~cls:"col-xs-offset-2 col-xs-2" ~children:[
+						child input ~cls:"btn btn-primary" ~attrs:[("type", "submit");("value","Generate")] ();
+					] ();
+					child div ~cls:"col-xs-8" ~children:[
+						frag password_display;
+					] ();
+				] ();
+			] ();
+
+			child div ~cls:"col-sm-5" ~children:[
+				frag domain_panel;
+			] ();
+		] ();
+	] () in
+
 
 	form#mechanism (fun elem ->
 		Lwt_js_events.submits elem (fun event _ ->
 			Ui.stop event;
 			log#info "form submitted";
-			let field_values = Form.get_form_contents elem |> StringMap.from_pairs in
 			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList
 				|> List.iter (fun elem ->
 						let input = CoerceTo.input(elem) |> non_null in
@@ -219,7 +284,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 			(* TODO: store & retrieve defaults in DB *)
 			let domain = S.value domain_info in
-			let password = StringMap.find "password" field_values in
+			let password = S.value master_password in
 			let password = Password.generate ~domain password in
 			log#warn "generated: %s" password;
 			set_current_password (Some password);
@@ -227,28 +292,12 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt.return_unit
 		)
 	);
-	div ~children:[
-		child div ~cls:"row" ~children:[
-			child div ~cls:"col-sm-8" ~children:[
-				child h1 ~text:"SuperGenPass" ();
-			] ();
-		] ();
-
-		child div ~cls:"row" ~children:[
-			child div ~cls:"col-sm-8" ~children:[
-				frag form;
-			] ();
-			child div ~cls:"col-sm-4" ~children:[
-				frag domain_panel;
-			] ();
-		] ();
-	] ()
+	form
 
 let show_form (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	log#info "Hello container!";
-	(* Ui.withContent container form (fun _ -> *)
 	let all_content = Ui.div () in
 	all_content#append @@ password_form ();
 	all_content#append @@ db_editor ();

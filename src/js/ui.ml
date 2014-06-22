@@ -264,7 +264,42 @@ let stream s =
 let node_signal_of_string str_sig : (Dom.node leaf_widget) signal = str_sig |> S.map text
 let text_stream s : fragment_t = stream (node_signal_of_string s)
 
-let input_signal ?(events=Lwt_js_events.inputs) widget =
+let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
+	let clear_error elem = elem##classList##remove(Js.string"error") in
+	let set_error elem = elem##classList##add(Js.string"error") in
+
+	let cons = match cons with
+		| Some c -> c
+		| None -> (fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text"))
+	in
+	let widget = element cons in
+
+	let update_loop elem = match update with
+		| None -> Lwt.return_unit
+		| Some update -> events elem (fun event _ ->
+			log#info "responding to input change (%s)" (elem##value |> Js.to_string);
+			clear_error elem;
+			begin
+				try update (elem##value |> Js.to_string)
+				with err -> set_error elem
+			end;
+			Lwt.return_unit
+		)
+	in
+
+	let watch_loop elem =
+		effectful_stream_mechanism (source |> S.map (fun v ->
+			log#info "responding to signal change (%s)" v;
+			clear_error elem;
+			elem##value <- (Js.string v)
+		))
+	in
+
+	widget#mechanism (fun elem -> watch_loop elem <&> update_loop elem);
+	widget
+
+
+let signal_of_input ?(events=Lwt_js_events.inputs) widget =
 	let signal, update = S.create "" in
 	let update elem =
 		log#info "Updating text value: %s" (elem##value |> Js.to_string);

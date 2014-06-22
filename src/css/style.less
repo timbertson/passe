@@ -1,6 +1,7 @@
 /* vim: set syntax=css: */
 
 @import "../bootstrap/less/bootstrap.less";
+@import "../bootstrap/less/mixins.less";
 
 @text-highlight-color: rgb(59, 133, 202);
 
@@ -40,7 +41,46 @@
 	}
 	h3 {
 		&:extend(.panel-title all);
+		input {
+			float:right;
+			color: @input-color;
+			border: 1px solid @input-border;
+			border-radius: 5px;
+			background-color: @input-bg;
+			&:hover {
+				background-color: darken(@input-bg, 5%);
+			}
+		}
 	}
+
+	width:100%;
+	display:table;
+
+	.inline {
+		span {
+			display:table-cell;
+			overflow:hidden;
+		}
+		strong {
+			display:table-cell;
+			padding-right: 4px;
+		}
+		input {
+		
+			padding: 0 4px;
+			.form-control-focus();
+			width:100%;
+			border-color: transparent;
+			background:transparent;
+			border-radius: 5px;
+			border: 1px solid transparent;
+
+			&.error {
+				&:extend(.has-error .form-control);
+			}
+		}
+	}
+
 }
 
 .db-editor {

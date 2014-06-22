@@ -40,6 +40,11 @@ let generate ~domain:domain password =
 	let trim p =
 		String.sub p 0 domain.length in
 
+	let password = match domain.suffix with
+		| Some suff -> password^suff
+		| None -> password
+	in
+	log#debug "master password: %s" password;
 	let generated = (password^":"^domain.domain)
 		|> foldi 10 iter
 		|> fold_until (valid_password % trim) iter
