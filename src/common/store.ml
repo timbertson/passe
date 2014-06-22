@@ -1,4 +1,5 @@
 open Common
+open Re
 let log = Logging.get_logger "store"
 exception InvalidFormat of string
 let raise_invalid_format fmt = Printf.ksprintf (fun err -> raise (InvalidFormat err)) fmt
@@ -209,6 +210,12 @@ let parse : string -> (string, t) either = fun str ->
 	with
 		| InvalidFormat str -> Left str
 		| Yojson.Json_error str -> Left str
+
+let keys_like db query =
+	let q_re = Str.regexp_string query in
+	db |> List.filter (fun record ->
+		Str.contains q_re (id_of record)
+	) |> List.map id_of
 
 let update db record =
 	let key = id_of record in

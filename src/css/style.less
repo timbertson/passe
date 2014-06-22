@@ -94,3 +94,42 @@
 		color: #bbb;
 	}
 }
+
+.form-group {
+	position:relative;
+	.form-control.suggestions {
+		border-bottom-right-radius: 0;
+		border-bottom-left-radius: 0;
+		border-bottom-width: 0;
+		outline: none;
+		box-shadow:none;
+	}
+	ul.suggestions {
+		position:absolute;
+		left:0;
+		right:0;
+		margin:0 15px;
+		padding: 0;
+		// border: 2px solid red;
+		// font-size: 1.2em;
+		line-height: 2em;
+		background: darken(@input-bg, 5%);
+		list-style-type: none;
+		z-index:99;
+		border-radius: 5px;
+		border-radius-top:0;
+		border-top-left-radius:0;
+		border-top-right-radius:0;
+		border: 1px solid @input-border-focus;
+		border-top-color: darken(@input-bg, 10%);
+
+		li {
+			padding: 0 15px;
+			&.selected {
+				color:@input-bg;
+				font-weight:bold;
+				background: @brand-primary;
+			}
+		}
+	}
+}

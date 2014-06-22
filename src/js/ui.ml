@@ -1,6 +1,6 @@
 open Common
 open Lwt
-open Lwt_react
+open React
 let log = Logging.get_logger "ui"
 
 (* FIXME: only required because raised exceptions don't seem to propagate properly
@@ -167,7 +167,7 @@ let create_text_node t _ =
 	(elem:>Dom.node Js.t)
 
 let text t : Dom.node leaf_widget = new leaf_widget (create_text_node t)
-let none doc : Dom.node leaf_widget = new leaf_widget create_blank_node
+let none () : Dom.node leaf_widget = new leaf_widget create_blank_node
 
 type ('a,'b) listy = (('a * 'b) list)
 type 'a children = #fragment_t list as 'a
@@ -206,6 +206,8 @@ let strong = wrap Dom_html.createStrong
 let h1 = wrap Dom_html.createH1
 let h2 = wrap Dom_html.createH2
 let h3 = wrap Dom_html.createH3
+let ul = wrap Dom_html.createUl
+let li = wrap Dom_html.createLi
 let input = wrap Dom_html.createInput
 
 let stop event =
@@ -270,10 +272,6 @@ let editable_of_signal ?(events=Lwt_js_events.inputs) ~(cons:(unit -> 't editabl
 	let clear_error elem = elem##classList##remove(Js.string"error") in
 	let set_error elem = elem##classList##add(Js.string"error") in
 
-	(* let cons = match cons with *)
-	(* 	| Some c -> c *)
-	(* 	| None -> (fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text")) *)
-	(* in *)
 	let widget:<value:Js.js_string Js.t Js.prop; ..> widget = element cons in
 
 	let update_loop elem = match update with

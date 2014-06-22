@@ -2,7 +2,7 @@ open Lwt
 open Js
 open Dom_html
 open Common
-open Lwt_react
+open React
 module J = Yojson.Safe
 
 let s = Js.string
@@ -32,12 +32,14 @@ let db_signal =
 
 let optional_signal_content : ('a -> #Dom.node Ui.widget_t) -> 'a option React.signal -> Dom.node Ui.widget_t signal =
 	fun f signal ->
-		let empty = Ui.none document in
+		let empty = Ui.none () in
 		signal |> S.map (fun value -> match value with
 			| Some value -> ((f value):>#Dom.node Ui.widget_t)
 			| None -> (empty:>Dom.node Ui.widget_t)
 		)
 
+let is_within min max i = i >= min && i <= max
+let within min max i = Pervasives.min (Pervasives.max i min) max
 
 let db_editor () : #Dom_html.element Ui.widget =
 	let contents, update_contents = editable_signal (db_signal |> S.map (fun db ->
@@ -79,10 +81,10 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt.return_unit
 		) in
 
+	let domain_is_active, set_domain_is_active = S.create false in
 	let domain_input =   element (fun () -> createInput document ~_type:(s"text")     ~name:(s"domain")) in
 	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
 	domain_input#attr "class" "form-control";
-	domain_input#mechanism (fun elem -> elem##focus(); invalidate_password elem);
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
@@ -96,6 +98,72 @@ let password_form () : #Dom_html.element Ui.widget =
 			| None -> Store.default text
 	) domain_record domain in
 	let domain_is_unknown = (S.map Option.is_none domain_record) in
+
+	let _domain_suggestions = S.l2 (fun db query ->
+		if query = "" then None else (
+			Store.keys_like db query
+			|> List.filter ((<>) query)
+			|> Option.non_empty ~zero:[]
+		)
+	) db_signal domain in
+	let domain_suggestions = S.l2 (fun active suggestions ->
+		if active
+		then suggestions
+		else None
+	) domain_is_active _domain_suggestions in
+	let suggestion_idx, set_suggestion_idx = S.create None in
+	let select_diff d =
+		let max_len:int = match S.value _domain_suggestions with
+			| None -> 0
+			| Some l -> (List.length l) - 1
+		in
+		let desired:int = match S.value suggestion_idx with
+			| None -> if d > 0 then 0 else -1
+			| Some i -> (max (-1) i) + d
+		in
+		set_suggestion_idx (Some (min desired max_len));
+		log#info "new: %d" (S.value suggestion_idx |> Option.default 9999);
+	in
+	
+	domain_input#class_s "suggestions" (S.map Option.is_some domain_suggestions);
+	domain_input#mechanism (fun elem -> elem##focus();
+		set_domain_is_active true;
+		Lwt.join [
+			invalidate_password elem;
+			Lwt_js_events.focuses elem (fun _ _ -> set_domain_is_active true; return_unit);
+			Lwt_js_events.blurs   elem (fun _ _ -> set_domain_is_active false; return_unit);
+			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
+			Lwt_js_events.keydowns elem (fun e _ ->
+				log#info "keydowns!";
+				Optdef.iter (e##keyIdentifier) (fun ident ->
+					match Js.to_string ident with
+					| "Up" -> select_diff (-1); stop e
+					| "Down" -> select_diff 1; stop e
+					| _ -> ()
+				);
+				let which = Unsafe.get e "which" in
+				let select_current () =
+					S.value suggestion_idx |> Option.may (fun idx ->
+						log#info "%d" idx;
+						S.value _domain_suggestions |> Option.may (fun l ->
+							(* XXX need UI to update here - editable domain signal? *)
+							try (
+								elem##value <- Js.string (List.nth l idx)
+							) with Not_found -> ()
+						)
+					)
+				in
+
+				begin match which with
+					| 9 -> select_current ()
+					| 13 -> stop e; select_current ()
+					| _ -> ()
+				end;
+				Console.console##log(e);
+				return_unit
+			);
+		]
+	);
 
 	let domain_info, update_domain_info = editable_signal saved_domain_info in
 	let update_domain_info = fun v ->
@@ -245,6 +313,19 @@ let password_form () : #Dom_html.element Ui.widget =
 					child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
 					child div ~cls:"col-xs-10" ~children:[
 						frag domain_input;
+						Ui.stream (
+							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
+							|> optional_signal_content (fun (suggestions, idx) ->
+								let idx = Option.default (-1) idx in
+								((ul ~cls:"suggestions" ~children: (
+									suggestions |> List.mapi (fun i text ->
+										let w = li ~text () in
+										if i = idx then w#attr "class" "selected";
+										frag w
+									)
+								) ()):>Dom.node widget_t);
+							)
+						);
 					] ();
 				] ();
 				child div ~cls:"form-group" ~children:[

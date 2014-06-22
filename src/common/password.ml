@@ -1,5 +1,5 @@
 open Store
-open Re.Str
+open Re
 
 let rec foldi i f acc =
 	if i <= 0 then acc else foldi (pred i) f (f acc)
@@ -15,12 +15,12 @@ let sgp_alphabet = [|
 	'w';'x';'y';'z';'0';'1';'2';'3';'4';'5';'6';'7';'8';'9';'9';'8'
 |]
 
-let upper = regexp "[A-Z]"
-let digit = regexp "[0-9]"
-let leading_lower = regexp "^[a-z]"
+let upper = Str.regexp "[A-Z]"
+let digit = Str.regexp "[0-9]"
+let leading_lower = Str.regexp "^[a-z]"
 
 let valid_password p =
-	let has r = string_match r p 0 in
+	let has r = Str.contains r p in
 	has leading_lower && has upper && has digit
 
 let (%) f g = (fun x -> f (g x))
