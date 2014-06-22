@@ -200,7 +200,7 @@ let parse_record : (string * J.json) -> record = fun (id, r) ->
 let parse_json json : t =
 	match json with
 		| `Assoc (records:(string * J.json) list) ->
-				(records |> List.map parse_record)
+				(records |> List.filter (fun (k,v) -> k <> "") |> List.map parse_record)
 		| _ -> raise (InvalidFormat "Expected toplevel object")
 
 let parse : string -> (string, t) either = fun str ->
@@ -212,4 +212,5 @@ let parse : string -> (string, t) either = fun str ->
 
 let update db record =
 	let key = id_of record in
-	record :: (db |> List.filter (fun r -> id_of r <> key))
+	if key = "" then db else
+		record :: (db |> List.filter (fun r -> id_of r <> key))

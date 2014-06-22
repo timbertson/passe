@@ -40,39 +40,34 @@ let optional_signal_content : ('a -> #Dom.node Ui.widget_t) -> 'a option React.s
 
 
 let db_editor () : #Dom_html.element Ui.widget =
-	let textarea = Ui.textArea () in
+	let contents, update_contents = editable_signal (db_signal |> S.map (fun db ->
+		db |> Store.to_json_string
+	)) in
+
 	let error_text, set_error_text = S.create None in
+	let textarea = Ui.textarea_of_signal
+		~events:Lwt_js_events.changes
+		~update:(fun contents ->
+			log#info "got input text: %s" contents;
+			match Store.parse contents with
+				| Left err ->
+					set_error_text (Some err)
+				| Right db ->
+					set_error_text None;
+					log#info "got db: %s" (Store.to_json_string db);
+					local_db#save (Store.to_json db)
+		) contents in
 
 	textarea#attr "rows" "10";
 	textarea#attr "cols" "60";
-	textarea#mechanism (fun elem ->
-		log#info "Mechanism is running!";
-		local_db#get_str |> Option.may (fun s -> elem##value <- s);
-		Lwt_js_events.buffered_loop Lwt_js_events.input elem (fun evt _ ->
-			let contents = elem##value |> Js.to_string in
-			log#info "got input text: %s" contents;
-			begin match Store.parse contents with
-				| Left err ->
-						set_error_text (Some err)
-				| Right db ->
-						set_error_text None;
-						log#info "got db: %s" (Store.to_json_string db);
-						local_db#save (Store.to_json db)
-			end;
-			Lwt.return_unit
-		)
-	);
 	let error_dom_stream = error_text |> optional_signal_content (fun err ->
-		let div = Ui.div () in
-		div#attr "class" "error";
-		div#append @@ Ui.text err;
-		(div:>Dom.node Ui.widget_t) (* XXX remove cast *)
+		((Ui.div ~cls:"error" ~text:err ()):>Dom.node Ui.widget_t)
 	) in
 	let error_elem = Ui.stream error_dom_stream in
-	let result = Ui.div ~cls:"db-editor" () in
-	result#append error_elem;
-	result#append textarea;
-	result
+	Ui.div ~cls:"db-editor" ~children:[
+		Ui.frag error_elem;
+		Ui.frag textarea;
+	] ()
 
 let password_form () : #Dom_html.element Ui.widget =
 	let open Ui in
@@ -107,15 +102,15 @@ let password_form () : #Dom_html.element Ui.widget =
 		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
 
 	let open Store in
-	let hint_input = input_of_signal
+	let hint_input = input_of_signal ~cons:(fun _ -> createInput document)
 		~update:(fun v -> update_domain_info ({S.value saved_domain_info with hint=non_empty_string v}))
 		(saved_domain_info |> S.map (fun d -> d.hint |> default_empty_string)) in
 
-	let length_input = input_of_signal
+	let length_input = input_of_signal ~cons:(fun _ -> createInput document)
 		~update:(fun v -> update_domain_info ({S.value saved_domain_info with length=int_of_string v}))
 		(saved_domain_info |> S.map (fun d -> d.length |> string_of_int)) in
 
-	let suffix_input = input_of_signal
+	let suffix_input = input_of_signal ~cons:(fun _ -> createInput document)
 		~update:(fun v -> update_domain_info ({S.value saved_domain_info with suffix=non_empty_string v}))
 		(saved_domain_info |> S.map (fun d -> d.suffix |> default_empty_string)) in
 

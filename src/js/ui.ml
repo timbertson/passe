@@ -264,15 +264,17 @@ let stream s =
 let node_signal_of_string str_sig : (Dom.node leaf_widget) signal = str_sig |> S.map text
 let text_stream s : fragment_t = stream (node_signal_of_string s)
 
-let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
+type 'a editable = (<value:Js.js_string Js.t Js.prop; ..> as 'a) Js.t
+
+let editable_of_signal ?(events=Lwt_js_events.inputs) ~(cons:(unit -> 't editable) ) ?update source =
 	let clear_error elem = elem##classList##remove(Js.string"error") in
 	let set_error elem = elem##classList##add(Js.string"error") in
 
-	let cons = match cons with
-		| Some c -> c
-		| None -> (fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text"))
-	in
-	let widget = element cons in
+	(* let cons = match cons with *)
+	(* 	| Some c -> c *)
+	(* 	| None -> (fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text")) *)
+	(* in *)
+	let widget:<value:Js.js_string Js.t Js.prop; ..> widget = element cons in
 
 	let update_loop elem = match update with
 		| None -> Lwt.return_unit
@@ -298,6 +300,17 @@ let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
 	widget#mechanism (fun elem -> watch_loop elem <&> update_loop elem);
 	widget
 
+let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
+	let cons = match cons with Some c -> c | None -> (
+		fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text")
+	) in
+	editable_of_signal ~events ~cons ?update source
+
+let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons  ?update source =
+	let cons = match cons with Some c -> c | None -> (
+		fun () -> Dom_html.createTextarea Dom_html.document
+	) in
+	editable_of_signal ~events ~cons ?update source
 
 let signal_of_input ?(events=Lwt_js_events.inputs) widget =
 	let signal, update = S.create "" in
