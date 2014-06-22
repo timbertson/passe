@@ -211,11 +211,17 @@ let parse : string -> (string, t) either = fun str ->
 		| InvalidFormat str -> Left str
 		| Yojson.Json_error str -> Left str
 
+let rec take n l =
+	if n = 0 then []
+	else match l with
+		| x::xs -> x :: (take (n-1) xs)
+		| [] -> []
+
 let keys_like db query =
 	let q_re = Str.regexp_string query in
 	db |> List.filter (fun record ->
 		Str.contains q_re (id_of record)
-	) |> List.map id_of
+	) |> List.map id_of |> List.sort (compare) |> take 5
 
 let update db record =
 	let key = id_of record in
