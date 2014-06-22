@@ -102,17 +102,22 @@ let password_form () : #Dom_html.element Ui.widget =
 		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
 
 	let open Store in
-	let hint_input = input_of_signal ~cons:(fun _ -> createInput document)
-		~update:(fun v -> update_domain_info ({S.value saved_domain_info with hint=non_empty_string v}))
-		(saved_domain_info |> S.map (fun d -> d.hint |> default_empty_string)) in
+	let domain_info_editor ~get ~set = input_of_signal
+		~update:(fun v -> update_domain_info (set v))
+		(saved_domain_info |> S.map get)
+	in
+	
+	let hint_input = domain_info_editor 
+		~get:(fun d -> d.hint |> default_empty_string)
+		~set:(fun v -> {S.value saved_domain_info with hint=non_empty_string v}) in
 
-	let length_input = input_of_signal ~cons:(fun _ -> createInput document)
-		~update:(fun v -> update_domain_info ({S.value saved_domain_info with length=int_of_string v}))
-		(saved_domain_info |> S.map (fun d -> d.length |> string_of_int)) in
+	let length_input = domain_info_editor
+		~get:(fun d -> d.length |> string_of_int)
+		~set:(fun v -> {S.value saved_domain_info with length=int_of_string v}) in
 
-	let suffix_input = input_of_signal ~cons:(fun _ -> createInput document)
-		~update:(fun v -> update_domain_info ({S.value saved_domain_info with suffix=non_empty_string v}))
-		(saved_domain_info |> S.map (fun d -> d.suffix |> default_empty_string)) in
+	let suffix_input = domain_info_editor
+		~get:(fun d -> d.suffix |> default_empty_string)
+		~set:(fun v -> {S.value saved_domain_info with suffix=non_empty_string v}) in
 
 	let password_display = current_password |> optional_signal_content (fun p ->
 		let length = String.length p in
@@ -158,6 +163,12 @@ let password_form () : #Dom_html.element Ui.widget =
 		(container:>Dom.node Ui.widget_t)
 	) |> Ui.stream in
 
+	let unchanged_domain = S.l2 (fun db_dom domain_info ->
+		match db_dom with
+			| Some db -> Store.eq (Domain db) (Domain domain_info)
+			| None -> false
+	) domain_record domain_info in
+
 	let domain_panel = Ui.div ~cls:"domain-info panel" () in
 	let () =
 		let open Store in
@@ -166,11 +177,6 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_panel#class_s "hidden" empty_domain;
 
 		let save_button = input ~attrs:[("type","button");("value","save")] () in
-		let unchanged_domain = S.l2 (fun db_dom domain_info ->
-			match db_dom with
-				| Some db -> Store.eq (Domain db) (Domain domain_info)
-				| None -> false
-		) domain_record domain_info in
 		save_button#class_s "hidden" unchanged_domain;
 		save_button#mechanism (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
@@ -186,30 +192,28 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_panel#append_all [
 			child div ~cls:"panel-heading" ~children:[
 				child h3 ~children: [
-					(domain_is_unknown
-						|> S.map (fun unknown -> if unknown then "New domain:" else "Saved domain:")
-						|> Ui.text_stream);
+					(S.l3 (fun domain unknown unchanged ->
+						if unknown || unchanged
+							then domain
+							else domain^" *")
+						domain domain_is_unknown unchanged_domain
+					) |> Ui.text_stream;
 
 					frag save_button;
 				] ();
 			] ();
 			child div ~cls:"panel-body" ~children: [
-				child div ~children:[
-					child strong ~cls: "name" ~text: "Domain: " ();
-					(domain_info |> S.map (fun i -> i.domain) |> Ui.text_stream);
+				child div ~cls:"inline" ~children:[
+					child strong ~text: "Length: " ();
+					child span ~children:[
+						frag length_input;
+					] ();
 				] ();
 
 				child div ~cls:"inline" ~children:[
 					child strong ~text: "Hint: " ();
 					child span ~children:[
 						frag hint_input;
-					] ();
-				] ();
-
-				child div ~cls:"inline" ~children:[
-					child strong ~text: "Length: " ();
-					child span ~children:[
-						frag length_input;
 					] ();
 				] ();
 
