@@ -80,15 +80,17 @@ let password_form () : #Dom_html.element Ui.widget =
 			set_current_password None;
 			Lwt.return_unit
 		) in
+	let domain, set_domain = S.create "" in
 
 	let domain_is_active, set_domain_is_active = S.create false in
-	let domain_input =   element (fun () -> createInput document ~_type:(s"text")     ~name:(s"domain")) in
+	let domain_input = Ui.input_of_signal ~update:set_domain domain in
+	domain_input#attr "name" "domain";
+
 	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
 	domain_input#attr "class" "form-control";
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
-	let domain = Ui.signal_of_input ~events:Lwt_js_events.inputs domain_input in
 	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
 	let empty_domain = domain |> S.map (fun d -> d = "") in
 	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_signal domain in
@@ -146,9 +148,8 @@ let password_form () : #Dom_html.element Ui.widget =
 					S.value suggestion_idx |> Option.may (fun idx ->
 						log#info "%d" idx;
 						S.value _domain_suggestions |> Option.may (fun l ->
-							(* XXX need UI to update here - editable domain signal? *)
 							try (
-								elem##value <- Js.string (List.nth l idx)
+								set_domain @@ (List.nth l idx)
 							) with Not_found -> ()
 						)
 					)
@@ -165,6 +166,35 @@ let password_form () : #Dom_html.element Ui.widget =
 		]
 	);
 
+	let make_suggestion_ui (suggestions, idx) =
+		let idx = Option.default (-1) idx in
+		let parent_mech = (fun elem ->
+			Lwt_js_events.mouseouts elem (fun _ _ ->
+				set_suggestion_idx None;
+				return_unit)
+		) in
+
+		let w = ul ~cls:"suggestions" ~children: (
+			suggestions |> List.mapi (fun i text ->
+				let w = li ~text ~mechanism:(fun elem ->
+					Lwt_js_events.mousedowns elem (fun click _ ->
+						Ui.stop click;
+						set_domain text;
+						return_unit
+					) <&>
+					Lwt_js_events.mouseovers elem (fun e _ ->
+						set_suggestion_idx (Some i);
+						return_unit
+					)
+				) () in
+				if i = idx then w#attr "class" "selected";
+				frag w
+			)
+		) ~mechanism:parent_mech ()
+		in
+		(w:>Dom.node widget_t);
+	in
+
 	let domain_info, update_domain_info = editable_signal saved_domain_info in
 	let update_domain_info = fun v ->
 		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
@@ -175,7 +205,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		(saved_domain_info |> S.map get)
 	in
 	
-	let hint_input = domain_info_editor 
+	let hint_input = domain_info_editor
 		~get:(fun d -> d.hint |> default_empty_string)
 		~set:(fun v -> {S.value saved_domain_info with hint=non_empty_string v}) in
 
@@ -315,16 +345,7 @@ let password_form () : #Dom_html.element Ui.widget =
 						frag domain_input;
 						Ui.stream (
 							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
-							|> optional_signal_content (fun (suggestions, idx) ->
-								let idx = Option.default (-1) idx in
-								((ul ~cls:"suggestions" ~children: (
-									suggestions |> List.mapi (fun i text ->
-										let w = li ~text () in
-										if i = idx then w#attr "class" "selected";
-										frag w
-									)
-								) ()):>Dom.node widget_t);
-							)
+							|> optional_signal_content make_suggestion_ui
 						);
 					] ();
 				] ();
