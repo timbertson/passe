@@ -1,2 +1,2 @@
-true: debug, package(yojson, camlp4.macro), syntax(camlp4o)
+true: debug, package(batteries,yojson, camlp4.macro), syntax(camlp4o)
 "common": include

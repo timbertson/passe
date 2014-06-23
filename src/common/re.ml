@@ -11,8 +11,8 @@ ELSE
 	module Str = struct
 		let regexp = Str.regexp
 		let regexp_string = Str.regexp_string
-		let string_match r s = Regexp.string_match r s 0
-		let contains r s = try Regexp.search_forward r s 0; true with Not_found -> false
+		let string_match r s = Str.string_match r s 0
+		let contains r s = try Str.search_forward r s 0; true with Not_found -> false
 	end
 END
 
