@@ -62,15 +62,9 @@ let request ?content_type ~meth ?data url =
 			(fun v -> Some (Js.to_string v))
 	in
 
-	(* List.iter (fun (n, v) -> req##setRequestHeader (Js.string n, Js.string v)) headers; *)
 	req##onreadystatechange <- Js.wrap_callback (fun _ ->
 		let open Xhr in
 		(match req##readyState with
-			(* IE doesn't have the same semantics for HEADERS_RECEIVED.
-			so we wait til LOADING to check headers. See:
-			http://msdn.microsoft.com/en-us/library/ms534361(v=vs.85).aspx *)
-			(* | HEADERS_RECEIVED when not Dom_html.onIE -> do_check_headers () *)
-			(* | LOADING when Dom_html.onIE -> do_check_headers () *)
 			| DONE ->
 				(* If we didn't catch a previous event, we check the header. *)
 				Lwt.wakeup w {
@@ -89,42 +83,6 @@ let request ?content_type ~meth ?data url =
 			| _ -> ())
 	);
 
-	(* begin match progress with *)
-	(* | Some progress -> *)
-	(* 	req##onprogress <- Dom.handler *)
-	(* 		(fun e -> *)
-	(* 			progress e##loaded e##total; *)
-	(* 			Js._true) *)
-	(* | None -> () *)
-	(* end; *)
-	(* Optdef.iter (req##upload) (fun upload -> *)
-	(* 	match upload_progress with *)
-	(* 	| Some upload_progress -> *)
-	(* 		upload##onprogress <- Dom.handler *)
-	(* 			(fun e -> *)
-	(* 				upload_progress e##loaded e##total; *)
-	(* 				Js._true) *)
-	(* 	| None -> () *)
-	(* ); *)
-
-(* 	(match form_arg with *)
-(* 		| None -> req##send (Js.null) *)
-(* 		| Some (`Fields l) -> *)
-(* 			 ignore ( *)
-(* match post_encode with *)
-(* | `Urlencode -> req##send(Js.some (string (encode_url !l)));return () *)
-(* | `Form_data boundary -> *)
-(* (encode_multipart boundary !l >|= *)
-(* (fun data -> *)
-(* let data = Js.some (data##join(Js.string "")) in *)
-(* (* Firefox specific interface: *)
-(* Chrome can use FormData: don't need this *) *)
-(* let req = (Js.Unsafe.coerce req:xmlHttpRequest_binary t) in *)
-(* if Optdef.test req##sendAsBinary_presence *)
-(* then req##sendAsBinary(data) *)
-(* else req##send(data)))) *)
-(* 		 | Some (`FormData f) -> req##send_formData(f)); *)
-
 	begin match data with
 		| Some d -> req##send(Js.some (Js.string d))
 		| None -> req##send(Js.null)
@@ -135,11 +93,6 @@ let request ?content_type ~meth ?data url =
 
 
 let post_json ~(data:J.json) url =
-	(* log#info "data has %d items!" (List.length data); *)
-	(* data |> List.iter (fun pair -> match pair with *)
-	(* 	| key, (`File _) -> log#error "FILE! %s" key *)
-	(* 	| key, (`String s) -> log#error "String: %s=%s" key (Js.to_string s) *)
-	(* ); *)
 	lwt frame = request
 		~content_type:json_content_type
 		~meth:"POST"
