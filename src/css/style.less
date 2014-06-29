@@ -5,6 +5,10 @@
 
 @text-highlight-color: rgb(59, 133, 202);
 
+.link {
+	cursor:pointer;
+}
+
 .password-display {
 	&:extend(.well, .well-sm);
 	font-size: 1.5em;
@@ -153,5 +157,24 @@
 				background: @brand-primary;
 			}
 		}
+	}
+}
+
+.account-status {
+	i.glyphicon {
+		padding-right: 0.2em;
+	}
+
+	.user {
+		font-weight: bold;
+	}
+
+	.offline {
+		float:right;
+	}
+
+	.retry {
+		float:right;
+		margin-left: 1em;
 	}
 }

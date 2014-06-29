@@ -209,6 +209,7 @@ let h3 = wrap Dom_html.createH3
 let ul = wrap Dom_html.createUl
 let li = wrap Dom_html.createLi
 let input = wrap Dom_html.createInput
+let i = wrap Dom_html.createI
 
 let stop event =
 	Dom.preventDefault event;
@@ -232,17 +233,19 @@ let withContent :
 				block elem
 			]
 		finally (
+			log#info "REMOVE";
 			Dom.removeChild parent (elem:>Dom.node Js.t);
 			Lwt.return_unit
 		)
 
-let stream_mechanism s = fun (placeholder:#Dom.node Js.t) ->
+let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js.t) ->
 	let new_widget = Lwt_condition.create () in
-	let effect : unit S.t = s |> S.map (Lwt_condition.signal new_widget) in
+	let effect : unit S.t = s |> S.map (fun w ->
+		Lwt_condition.signal new_widget (w:>Dom.node widget_t)) in
 	let p = (placeholder##parentNode) |> non_null in
 	let elem = ref placeholder in
 	try_lwt
-		let widget = ref @@ S.value s in
+		let widget = ref @@ ((S.value s):>Dom.node widget_t) in
 		while_lwt true do
 			withContent p ~before:placeholder !widget (fun new_elem ->
 				elem := new_elem;

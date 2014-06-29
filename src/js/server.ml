@@ -7,7 +7,7 @@ exception Unsupported_protocol
 
 type response =
 	| OK of J.json
-	| Failed of string
+	| Failed of string * (J.json option)
 
 (* let root = *)
 (* 	let open Url in *)
@@ -112,7 +112,7 @@ let post_json ~(data:J.json) url =
 			|> Option.bind (J.get_field "error")
 			|> Option.bind J.as_string
 			|> Option.default frame.Xhr.content in
-			Failed error_msg
+			Failed (error_msg, response)
 		)
 	)
 

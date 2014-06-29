@@ -36,6 +36,10 @@ let handler ~document_root ~data_root sock req body =
 		Server.respond_file ~fname:(document_path relpath) () in
 	let db_path_for user =
 		data_path (Filename.concat "user_db" (user ^ ".json")) in
+	let json_body = lazy (
+		lwt json = (Cohttp_lwt_body.to_string body) in
+		return (J.from_string json)
+	) in
 
 	match Cohttp.Request.meth req with
 		| `GET -> (
@@ -52,6 +56,7 @@ let handler ~document_root ~data_root sock req body =
 			match path with
 				| ["auth"; "login"] -> (
 						lwt body = (Cohttp_lwt_body.to_string body) in
+						log#debug "got body: %s" body;
 						let params = J.from_string body in
 						let user = params |> J.get_field "user" |> Option.bind J.as_string in
 						let password = params |> J.get_field "password" |> Option.bind J.as_string in
@@ -64,6 +69,12 @@ let handler ~document_root ~data_root sock req body =
 										()
 							| _ -> respond_json ~status:`Unauthorized ~body:(`Assoc [("error",`String "login failed")]) ()
 					)
+				| ["auth"; "validate"] -> (
+					lwt body = Lazy.force json_body in
+					lwt () = Lwt_unix.sleep 5.0 in
+					(* respond_json ~status:`OK ~body:(`Null) () *)
+					respond_json ~status:`Unauthorized ~body:(`Assoc [("reason", `String "nope")]) ()
+				)
 				| ["db"; user] ->
 						(* XXX authentication *)
 						log#debug "saving db for user: %s" user;

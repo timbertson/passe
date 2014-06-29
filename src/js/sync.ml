@@ -9,11 +9,14 @@ let log = Logging.get_logger "sync"
 
 let credentials = new Local_storage.record "credentials"
 let credentials_signal =
-	let c, update = S.create `Null in
+	let c, update = S.create (credentials#get |> Option.default `Null) in
 	credentials#watch update;
 	c
 
+let connected, set_connected = S.create false
+
 let login_url = Server.path ["auth"; "login"]
+let token_validate_url = Server.path ["auth"; "validate"]
 
 let login_form () =
 	let remember_me_input = input
@@ -33,8 +36,8 @@ let login_form () =
 
 	form ~cls:"login" ~children:[
 		error_widget;
-		child label ~text:"username" ();
-		child input ~attrs:[("name","username")] ();
+		child label ~text:"User" ();
+		child input ~attrs:[("name","user")] ();
 
 		child label ~text:"password" ();
 		child input
@@ -65,13 +68,13 @@ let login_form () =
 					log#info "logged in!";
 					save_credentials json;
 					return_unit
-			| Failed message ->
+			| Failed (message, _) ->
 					set_error (Some message);
 					return_unit
 		)
 	) ()
 
-let presence_display: Ui.fragment_t = credentials_signal |> S.map (fun (creds:J.json) ->
+let presence_display: Ui.fragment_t = credentials_signal |> S.map (fun creds ->
 	creds
 		|> J.get_field "user"
 		|> Option.bind J.as_string
@@ -85,3 +88,67 @@ let ui () = div ~children:[
 	presence_display;
 	frag (login_form ());
 ] ()
+
+let ui () = credentials_signal |> S.map (fun creds ->
+	let user = creds
+		|> J.get_field "user"
+		|> Option.bind J.as_string in
+	match user with
+		| Some user -> (
+				let online_text = connected |> S.map (fun connected ->
+					let rv = if connected then
+						span ~cls:"disconnected" ~children:[
+							child i ~cls:"glyphicon glyphicon-ok" ();
+							child span ~text:"connected" ();
+						] ()
+					else
+						span ~cls:"offline" ~children:[
+							child i ~cls:"glyphicon glyphicon-remove" ();
+							child span ~cls:"link" ~text:"offline" ();
+							child a ~cls:"link retry" ~children:[
+								child i ~cls:"glyphicon glyphicon-refresh" ();
+								child span ~text:"retry" ();
+							] ();
+						] ~mechanism:(fun elem ->
+							let continue = ref true in
+							while_lwt true do
+								continue := false;
+								let open Server in
+								match_lwt Server.post_json ~data:creds token_validate_url with
+								| OK _ -> set_connected true; return_unit
+								| Failed (msg, json) ->
+									log#warn "failed auth: %s" msg;
+									let link = elem##querySelector("a") |> non_null in
+									let reason = json |> Option.bind (J.get_field "reason") |> Option.bind J.as_string in
+									match reason with
+										| Some reason ->
+												log#warn "credentials rejected: %s" reason;
+												credentials#delete;
+												return_unit
+										| None ->
+											continue := true;
+											log#info "no reason given for rejection; assuming connectivity issue";
+											pick [
+												(Lwt_js.sleep 6.0);
+												(
+													lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click link in
+													return_unit
+												);
+											]
+							done
+						) ()
+					in
+					(rv:>Dom.node widget_t)
+				) |> stream in
+				let container = div ~cls:"account-status alert" ~children:[
+					child span ~cls:"user" ~text:user ();
+					frag (online_text);
+				] () in
+				container#class_s "alert-success" connected;
+				container#class_s "alert-warning" (S.map not connected);
+				container
+		)
+		| None -> div ~children:[
+			frag (login_form ())
+		] ()
+) |> Ui.stream
