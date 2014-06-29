@@ -30,14 +30,6 @@ let db_signal =
 	local_db#watch (fun db -> update (Store.parse_json db));
 	signal
 
-let optional_signal_content : ('a -> #Dom.node Ui.widget_t) -> 'a option React.signal -> Dom.node Ui.widget_t signal =
-	fun f signal ->
-		let empty = Ui.none () in
-		signal |> S.map (fun value -> match value with
-			| Some value -> ((f value):>#Dom.node Ui.widget_t)
-			| None -> (empty:>Dom.node Ui.widget_t)
-		)
-
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
@@ -62,8 +54,8 @@ let db_editor () : #Dom_html.element Ui.widget =
 
 	textarea#attr "rows" "10";
 	textarea#attr "cols" "60";
-	let error_dom_stream = error_text |> optional_signal_content (fun err ->
-		((Ui.div ~cls:"error" ~text:err ()):>Dom.node Ui.widget_t)
+	let error_dom_stream = error_text |> Ui.optional_signal_content (fun err ->
+		Ui.div ~cls:"error" ~text:err ()
 	) in
 	let error_elem = Ui.stream error_dom_stream in
 	Ui.div ~cls:"db-editor" ~children:[
@@ -177,7 +169,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				return_unit)
 		) in
 
-		let w = ul ~cls:"suggestions" ~children: (
+		ul ~cls:"suggestions" ~children: (
 			suggestions |> List.mapi (fun i text ->
 				let w = li ~text ~mechanism:(fun elem ->
 					Lwt_js_events.mousedowns elem (fun click _ ->
@@ -194,8 +186,6 @@ let password_form () : #Dom_html.element Ui.widget =
 				frag w
 			)
 		) ~mechanism:parent_mech ()
-		in
-		(w:>Dom.node widget_t);
 	in
 
 	let domain_info, update_domain_info = editable_signal saved_domain_info in
@@ -229,7 +219,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		)
 	) in
 
-	let password_display = current_password |> optional_signal_content (fun (p:string) ->
+	let password_display = current_password |> Ui.optional_signal_content (fun (p:string) ->
 		let length = String.length p in
 		let is_selected, set_is_selected = S.create true in
 		let dummy_text = (String.make length '*') in
@@ -242,7 +232,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		in
 		dummy#class_s "selected" is_selected;
 
-		let container = div
+		div
 			~cls:"password-display"
 			~mechanism:(fun elem ->
 				let child = elem##querySelector(Js.string ".secret") |> non_null in
@@ -269,16 +259,13 @@ let password_form () : #Dom_html.element Ui.widget =
 					select ();
 					Lwt.return_unit
 				)
-			)
-			~children:[
+			) ~children:[
 				child span ~cls:"secret" ~text:p ();
 				frag dummy;
 				child span ~cls:"toggle" ~mechanism:plaintext_toggle_mech ~children:[
 					child span ~cls:"glyphicon glyphicon-eye-open" ();
 				] ();
-			]() in
-
-		(container:>Dom.node Ui.widget_t)
+			] ()
 	) |> Ui.stream in
 
 	let unchanged_domain = S.l2 (fun db_dom domain_info ->
@@ -422,6 +409,7 @@ let show_form (container:Dom_html.element Js.t) =
 	let all_content = Ui.div () in
 	all_content#append @@ password_form ();
 	all_content#append @@ db_editor ();
+	all_content#append @@ Sync.ui ();
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
 		log#info "ALL DONE";

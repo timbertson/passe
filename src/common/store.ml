@@ -8,7 +8,6 @@ module J = struct
 	include Yojson.Safe
 	let print = Yojson.Safe.pretty_to_channel ~std:false
 	let print_str () = pretty_to_string ~std:false
-	let find_safe fn l = try Some (List.find fn l) with Not_found -> None
 end
 
 type digest =
@@ -135,7 +134,7 @@ module Format = struct
 	}
 
 	let parse_field field pairs =
-		let json = J.find_safe (fun (k,v) -> k = field.key) pairs in
+		let json = find_safe (fun (k,v) -> k = field.key) pairs in
 		try
 			field.getter (Option.map snd json)
 		with InvalidFormat err ->

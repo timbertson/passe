@@ -1,6 +1,7 @@
 open Lwt
 open Cohttp
 open Cohttp_lwt_unix
+module J = Json_ext
 
 let log = Logging.get_logger "service"
 let slash = Str.regexp "/"
@@ -18,6 +19,11 @@ let normpath p =
 			| p -> rv := p :: !rv
 	);
 	List.rev !rv
+
+let respond_json ~status ~body () =
+	Server.respond_string
+		~headers:(Header.init_with "Content-Type" "application/json")
+		~status ~body:(J.to_string ~std:true body) ()
 
 let handler ~document_root ~data_root sock req body =
 	let uri = Cohttp.Request.uri req in
@@ -44,6 +50,20 @@ let handler ~document_root ~data_root sock req body =
 			)
 		| `POST -> (
 			match path with
+				| ["auth"; "login"] -> (
+						lwt body = (Cohttp_lwt_body.to_string body) in
+						let params = J.from_string body in
+						let user = params |> J.get_field "user" |> Option.bind J.as_string in
+						let password = params |> J.get_field "password" |> Option.bind J.as_string in
+						match (user, password) with
+							(* XXX authentication *)
+							| (Some user, Some password) when user = password ->
+									respond_json
+										~status:`OK
+										~body:(`Assoc [("user",`String user); ("token",`String "letmein")])
+										()
+							| _ -> respond_json ~status:`Unauthorized ~body:(`Assoc [("error",`String "login failed")]) ()
+					)
 				| ["db"; user] ->
 						(* XXX authentication *)
 						log#debug "saving db for user: %s" user;

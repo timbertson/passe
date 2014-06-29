@@ -220,7 +220,7 @@ let withContent :
 	'w #widget_t -> ('w Js.t -> unit Lwt.t) -> unit Lwt.t
 	=
 	fun parent ?before content block ->
-		let ((elem:'w Js.t), block_mech) = content#attach_widget_pure parent in
+		let ((elem:'w Js.t), block_mech) = content#attach_widget_pure ?before parent in
 		try_lwt
 			Lwt.pick [
 				(
@@ -262,6 +262,13 @@ let stream s =
 		~mechanisms:[stream_mechanism s]
 		create_blank_node in
 	(w:>fragment_t)
+
+let option_stream s : fragment_t =
+	let empty = none () in
+	stream (s |> S.map (fun value -> match value with
+		| Some value -> (value:>Dom.node widget_t)
+		| None -> (empty:>Dom.node widget_t)
+	))
 
 let node_signal_of_string str_sig : (Dom.node leaf_widget) signal = str_sig |> S.map text
 let text_stream s : fragment_t = stream (node_signal_of_string s)
@@ -310,11 +317,14 @@ let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons  ?update source =
 	) in
 	editable_of_signal ~events ~cons ?update source
 
-let signal_of_input ?(events=Lwt_js_events.inputs) widget =
-	let signal, update = S.create "" in
-	let update elem =
-		log#info "Updating text value: %s" (elem##value |> Js.to_string);
-		update (elem##value |> Js.to_string) in
+let signal_of_widget
+	~events
+	~(initial:'t)
+	~(get_value: ('e Js.t -> 't))
+	(widget:'e widget): 't S.t
+=
+	let signal, update = S.create initial in
+	let update elem = update (get_value elem) in
 	widget#mechanism (fun elem ->
 		update elem;
 		events elem (fun event _ ->
@@ -323,4 +333,24 @@ let signal_of_input ?(events=Lwt_js_events.inputs) widget =
 		)
 	);
 	signal
+
+let signal_of_input ?(events=Lwt_js_events.inputs) widget = signal_of_widget
+	~events
+	~get_value:(fun elem -> elem##value |> Js.to_string)
+	~initial:""
+	widget
+
+let signal_of_checkbox ~(initial:bool) (widget:Dom_html.inputElement widget) : bool S.t = signal_of_widget
+	~events:Lwt_js_events.changes
+	~initial
+	~get_value:(fun elem -> elem##checked |> Js.to_bool)
+	widget
+
+let optional_signal_content : ('a -> #Dom.node #widget_t) -> 'a option React.signal -> Dom.node widget_t signal =
+	fun f signal ->
+		let empty = none () in
+		signal |> S.map (fun value -> match value with
+			| Some value -> ((f value):>Dom.node widget_t)
+			| None -> (empty:>Dom.node widget_t)
+		)
 
