@@ -19,6 +19,27 @@ let login_url = Server.path ["auth"; "login"]
 let token_validate_url = Server.path ["auth"; "validate"]
 
 let login_form () =
+
+(*
+<form class="form-inline" role="form">
+  <div class="form-group">
+    <label class="sr-only" for="exampleInputEmail2">Email address</label>
+    <input type="email" class="form-control" id="exampleInputEmail2" placeholder="Enter email">
+  </div>
+  <div class="form-group">
+    <label class="sr-only" for="exampleInputPassword2">Password</label>
+    <input type="password" class="form-control" id="exampleInputPassword2" placeholder="Password">
+  </div>
+  <div class="checkbox">
+    <label>
+      <input type="checkbox"> Remember me
+    </label>
+  </div>
+  <button type="submit" class="btn btn-default">Sign in</button>
+</form>
+*)
+
+
 	let remember_me_input = input
 	~attrs:[("type","checkbox");("checked","true")] () in
 	let remember_me = signal_of_checkbox ~initial:true remember_me_input in
@@ -31,22 +52,38 @@ let login_form () =
 	let error, set_error = S.create None in
 
 	let error_widget = error
-		|> optional_signal_content (fun err -> Ui.div ~cls:"text-danger" ~text:err ())
+		|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+			child i ~cls:"glyphicon glyphicon-remove" ();
+		] ())
 		|> Ui.stream in
 
-	form ~cls:"login" ~children:[
+	form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
 		error_widget;
-		child label ~text:"User" ();
-		child input ~attrs:[("name","user")] ();
+		child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
+		child div ~cls:"form-group form-group-sm email" ~children:[
+			child label ~cls:"sr-only" ~text:"User" ();
+			child input ~cls:"form-control" ~attrs:[("name","user");("placeholder","User");("type","text")] ();
+		] ();
+		space;
 
-		child label ~text:"password" ();
-		child input
-		~attrs:[("type","password"); ("name","password")] ();
+		child div ~cls:"form-group form-group-sm password" ~children:[
+			child label ~cls:"sr-only" ~text:"password" ();
+			child input ~cls:"form-control" ~attrs:[
+				("type","password");
+				("name","password");
+				("placeholder","password")
+			] ();
+		] ();
 
-		child label ~text:"remember me" ();
-		frag remember_me_input;
+		space;
 
-		child input ~attrs:[("type","submit")] ();
+		child div ~cls:"checkbox remember-me form-group" ~children:[
+			frag remember_me_input;
+			space;
+			child label ~text:"Remember me" ();
+		] ();
+
+		child div ~cls:"clearfix" ();
 	] ~mechanism:(fun elem ->
 		effectful_stream_mechanism (remember_me
 			|> S.map (fun remember_me ->
@@ -60,34 +97,20 @@ let login_form () =
 		Lwt_js_events.submits elem (fun event _ ->
 			stop event;
 			log#info "form submitted";
-			Console.console##log (elem);
 			let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
 			let open Server in
+			set_error None;
 			match_lwt post_json ~data login_url with
 			| OK json ->
 					log#info "logged in!";
 					save_credentials json;
+					set_connected true;
 					return_unit
 			| Failed (message, _) ->
 					set_error (Some message);
 					return_unit
 		)
 	) ()
-
-let presence_display: Ui.fragment_t = credentials_signal |> S.map (fun creds ->
-	creds
-		|> J.get_field "user"
-		|> Option.bind J.as_string
-		|> Option.map (fun user ->
-				div ~cls:"userid" ~text:("Logged in as: " ^ user) ()
-		)
-) |> Ui.option_stream
-
-let ui () = div ~children:[
-	child h3 ~text:"server" ();
-	presence_display;
-	frag (login_form ());
-] ()
 
 let ui () = credentials_signal |> S.map (fun creds ->
 	let user = creds
@@ -97,9 +120,9 @@ let ui () = credentials_signal |> S.map (fun creds ->
 		| Some user -> (
 				let online_text = connected |> S.map (fun connected ->
 					let rv = if connected then
-						span ~cls:"disconnected" ~children:[
+						span ~cls:"online" ~children:[
 							child i ~cls:"glyphicon glyphicon-ok" ();
-							child span ~text:"connected" ();
+							child span ~text:"online" ();
 						] ()
 					else
 						span ~cls:"offline" ~children:[
@@ -148,7 +171,7 @@ let ui () = credentials_signal |> S.map (fun creds ->
 				container#class_s "alert-warning" (S.map not connected);
 				container
 		)
-		| None -> div ~children:[
+		| None -> div ~cls:"account-status login alert alert-info" ~children:[
 			frag (login_form ())
 		] ()
 ) |> Ui.stream

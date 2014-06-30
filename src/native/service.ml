@@ -67,7 +67,7 @@ let handler ~document_root ~data_root sock req body =
 										~status:`OK
 										~body:(`Assoc [("user",`String user); ("token",`String "letmein")])
 										()
-							| _ -> respond_json ~status:`Unauthorized ~body:(`Assoc [("error",`String "login failed")]) ()
+							| _ -> respond_json ~status:`Unauthorized ~body:(`Assoc [("error",`String "Incorrect username or password")]) ()
 					)
 				| ["auth"; "validate"] -> (
 					lwt body = Lazy.force json_body in

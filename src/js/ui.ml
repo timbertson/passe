@@ -181,6 +181,7 @@ type ('m, 'w) widget_constructor = (
 	-> unit -> 'w)
 
 let frag f = (f:>fragment_t)
+let space = frag (text " ")
 
 let wrap : (Dom_html.document Js.t -> 'a Js.t) -> ('a, 'a widget) widget_constructor =
 	fun cons ?(children=[]) ?mechanism ?text:t ?cls ?attrs () ->
@@ -202,6 +203,7 @@ let span = wrap Dom_html.createSpan
 let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
+let p = wrap Dom_html.createP
 let strong = wrap Dom_html.createStrong
 let h1 = wrap Dom_html.createH1
 let h2 = wrap Dom_html.createH2

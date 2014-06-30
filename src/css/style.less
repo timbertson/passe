@@ -161,6 +161,16 @@
 }
 
 .account-status {
+	position: fixed;
+	bottom:0;
+
+	width:100%;
+	left:0;
+	margin-bottom:0;
+	border-bottom:0;
+	border-radius:0;
+	box-shadow: 2px 2px 2px black;
+
 	i.glyphicon {
 		padding-right: 0.2em;
 	}
@@ -169,12 +179,27 @@
 		font-weight: bold;
 	}
 
-	.offline {
+	.online,.offline {
 		float:right;
 	}
 
 	.retry {
 		float:right;
 		margin-left: 1em;
+	}
+
+	&.login {
+		.form-group {
+			/*width: 193px;*/
+			display:inline-block;
+		}
+		input[type="submit"] {
+			float:right;
+		}
+
+		input[type="checkbox"] {
+			margin-left:0;
+		}
+
 	}
 }
