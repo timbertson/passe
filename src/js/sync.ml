@@ -8,47 +8,47 @@ module Xhr = XmlHttpRequest
 let log = Logging.get_logger "sync"
 
 let credentials = new Local_storage.record "credentials"
-let credentials_signal =
-	let c, update = S.create (credentials#get |> Option.default `Null) in
-	credentials#watch update;
-	c
-
-let connected, set_connected = S.create false
-
+let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
 let token_validate_url = Server.path ["auth"; "validate"]
 
-let login_form () =
+type username = string
+type auth_token = J.json
+type auth_state =
+	| Anonymous
+	| Expired_user of username
+	| Saved_user of username * auth_token
+	| Active_user of username * auth_token
 
-(*
-<form class="form-inline" role="form">
-  <div class="form-group">
-    <label class="sr-only" for="exampleInputEmail2">Email address</label>
-    <input type="email" class="form-control" id="exampleInputEmail2" placeholder="Enter email">
-  </div>
-  <div class="form-group">
-    <label class="sr-only" for="exampleInputPassword2">Password</label>
-    <input type="password" class="form-control" id="exampleInputPassword2" placeholder="Password">
-  </div>
-  <div class="checkbox">
-    <label>
-      <input type="checkbox"> Remember me
-    </label>
-  </div>
-  <button type="submit" class="btn btn-default">Sign in</button>
-</form>
-*)
+(* type sync_state = *)
+(* 	| Unknown of unit *)
+(* 	| Updated of int (* date *) *)
+(* 	| Syncing *)
+(* 	| Local_changes *)
 
+let auth_state, set_auth_state =
+	let initial_value = credentials#get |> Option.bind (fun token ->
+		token
+			|> Json_ext.get_field username_key
+			|> Option.bind (Json_ext.as_string)
+			|> Option.map (fun (u:string) -> Saved_user (u, token))
+	) in
+	S.create (Option.default Anonymous initial_value)
 
-	let remember_me_input = input
-	~attrs:[("type","checkbox");("checked","true")] () in
-	let remember_me = signal_of_checkbox ~initial:true remember_me_input in
+let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
+let remember_me = signal_of_checkbox ~initial:true remember_me_input
 
-	let save_credentials creds =
-		if S.value remember_me then
-			credentials#save creds
-	in
+(* wrap set_auth_state aith automatic updating of localStorage *)
+let set_auth_state state = begin match state with
+	| Anonymous -> credentials#delete
+	| Active_user (_, creds) ->
+			if S.value remember_me then
+				credentials#save creds
+	| _ -> ()
+	end;
+	set_auth_state state
 
+let login_form (username:string option) =
 	let error, set_error = S.create None in
 
 	let error_widget = error
@@ -56,122 +56,133 @@ let login_form () =
 			child i ~cls:"glyphicon glyphicon-remove" ();
 		] ())
 		|> Ui.stream in
-
-	form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
-		error_widget;
-		child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
-		child div ~cls:"form-group form-group-sm email" ~children:[
-			child label ~cls:"sr-only" ~text:"User" ();
-			child input ~cls:"form-control" ~attrs:[("name","user");("placeholder","User");("type","text")] ();
-		] ();
-		space;
-
-		child div ~cls:"form-group form-group-sm password" ~children:[
-			child label ~cls:"sr-only" ~text:"password" ();
-			child input ~cls:"form-control" ~attrs:[
-				("type","password");
-				("name","password");
-				("placeholder","password")
+	
+	div ~cls:"account-status login alert alert-info" ~children:[
+		child form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
+			error_widget;
+			child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
+			child div ~cls:"form-group form-group-sm email" ~children:[
+				child label ~cls:"sr-only" ~text:"User" ();
+				child input ~cls:"form-control" ~attrs:[
+					("name","user");
+					("placeholder","User");
+					("type","text");
+					("value", Option.default "" username);
+				] ();
 			] ();
-		] ();
-
-		space;
-
-		child div ~cls:"checkbox remember-me form-group" ~children:[
-			frag remember_me_input;
 			space;
-			child label ~text:"Remember me" ();
-		] ();
 
-		child div ~cls:"clearfix" ();
-	] ~mechanism:(fun elem ->
-		effectful_stream_mechanism (remember_me
-			|> S.map (fun remember_me ->
-					log#info "remember me changed to: %b" remember_me;
-					if (not remember_me) then (
-						credentials#delete
-					)
+			child div ~cls:"form-group form-group-sm password" ~children:[
+				child label ~cls:"sr-only" ~text:"password" ();
+				child input ~cls:"form-control" ~attrs:[
+					("type","password");
+					("name","password");
+					("placeholder","password")
+				] ();
+			] ();
+
+			space;
+
+			child div ~cls:"checkbox remember-me form-group" ~children:[
+				frag remember_me_input;
+				space;
+				child label ~text:"Remember me" ();
+			] ();
+
+			child div ~cls:"clearfix" ();
+		] ~mechanism:(fun elem ->
+			effectful_stream_mechanism (remember_me
+				|> S.map (fun remember_me ->
+						log#info "remember me changed to: %b" remember_me;
+						if (not remember_me) then (
+							credentials#delete
+						)
+				)
 			)
-		)
-		<&>
-		Lwt_js_events.submits elem (fun event _ ->
-			stop event;
-			log#info "form submitted";
-			let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
-			let open Server in
-			set_error None;
-			match_lwt post_json ~data login_url with
-			| OK json ->
-					log#info "logged in!";
-					save_credentials json;
-					set_connected true;
-					return_unit
-			| Failed (message, _) ->
-					set_error (Some message);
-					return_unit
-		)
-	) ()
+			<&>
+			Lwt_js_events.submits elem (fun event _ ->
+				stop event;
+				log#info "form submitted";
+				let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
+				let open Server in
+				set_error None;
+				lwt response = post_json ~data login_url in
+				begin match response with
+				| OK creds ->
+					let username = creds
+						|> Json_ext.get_field username_key
+						|> Option.bind Json_ext.as_string in
+					(match username with
+						| Some user -> set_auth_state (Active_user (user, creds))
+						| None -> raise (AssertionError "credentials doesn't contain a user key")
+					)
 
-let ui () = credentials_signal |> S.map (fun creds ->
-	let user = creds
-		|> J.get_field "user"
-		|> Option.bind J.as_string in
-	match user with
-		| Some user -> (
-				let online_text = connected |> S.map (fun connected ->
-					let rv = if connected then
-						span ~cls:"online" ~children:[
-							child i ~cls:"glyphicon glyphicon-ok" ();
-							child span ~text:"online" ();
-						] ()
-					else
-						span ~cls:"offline" ~children:[
-							child i ~cls:"glyphicon glyphicon-remove" ();
-							child span ~cls:"link" ~text:"offline" ();
-							child a ~cls:"link retry" ~children:[
-								child i ~cls:"glyphicon glyphicon-refresh" ();
-								child span ~text:"retry" ();
-							] ();
-						] ~mechanism:(fun elem ->
-							let continue = ref true in
-							while_lwt true do
-								continue := false;
-								let open Server in
-								match_lwt Server.post_json ~data:creds token_validate_url with
-								| OK _ -> set_connected true; return_unit
-								| Failed (msg, json) ->
-									log#warn "failed auth: %s" msg;
-									let link = elem##querySelector("a") |> non_null in
-									let reason = json |> Option.bind (J.get_field "reason") |> Option.bind J.as_string in
-									match reason with
-										| Some reason ->
-												log#warn "credentials rejected: %s" reason;
-												credentials#delete;
-												return_unit
-										| None ->
-											continue := true;
-											log#info "no reason given for rejection; assuming connectivity issue";
-											pick [
-												(Lwt_js.sleep 6.0);
-												(
-													lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click link in
-													return_unit
-												);
-											]
-							done
-						) ()
-					in
-					(rv:>Dom.node widget_t)
-				) |> stream in
-				let container = div ~cls:"account-status alert" ~children:[
-					child span ~cls:"user" ~text:user ();
-					frag (online_text);
-				] () in
-				container#class_s "alert-success" connected;
-				container#class_s "alert-warning" (S.map not connected);
-				container
-		)
-		| None -> div ~cls:"account-status login alert alert-info" ~children:[
-			frag (login_form ())
+				| Failed (message, _) -> set_error (Some message)
+				end;
+				return_unit
+			)
+		) ()
+	] ()
+
+let ui () =
+	auth_state |> S.map (fun auth -> match auth with
+	| Anonymous -> login_form None
+	| Expired_user username -> login_form (Some username)
+	| Saved_user (username, creds) -> (
+		let offline_message, set_offline_message = S.create
+			(span ~text:"connecting..." ()) in
+
+		div ~cls:"account-status alert alert-warning" ~children:[
+			child span ~cls:"user" ~text:username ();
+			child span ~cls:"offline" ~children:[
+				stream offline_message;
+			] ~mechanism:(fun offline ->
+				let continue = ref true in
+				while_lwt !continue do
+					continue := false;
+					let open Server in
+					match_lwt Server.post_json ~data:creds token_validate_url with
+					| OK _ -> set_auth_state (Active_user (username, creds)); return_unit
+					| Failed (msg, json) ->
+						log#warn "failed auth: %s" msg;
+						let reason = json |> Option.bind (J.get_field "reason") |> Option.bind J.as_string in
+						match reason with
+							| Some reason ->
+									log#warn "credentials rejected: %s" reason;
+									set_auth_state Anonymous;
+									credentials#delete;
+									return_unit
+							| None ->
+								continue := true;
+								set_offline_message (
+									span ~children:[
+										child i ~cls:"glyphicon glyphicon-remove" ();
+										child span ~text:"offline" ();
+									] ());
+								log#info "no reason given for rejection; assuming connectivity issue";
+								Ui.withContent offline ?before:(offline##firstChild |> Js.Opt.to_option) (a ~cls:"link retry disabled" ~children:[
+									child i ~cls:"glyphicon glyphicon-refresh" ();
+									child span ~text:"retry" ();
+								] ()) (fun elem ->
+									pick [
+										(
+											lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+											return_unit
+										);
+										(Lwt_js.sleep 60.0);
+									]
+								)
+				done
+			) ()
 		] ()
+	)
+	| Active_user (username, _) -> (
+		div ~cls:"account-status alert alert-success" ~children:[
+			child span ~cls:"user" ~text:username ();
+			child span ~cls:"online" ~children:[
+				child i ~cls:"glyphicon glyphicon-ok" ();
+				child span ~text:"online" ();
+			] ()
+		] ()
+	)
 ) |> Ui.stream

@@ -235,7 +235,6 @@ let withContent :
 				block elem
 			]
 		finally (
-			log#info "REMOVE";
 			Dom.removeChild parent (elem:>Dom.node Js.t);
 			Lwt.return_unit
 		)
