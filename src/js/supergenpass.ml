@@ -16,12 +16,6 @@ let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
 	)
 
-let editable_signal source =
-	let derived, update = S.create (S.value source) in
-	let effect = source |> S.map update in
-	ignore @@ S.retain derived (fun () -> ignore effect; ());
-	(derived, update)
-
 let local_db = new Local_storage.record "db"
 let db_signal =
 	let initial = local_db#get

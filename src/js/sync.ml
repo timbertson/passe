@@ -7,7 +7,8 @@ module Xhr = XmlHttpRequest
 
 let log = Logging.get_logger "sync"
 
-let credentials = new Local_storage.record "credentials"
+let credentials = Config.field "credentials"
+
 let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
 let token_validate_url = Server.path ["auth"; "validate"]
@@ -20,20 +21,29 @@ type auth_state =
 	| Saved_user of username * auth_token
 	| Active_user of username * auth_token
 
-(* type sync_state = *)
-(* 	| Unknown of unit *)
-(* 	| Updated of int (* date *) *)
-(* 	| Syncing *)
-(* 	| Local_changes *)
+type date = int64
+type sync_state =
+	| Unknown
+	| Updated of date
+	| Syncing
+	| Local_changes
+
+let sync_state, set_sync_state = S.create Unknown
+
+let saved_auth_state = credentials#signal |> S.map (fun conf ->
+		conf |> Option.bind (fun token -> token
+			|> J.get_field username_key
+			|> Option.bind (J.as_string)
+			|> Option.map (fun (u:string) -> Saved_user (u, token))
+		) |> Option.default Anonymous
+	)
 
 let auth_state, set_auth_state =
-	let initial_value = credentials#get |> Option.bind (fun token ->
-		token
-			|> Json_ext.get_field username_key
-			|> Option.bind (Json_ext.as_string)
-			|> Option.map (fun (u:string) -> Saved_user (u, token))
-	) in
-	S.create (Option.default Anonymous initial_value)
+	let signal,update = S.create (S.value saved_auth_state) in
+	let effect = signal |> S.map update in
+	ignore @@ S.retain signal (fun () -> ignore effect; ());
+	(signal, update)
+
 
 let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
 let remember_me = signal_of_checkbox ~initial:true remember_me_input
@@ -110,8 +120,8 @@ let login_form (username:string option) =
 				begin match response with
 				| OK creds ->
 					let username = creds
-						|> Json_ext.get_field username_key
-						|> Option.bind Json_ext.as_string in
+						|> J.get_field username_key
+						|> Option.bind J.as_string in
 					(match username with
 						| Some user -> set_auth_state (Active_user (user, creds))
 						| None -> raise (AssertionError "credentials doesn't contain a user key")
