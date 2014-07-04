@@ -22,28 +22,23 @@ type auth_state =
 	| Active_user of username * auth_token
 
 type date = int64
-type sync_state =
-	| Unknown
-	| Updated of date
-	| Syncing
-	| Local_changes
+(* type sync_state = *)
+(* 	| Unknown *)
+(* 	| Updated of date *)
+(* 	| Syncing *)
+(* 	| Local_changes *)
+(*  *)
+(* let sync_state, set_sync_state = S.create Unknown *)
 
-let sync_state, set_sync_state = S.create Unknown
-
-let saved_auth_state = credentials#signal |> S.map (fun conf ->
-		conf |> Option.bind (fun token -> token
+let auth_state, _set_auth_state =
+	let initial = credentials#get
+		|> Option.bind (fun token -> token
 			|> J.get_field username_key
 			|> Option.bind (J.as_string)
-			|> Option.map (fun (u:string) -> Saved_user (u, token))
-		) |> Option.default Anonymous
-	)
-
-let auth_state, set_auth_state =
-	let signal,update = S.create (S.value saved_auth_state) in
-	let effect = signal |> S.map update in
-	ignore @@ S.retain signal (fun () -> ignore effect; ());
-	(signal, update)
-
+			|> Option.map (fun (u:string) -> Saved_user (u, token)))
+		|> Option.default Anonymous
+	in
+	S.create initial
 
 let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
 let remember_me = signal_of_checkbox ~initial:true remember_me_input
@@ -51,12 +46,13 @@ let remember_me = signal_of_checkbox ~initial:true remember_me_input
 (* wrap set_auth_state aith automatic updating of localStorage *)
 let set_auth_state state = begin match state with
 	| Anonymous -> credentials#delete
+	(* TODO: Expired_user & Saved_user *)
 	| Active_user (_, creds) ->
 			if S.value remember_me then
 				credentials#save creds
 	| _ -> ()
 	end;
-	set_auth_state state
+	_set_auth_state state
 
 let login_form (username:string option) =
 	let error, set_error = S.create None in

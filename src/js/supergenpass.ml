@@ -2,7 +2,7 @@ open Lwt
 open Js
 open Dom_html
 open Common
-open React
+open React_ext
 module J = Yojson.Safe
 
 let s = Js.string
@@ -281,7 +281,11 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt_js_events.clicks elem (fun event _ ->
 				Ui.stop event;
 				let current_db = S.value db_signal in
-				let new_db = Store.update current_db (Domain (S.value domain_info)) in
+				let new_db = Store.update
+					~db:current_db
+					~original:(S.value domain_record |> Option.map (fun d -> Domain d))
+					(Domain (S.value domain_info)) in
+
 				log#info "Saving new DB: %s" (Store.to_json_string new_db);
 				local_db#save (Store.to_json new_db);
 				Lwt.return_unit

@@ -8,10 +8,4 @@ end
 
 let find_safe fn l = try Some (List.find fn l) with Not_found -> None
 
-let editable_signal source =
-	let open React in
-	let derived, update = S.create (S.value source) in
-	let effect = source |> S.map update in
-	ignore @@ S.retain derived (fun () -> ignore effect; ());
-	(derived, update)
-
+let (%) f g = (fun x -> f (g x))

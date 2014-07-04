@@ -26,3 +26,5 @@ let get default = function Some x -> x | None -> default
 let force = function Some x -> x | None -> raise Not_found
 
 let non_empty ~zero v = if v = zero then None else Some v
+
+let cond test value = if test then Some value else None

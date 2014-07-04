@@ -1,5 +1,6 @@
 open Store
 open Re
+open Common
 
 let rec foldi i f acc =
 	if i <= 0 then acc else foldi (pred i) f (f acc)
@@ -22,8 +23,6 @@ let leading_lower = Str.regexp "^[a-z]"
 let valid_password p =
 	let has r = Str.contains r p in
 	has leading_lower && has upper && has digit
-
-let (%) f g = (fun x -> f (g x))
 
 	(* XXX tests with non-ascii string encoding! *)
 let generate ~domain:domain password =
