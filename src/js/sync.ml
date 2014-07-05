@@ -9,9 +9,9 @@ let log = Logging.get_logger "sync"
 
 let credentials = Config.field "credentials"
 let last_sync = Config.field "last_sync"
+let set_last_sync_time t = last_sync#save (`Float t)
 let last_sync_time = last_sync#signal |> signal_lift_opt (function
-	| `Int i -> Int64.of_int i
-	| `Intlit s -> Int64.of_string s
+	| `Float t -> t
 	| _ -> raise @@ AssertionError ("invalid `last_sync` value")
 )
 
@@ -29,12 +29,12 @@ type auth_state =
 	| Saved_user of username * auth_token
 	| Active_user of username * auth_token
 
-type date = int64
+type date = float
 type sync_state =
 	| Uptodate
 	| Updated_at of date
 	| Syncing
-	| Local_changes
+	| Local_changes of int
 
 let auth_state, _set_auth_state =
 	let initial = credentials#get
@@ -94,7 +94,8 @@ let sync_running, (run_sync:unit -> unit Lwt.t) =
 							let new_db = Store.drop_applied_changes
 								~from:(get_latest_db ())
 								~new_core sent_changes in
-							db_storage#save (Store.to_json new_db)
+							db_storage#save (Store.to_json new_db);
+							set_last_sync_time (Date.time ());
 					| Server.Failed (msg, _) ->
 						log#error "sync failed: %s" msg
 				);
@@ -109,9 +110,10 @@ let sync_running, (run_sync:unit -> unit Lwt.t) =
 let sync_state = S.bind sync_running (fun is_running ->
 	if is_running then S.const Syncing else (
 		S.l2 (fun db sync_time ->
-			if (List.length db.Store.changes = 0) then
+			let len = List.length db.Store.changes in
+			if len = 0 then
 				sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
-			else Local_changes
+			else Local_changes len
 		) db_signal last_sync_time
 	))
 
@@ -206,19 +208,35 @@ let login_form (username:string option) =
 		) ()
 	] ()
 
-let sync_state_widget =
+let sync_state_widget () =
 	let open Ui in
 	let _node w = (w:>Dom.node widget_t) in
+	let sync_mech = (fun elem ->
+		Lwt_js_events.clicks elem (fun event _ ->
+			run_sync ()
+		)
+	) in
 	sync_state |> S.map (function
-		| Uptodate        -> _node @@ empty ()
-		| Updated_at date -> _node @@ span ~text:("updated at "^(Int64.to_string date)) ()
-		| Syncing         -> _node @@ span ~text:"syncing..." ()
-		| Local_changes   -> _node @@ span ~text:"changes pending..." ~children:[
-				child a ~text:"sync now" ~cls:"link" ~mechanism:(fun elem ->
-					Lwt_js_events.clicks elem (fun event _ ->
-						run_sync ()
-					)
-				) ()
+		| Uptodate -> _node @@ empty ()
+		| Updated_at date ->
+				let now = Date.time () in
+				let time_diff = max 0.0 (now -. date) in
+				_node @@ a ~cls:"link has-tooltip"
+					~attrs:[("title", "Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago")]
+					~children:[icon "refresh"]
+					~mechanism:sync_mech ()
+		| Syncing ->
+			_node @@ span
+				~cls:"syncing"
+				~children:[icon "refresh"] ()
+		| Local_changes count ->
+				_node @@ span
+					~attrs:[("title", (string_of_int count) ^ " pending changes...")]
+					~children:[
+				child a
+					~cls:"link"
+					~children:[icon "upload"]
+					~mechanism:sync_mech ()
 			] ()
 	) |> stream
 
@@ -277,10 +295,15 @@ let ui () =
 	| Active_user (username, _) -> (
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
+			child a ~cls:"hover-visible btn btn-default" ~text:"Log out"
+			~mechanism:(fun elem ->
+				Lwt_js_events.clicks elem (fun evt _ ->
+					set_auth_state Anonymous;
+					return_unit;
+				)
+			) ();
 			child span ~cls:"online" ~children:[
-				sync_state_widget;
-				child i ~cls:"glyphicon glyphicon-ok" ();
-				child span ~text:"online" ();
+				sync_state_widget ();
 			] ()
 		] ()
 	)

@@ -20,9 +20,12 @@ let normpath p =
 	);
 	List.rev !rv
 
+let content_type_header v = Header.init_with "Content-Type" v
+let json_content_type = content_type_header "application/json"
+
 let respond_json ~status ~body () =
 	Server.respond_string
-		~headers:(Header.init_with "Content-Type" "application/json")
+		~headers:json_content_type
 		~status ~body:(J.to_string ~std:true body) ()
 
 let handler ~document_root ~data_root sock req body =
@@ -48,7 +51,8 @@ let handler ~document_root ~data_root sock req body =
 				| ["db"; user] ->
 						(* XXX authentication! *)
 						log#debug "serving db for user: %s" user;
-						Server.respond_file ~fname:(db_path_for user) ()
+						lwt () = Lwt_unix.sleep 2.0 in
+						Server.respond_file ~headers:json_content_type ~fname:(db_path_for user) ()
 				| [] -> serve_file "index.html"
 				| _ -> serve_file (String.concat "/" path)
 			)

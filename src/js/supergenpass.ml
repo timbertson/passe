@@ -255,7 +255,8 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_panel#class_s "hidden" empty_domain;
 
 		let save_button = input ~attrs:[("type","button");("value","save")] () in
-		save_button#class_s "hidden" unchanged_domain;
+		save_button#class_s "hidden" (S.l2 (fun unchanged current_user ->
+			unchanged || Option.is_none current_user) unchanged_domain Sync.current_username);
 		save_button#mechanism (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
 				Ui.stop event;

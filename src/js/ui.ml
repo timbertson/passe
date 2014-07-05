@@ -358,3 +358,4 @@ let optional_signal_content : ('a -> #Dom.node #widget_t) -> 'a option React.sig
 			| None -> (empty:>Dom.node widget_t)
 		)
 
+let icon name = child i ~cls:("glyphicon glyphicon-"^name) ()
