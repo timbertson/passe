@@ -280,18 +280,22 @@ module Format = struct
 			Some (`Assoc pairs));
 	}
 
+	let core_of_json = (function
+			| (`Assoc fields) -> {
+					version=parse_field version fields;
+					records = parse_field records fields;
+				}
+			| _ -> raise_invalid_format "expected object"
+	)
+
 	let core = {key="core";
 		setter = (fun db -> Some (build_assoc [
 			store_field version db.version;
 			store_field records db.records;
 		]));
 		getter = (function
-			| Some (`Assoc fields) -> {
-					version=parse_field version fields;
-					records = parse_field records fields
-				}
+			| Some json -> core_of_json json
 			| None -> empty_core
-			| _ -> raise_invalid_format "expected object"
 		)
 	}
 
@@ -385,8 +389,9 @@ module Format = struct
 				store_field id _id;
 			]
 
+	let json_of_changes changes = (`List (changes |> List.map json_of_change))
 	let changes = {key="changes";
-		setter=(fun changes -> Some (`List (changes |> List.map json_of_change)));
+		setter=(fun changes -> Some (json_of_changes changes));
 		getter=(function
 			| Some (`List l) -> List.map change_of_json l
 			| Some (_) -> raise_invalid_format "expected a list"
@@ -470,10 +475,6 @@ let apply_changes core changes : record StringMap.t =
 	inner core.records changes
 
 
-(* let replace db old new_ = *)
-(* 	let key = id_of updated in *)
-(* 	updated :: (db |> List.filter (fun r -> id_of r <> key)) *)
-
 let build_t core changes =
 	{
 		core = core;
@@ -553,3 +554,23 @@ let update ~(db:t) ~original updated =
 				[Delete (id_of orig); Create updated]
 		in
 	{db with changes=db.changes @ changes}
+
+let rec drop n lst =
+	if n <= 0 then lst
+	else match lst with
+		| [] -> []
+		| head::tail -> drop (n-1) tail
+
+let rec take n lst =
+	if n <= 0 then []
+	else match lst with
+		| [] -> []
+		| head::tail -> head :: (take (n-1) tail)
+
+let drop_applied_changes ~from ~new_core applied_changes =
+	(* if we ensure changes are _always_ appended,
+	* this is totally safe: *)
+	assert ((take (List.length applied_changes) from.changes) = applied_changes);
+	let missed_changes = drop (List.length applied_changes) from.changes in
+	build_t new_core missed_changes
+

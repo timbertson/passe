@@ -92,13 +92,7 @@ let request ?content_type ~meth ?data url =
 	res
 
 
-let post_json ~(data:J.json) url =
-	lwt frame = request
-		~content_type:json_content_type
-		~meth:"POST"
-		~data:(J.to_string ~std:true data)
-		url in
-	(* lwt frame = Xhr.perform ~post_args:data url in *)
+let handle_json_response frame =
 	log#info "got http response %d, content %s"
 		frame.Xhr.code
 		frame.Xhr.content
@@ -115,4 +109,21 @@ let post_json ~(data:J.json) url =
 			Failed (error_msg, response)
 		)
 	)
+
+let post_json ~(data:J.json) url =
+	lwt frame = request
+		~content_type:json_content_type
+		~meth:"POST"
+		~data:(J.to_string ~std:true data)
+		url in
+	(* lwt frame = Xhr.perform ~post_args:data url in *)
+	handle_json_response frame
+
+
+let get_json url =
+	lwt frame = request
+		~content_type:json_content_type
+		~meth:"GET"
+		url in
+	handle_json_response frame
 

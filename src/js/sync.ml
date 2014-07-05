@@ -8,10 +8,18 @@ module Xhr = XmlHttpRequest
 let log = Logging.get_logger "sync"
 
 let credentials = Config.field "credentials"
+let last_sync = Config.field "last_sync"
+let last_sync_time = last_sync#signal |> signal_lift_opt (function
+	| `Int i -> Int64.of_int i
+	| `Intlit s -> Int64.of_string s
+	| _ -> raise @@ AssertionError ("invalid `last_sync` value")
+)
+
 
 let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
 let token_validate_url = Server.path ["auth"; "validate"]
+let db_url username = Server.path ["db"; username]
 
 type username = string
 type auth_token = J.json
@@ -22,13 +30,11 @@ type auth_state =
 	| Active_user of username * auth_token
 
 type date = int64
-(* type sync_state = *)
-(* 	| Unknown *)
-(* 	| Updated of date *)
-(* 	| Syncing *)
-(* 	| Local_changes *)
-(*  *)
-(* let sync_state, set_sync_state = S.create Unknown *)
+type sync_state =
+	| Uptodate
+	| Updated_at of date
+	| Syncing
+	| Local_changes
 
 let auth_state, _set_auth_state =
 	let initial = credentials#get
@@ -45,7 +51,70 @@ let current_username = auth_state |> S.map (function
 	| Expired_user u | Saved_user (u, _) | Active_user (u, _) -> Some u
 )
 
-let current_user_db : Config.child option signal = current_username |> signal_lift_opt (fun u -> Config.field ("db_" ^ u))
+let local_db_for_user user = Config.field ("db_" ^ user)
+let current_user_db : Config.child option signal =
+	current_username |> signal_lift_opt local_db_for_user
+
+let stored_json : J.json option signal = S.bind current_user_db (fun storage ->
+	storage
+		|> Option.map (fun s -> s#signal)
+		|> Option.default (S.const None)
+)
+
+let db_signal :Store.t signal =
+	stored_json |> S.map ~eq:Store.eq (fun json ->
+		json
+		|> Option.map Store.parse_json
+		|> Option.default Store.empty
+)
+
+let sync_running, (run_sync:unit -> unit Lwt.t) =
+	let s, up = S.create false in
+	(s, fun () ->
+		if (S.value s) then raise (AssertionError "sync already running!");
+		S.value current_username |> Option.map (fun username ->
+			up true;
+			try_lwt
+				log#info "syncing...";
+				let db_storage = local_db_for_user username in
+				let get_latest_db () =
+					db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+
+				let sent_changes = (get_latest_db ()).Store.changes in
+
+				lwt response = (match sent_changes with
+					| [] -> Server.get_json (db_url username)
+					| sent_changes ->
+							let data = (Store.Format.json_of_changes sent_changes) in
+							Server.post_json ~data (db_url username)
+				) in
+				(match response with
+					| Server.OK json ->
+							let new_core = Store.Format.core_of_json json in
+							let new_db = Store.drop_applied_changes
+								~from:(get_latest_db ())
+								~new_core sent_changes in
+							db_storage#save (Store.to_json new_db)
+					| Server.Failed (msg, _) ->
+						log#error "sync failed: %s" msg
+				);
+				return_unit;
+			finally (
+				up false;
+				return_unit
+			)
+		) |> Option.default return_unit
+	)
+
+let sync_state = S.bind sync_running (fun is_running ->
+	if is_running then S.const Syncing else (
+		S.l2 (fun db sync_time ->
+			if (List.length db.Store.changes = 0) then
+				sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
+			else Local_changes
+		) db_signal last_sync_time
+	))
+
 
 let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
 let remember_me = signal_of_checkbox ~initial:true remember_me_input
@@ -137,6 +206,22 @@ let login_form (username:string option) =
 		) ()
 	] ()
 
+let sync_state_widget =
+	let open Ui in
+	let _node w = (w:>Dom.node widget_t) in
+	sync_state |> S.map (function
+		| Uptodate        -> _node @@ empty ()
+		| Updated_at date -> _node @@ span ~text:("updated at "^(Int64.to_string date)) ()
+		| Syncing         -> _node @@ span ~text:"syncing..." ()
+		| Local_changes   -> _node @@ span ~text:"changes pending..." ~children:[
+				child a ~text:"sync now" ~cls:"link" ~mechanism:(fun elem ->
+					Lwt_js_events.clicks elem (fun event _ ->
+						run_sync ()
+					)
+				) ()
+			] ()
+	) |> stream
+
 let ui () =
 	auth_state |> S.map (fun auth -> match auth with
 	| Anonymous -> login_form None
@@ -193,6 +278,7 @@ let ui () =
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
 			child span ~cls:"online" ~children:[
+				sync_state_widget;
 				child i ~cls:"glyphicon glyphicon-ok" ();
 				child span ~text:"online" ();
 			] ()

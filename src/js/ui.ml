@@ -167,7 +167,7 @@ let create_text_node t _ =
 	(elem:>Dom.node Js.t)
 
 let text t : Dom.node leaf_widget = new leaf_widget (create_text_node t)
-let none () : Dom.node leaf_widget = new leaf_widget create_blank_node
+let empty () : Dom.node leaf_widget = new leaf_widget create_blank_node
 
 type ('a,'b) listy = (('a * 'b) list)
 type 'a children = #fragment_t list as 'a
@@ -268,7 +268,7 @@ let stream s =
 	(w:>fragment_t)
 
 let option_stream s : fragment_t =
-	let empty = none () in
+	let empty = empty () in
 	stream (s |> S.map (fun value -> match value with
 		| Some value -> (value:>Dom.node widget_t)
 		| None -> (empty:>Dom.node widget_t)
@@ -352,7 +352,7 @@ let signal_of_checkbox ~(initial:bool) (widget:Dom_html.inputElement widget) : b
 
 let optional_signal_content : ('a -> #Dom.node #widget_t) -> 'a option React.signal -> Dom.node widget_t signal =
 	fun f signal ->
-		let empty = none () in
+		let empty = empty () in
 		signal |> S.map (fun value -> match value with
 			| Some value -> ((f value):>Dom.node widget_t)
 			| None -> (empty:>Dom.node widget_t)

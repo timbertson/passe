@@ -16,26 +16,12 @@ let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
 	)
 
-let db_storage = Sync.current_user_db
-let stored_json : J.json option signal = S.bind db_storage (fun storage ->
-	storage
-		|> Option.map (fun s -> s#signal)
-		|> Option.default (S.const None)
-)
-
-let db_signal :Store.t signal =
-	stored_json |> S.map ~eq:Store.eq (fun json ->
-		json
-		|> Option.map Store.parse_json
-		|> Option.default Store.empty
-)
-
-
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
+let db_signal = Sync.db_signal
 let db_display () : #Dom_html.element Ui.widget =
-	let contents:string signal = stored_json |> S.map (fun json ->
+	let contents:string signal = Sync.stored_json |> S.map (fun json ->
 		json
 			|> Option.map (J.to_string ~std:true)
 			|> Option.default "<no DB>"
@@ -280,7 +266,7 @@ let password_form () : #Dom_html.element Ui.widget =
 					(Domain (S.value domain_info)) in
 
 				log#info "Saving new DB: %s" (Store.to_json_string new_db);
-				(match S.value db_storage with
+				(match S.value Sync.current_user_db with
 					| None -> log#warn "no db to save to!"
 					| Some db -> db#save (Store.to_json new_db)
 				);

@@ -79,10 +79,15 @@ let handler ~document_root ~data_root sock req body =
 						(* XXX authentication *)
 						log#debug "saving db for user: %s" user;
 						(* XXX locking *)
-						let existing_core = try
-							Some (J.from_file (db_path_for user))
-							with Unix.Unix_error (Unix.ENOENT, _, _) -> None
-						in
+						lwt db_file_contents = (try_lwt
+							lwt contents = Lwt_io.with_file ~mode:Lwt_io.input (db_path_for user) (fun f ->
+								Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
+							) in
+							return (Some contents)
+							with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
+						) in
+
+						let existing_core = db_file_contents |> Option.map J.from_string in
 						let open Store in
 						let open Store.Format in
 						let existing_core = existing_core
