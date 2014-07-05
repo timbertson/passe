@@ -79,20 +79,31 @@ let handler ~document_root ~data_root sock req body =
 						(* XXX authentication *)
 						log#debug "saving db for user: %s" user;
 						(* XXX locking *)
+						let existing_core = try
+							Some (J.from_file (db_path_for user))
+							with Unix.Unix_error (Unix.ENOENT, _, _) -> None
+						in
+						let open Store in
+						let open Store.Format in
+						let existing_core = existing_core
+							|> Option.map (fun json -> Store.Format.core.getter (Some json))
+							|> Option.default empty_core in
+						lwt body = body |> Cohttp_lwt_body.to_string in
+						let changes = Some (J.from_string body) |> Store.Format.changes.getter in
+						let updated_core = {
+							version = succ existing_core.version;
+							records = Store.apply_changes existing_core changes;
+						} |> Store.Format.core.setter |> Option.force in
 						let tmp = ((db_path_for user) ^ ".tmp") in
 						lwt () = Lwt_io.with_file
 							~mode:Lwt_io.output
 							tmp
 							(fun f ->
-								(* XXX validation / backup *)
-								match body with
-								| `String s -> Lwt_io.write f s
-								| `Stream s -> Lwt_stream.iter_s (Lwt_io.write f) s
-								| `Empty -> return_unit
+								Lwt_io.write f (J.to_string ~std:true updated_core)
 							)
 						in
 						lwt () = Lwt_unix.rename tmp (db_path_for user) in
-						Server.respond_string ~status:`OK ~body:"saved!" ()
+						respond_json ~status:`OK ~body:updated_core ()
 				| _ -> Server.respond_not_found ~uri ()
 			)
 		| _ ->
