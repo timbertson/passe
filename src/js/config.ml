@@ -3,8 +3,8 @@ module J = Json_ext
 
 let local = new Local_storage.record "config"
 
-let s, update_s = S.create (local#get)
-let () = local#watch (fun v -> update_s (Some v))
+let s, update_s = S.create (local#get |> Option.map J.as_object)
+let () = local#watch (fun v -> update_s (Some (J.as_object v)))
 
 let access key root = root |> Option.bind (J.get_field key)
 

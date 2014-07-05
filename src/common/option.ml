@@ -20,6 +20,8 @@ let bind fn opt = match opt with
 	| Some v -> fn v
 	| None -> None
 
+let some x = Some x
+
 let is_some = function Some _ -> true | None -> false
 let is_none = function Some _ -> false | None -> true
 let get default = function Some x -> x | None -> default

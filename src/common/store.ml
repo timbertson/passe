@@ -1,5 +1,6 @@
 open Common
 open Re
+module J = Json_ext
 let log = Logging.get_logger "store"
 exception InvalidFormat of string
 let raise_invalid_format fmt = Printf.ksprintf (fun err -> raise (InvalidFormat err)) fmt
@@ -18,12 +19,6 @@ module StringMap = struct
 	let keys map = bindings map |> List.map Tuple.fst
 
 	let find_opt key map = try Some (find key map) with Not_found -> None
-end
-
-module J = struct
-	include Yojson.Safe
-	let print = Yojson.Safe.pretty_to_channel ~std:false
-	let print_str () = pretty_to_string ~std:false
 end
 
 type digest =
@@ -118,9 +113,22 @@ type t = {
 	composite: record StringMap.t Lazy.t;
 }
 
+let record_eq:record -> record -> bool = fun a b -> a = b
+let core_eq a b =
+	(a.version = b.version) &&
+	(StringMap.equal record_eq a.records b.records)
+
+let eq : t -> t -> bool = fun a b ->
+	(core_eq a.core b.core) &&
+	(a.changes = b.changes)
+	(* NOTE: we don't need to compare `coposite` field,
+	 * as that's derived purely from the information we
+	 * _do_ compare *)
+
+
+
 let empty_core = {version=0; records=StringMap.empty}
 let empty:t = { core=empty_core; changes=[]; composite=lazy StringMap.empty }
-let eq:record -> record -> bool = fun a b -> a = b
 
 let get domain db : record option =
 	try

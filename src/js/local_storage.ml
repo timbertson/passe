@@ -1,5 +1,5 @@
 open Js
-module Json = Yojson.Safe
+module Json = Json_ext
 
 (* interface Storage {
   readonly attribute unsigned long length;

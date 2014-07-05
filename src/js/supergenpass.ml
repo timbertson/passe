@@ -3,7 +3,7 @@ open Js
 open Dom_html
 open Common
 open React_ext
-module J = Yojson.Safe
+module J = Json_ext
 
 let s = Js.string
 let log = Logging.get_logger "main"
@@ -16,45 +16,38 @@ let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
 	)
 
-let local_db = new Local_storage.record "db"
-let db_signal =
-	let initial = local_db#get
-		|> Option.map Store.parse_json |> Option.default Store.empty in
-	let signal, update = S.create initial in
-	local_db#watch (fun db -> update (Store.parse_json db));
-	signal
+let db_storage = Sync.current_user_db
+let stored_json : J.json option signal = S.bind db_storage (fun storage ->
+	storage
+		|> Option.map (fun s -> s#signal)
+		|> Option.default (S.const None)
+)
+
+let db_signal :Store.t signal =
+	stored_json |> S.map ~eq:Store.eq (fun json ->
+		json
+		|> Option.map Store.parse_json
+		|> Option.default Store.empty
+)
+
 
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
-let db_editor () : #Dom_html.element Ui.widget =
-	let contents, update_contents = editable_signal (db_signal |> S.map (fun db ->
-		db |> Store.to_json_string
-	)) in
-
-	let error_text, set_error_text = S.create None in
-	let textarea = Ui.textarea_of_signal
-		~events:Lwt_js_events.changes
-		~update:(fun contents ->
-			log#info "got input text: %s" contents;
-			match Store.parse contents with
-				| Left err ->
-					set_error_text (Some err)
-				| Right db ->
-					set_error_text None;
-					log#info "got db: %s" (Store.to_json_string db);
-					local_db#save (Store.to_json db)
-		) contents in
-
-	textarea#attr "rows" "10";
-	textarea#attr "cols" "60";
-	let error_dom_stream = error_text |> Ui.optional_signal_content (fun err ->
-		Ui.div ~cls:"error" ~text:err ()
+let db_display () : #Dom_html.element Ui.widget =
+	let contents:string signal = stored_json |> S.map (fun json ->
+		json
+			|> Option.map (J.to_string ~std:true)
+			|> Option.default "<no DB>"
 	) in
-	let error_elem = Ui.stream error_dom_stream in
+
+	let display = Ui.div ~cls:"db"
+		~children:[
+			Ui.text_stream contents
+		] () in
+
 	Ui.div ~cls:"db-editor" ~children:[
-		Ui.frag error_elem;
-		Ui.frag textarea;
+		Ui.frag display;
 	] ()
 
 let password_form () : #Dom_html.element Ui.widget =
@@ -264,7 +257,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	let unchanged_domain = S.l2 (fun db_dom domain_info ->
 		match db_dom with
-			| Some db -> Store.eq (Domain db) (Domain domain_info)
+			| Some db -> Store.record_eq (Domain db) (Domain domain_info)
 			| None -> false
 	) domain_record domain_info in
 
@@ -287,7 +280,10 @@ let password_form () : #Dom_html.element Ui.widget =
 					(Domain (S.value domain_info)) in
 
 				log#info "Saving new DB: %s" (Store.to_json_string new_db);
-				local_db#save (Store.to_json new_db);
+				(match S.value db_storage with
+					| None -> log#warn "no db to save to!"
+					| Some db -> db#save (Store.to_json new_db)
+				);
 				Lwt.return_unit
 			)
 		);
@@ -406,7 +402,7 @@ let show_form (container:Dom_html.element Js.t) =
 	log#info "Hello container!";
 	let all_content = Ui.div () in
 	all_content#append @@ password_form ();
-	all_content#append @@ db_editor ();
+	all_content#append @@ db_display ();
 	all_content#append @@ Sync.ui ();
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in

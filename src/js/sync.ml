@@ -1,5 +1,5 @@
 open Common
-open React
+open React_ext
 open Ui
 open Lwt
 module J = Json_ext
@@ -39,6 +39,13 @@ let auth_state, _set_auth_state =
 		|> Option.default Anonymous
 	in
 	S.create initial
+
+let current_username = auth_state |> S.map (function
+	| Anonymous -> None
+	| Expired_user u | Saved_user (u, _) | Active_user (u, _) -> Some u
+)
+
+let current_user_db : Config.child option signal = current_username |> signal_lift_opt (fun u -> Config.field ("db_" ^ u))
 
 let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
 let remember_me = signal_of_checkbox ~initial:true remember_me_input
