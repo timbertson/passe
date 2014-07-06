@@ -419,9 +419,9 @@ let show_form (container:Dom_html.element Js.t) =
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	log#info "Hello container!";
 	let all_content = Ui.div () in
+	all_content#append @@ Sync.ui ();
 	all_content#append @@ password_form ();
 	all_content#append @@ db_display ();
-	all_content#append @@ Sync.ui ();
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
 		log#info "ALL DONE";
