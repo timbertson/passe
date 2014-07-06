@@ -76,8 +76,9 @@ let handler ~document_root ~data_root sock req body =
 				| ["auth"; "validate"] -> (
 					lwt body = Lazy.force json_body in
 					lwt () = Lwt_unix.sleep 1.0 in
-					(* respond_json ~status:`OK ~body:(`Null) () *)
-					respond_json ~status:`Unauthorized ~body:(`Assoc [("reason", `String "nope")]) ()
+					(* respond_json ~status:`OK ~body:(body) () *)
+					(* respond_json ~status:`Unauthorized ~body:(`Assoc [("reason", `String "nope")]) () *)
+					respond_json ~status:`Internal_server_error ~body:(`Assoc [("reason", `String "nope")]) ()
 				)
 				| ["db"; user] ->
 						(* XXX authentication *)

@@ -189,14 +189,17 @@
 		margin-left: 1em;
 	}
 
-	a.link {
+	a {
 		color:inherit !important;
 	}
 
 	.glyphicon {
-		font-size: 1.4em;
-		width: 1.02em;
+		font-size: 1.2em;
+		width: 1.07em;
 		height: 1em;
+		position:relative;
+		top:0.2em;
+		margin-left:0.2em;
 	}
 
 	&.login {
@@ -215,6 +218,7 @@
 
 	.syncing {
 		opacity:0.5;
+		transition: opacity 2s;
 		i {
 			@spin-duration: 1.5s;
 			-webkit-animation:spin @spin-duration linear infinite;
@@ -226,11 +230,11 @@
 		@keyframes spin { 100% { -webkit-transform: rotate(360deg); transform:rotate(360deg); } }
 	}
 
-	.hover-visible {
-		opacity:0;
+	.hover-reveal {
+		opacity:0.5;
 		transition: opacity 0.4s;
 	}
-	&:hover .hover-visible {
+	&:hover .hover-reveal {
 		opacity:1;
 	}
 }

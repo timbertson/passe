@@ -25,7 +25,7 @@ type username = string
 type credentials = string * J.json
 type auth_state =
 	| Anonymous
-	| Expired_user of username
+	| Failed_login of username
 	| Saved_user of credentials
 	| Active_user of credentials
 
@@ -53,7 +53,7 @@ let auth_state, _set_auth_state =
 
 let current_username = auth_state |> S.map (function
 	| Anonymous -> None
-	| Expired_user u | Saved_user (u, _) | Active_user (u, _) -> Some u
+	| Failed_login u | Saved_user (u, _) | Active_user (u, _) -> Some u
 )
 
 let local_db_for_user user = Config.field ("db_" ^ user)
@@ -72,6 +72,21 @@ let db_signal :Store.t signal =
 		|> Option.map Store.parse_json
 		|> Option.default Store.empty
 )
+
+let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
+let remember_me = signal_of_checkbox ~initial:true remember_me_input
+
+(* wrap set_auth_state aith automatic updating of localStorage *)
+let set_auth_state state = begin match state with
+	| Anonymous -> stored_credentials#delete
+	(* TODO: Failed_login & Saved_user *)
+	| Active_user (_, creds) ->
+			if S.value remember_me then
+				stored_credentials#save creds
+	| _ -> ()
+	end;
+	_set_auth_state state
+
 
 let sync_running, (run_sync:credentials -> unit Lwt.t) =
 	let running_sync = ref None in
@@ -105,6 +120,9 @@ let sync_running, (run_sync:credentials -> unit Lwt.t) =
 									~new_core sent_changes in
 								db_storage#save (Store.to_json new_db);
 								set_last_sync_time (Date.time ());
+						| Server.Unauthorized msg ->
+							log#error "authentication failed: %a" (Option.print output_string) msg;
+							set_auth_state (Failed_login username)
 						| Server.Failed (msg, _) ->
 							log#error "sync failed: %s" msg
 					);
@@ -132,20 +150,6 @@ let sync_state = S.bind sync_running (fun is_running ->
 		) db_signal last_sync_time
 	))
 
-
-let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
-let remember_me = signal_of_checkbox ~initial:true remember_me_input
-
-(* wrap set_auth_state aith automatic updating of localStorage *)
-let set_auth_state state = begin match state with
-	| Anonymous -> stored_credentials#delete
-	(* TODO: Expired_user & Saved_user *)
-	| Active_user (_, creds) ->
-			if S.value remember_me then
-				stored_credentials#save creds
-	| _ -> ()
-	end;
-	_set_auth_state state
 
 let login_form (username:string option) =
 	let error, set_error = S.create None in
@@ -215,8 +219,8 @@ let login_form (username:string option) =
 						| Some user -> set_auth_state (Active_user (user, creds))
 						| None -> raise (AssertionError "credentials doesn't contain a user key")
 					)
-
 				| Failed (message, _) -> set_error (Some message)
+				| Unauthorized _ -> assert false
 				end;
 				return_unit
 			)
@@ -255,54 +259,68 @@ let sync_state_widget auth =
 			] ()
 	) |> stream
 
-let ui () =
-	auth_state |> S.map (fun auth -> match auth with
+let string_of_auth_state = function
+	| Anonymous -> "Anonymous"
+	| Failed_login u -> "Failed_login(" ^ u ^ ")"
+	| Saved_user (u, _) -> "Saved_user(" ^ u ^ ", <creds>)"
+	| Active_user (u, _) -> "Active_user(" ^ u ^ ", <creds>)"
+
+let logout_button tooltip = child a
+	~cls:"hover-reveal link"
+	~attrs:["title",tooltip]
+	~children:[icon "remove"]
+	~mechanism:(fun elem ->
+		Lwt_js_events.clicks elem (fun evt _ ->
+			set_auth_state Anonymous;
+			return_unit;
+		)
+	) ()
+
+let ui () = auth_state |> S.map (fun auth ->
+	log#info "Auth state: %s" (string_of_auth_state auth);
+
+	match auth with
 	| Anonymous -> login_form None
-	| Expired_user username -> login_form (Some username)
+	| Failed_login username -> login_form (Some username)
 	| Saved_user (username, creds) -> (
-		let offline_message, set_offline_message = S.create
-			(span ~text:"connecting..." ()) in
+		let busy, set_busy = S.create true in
+
+		let offline_message = span ~text:"offline " () in
+		offline_message#class_s "hidden" busy;
+
+		let sync_button = a ~children:[icon "refresh"] () in
+		sync_button#class_s "syncing" busy;
+		sync_button#class_s "link" (S.map not busy);
 
 		div ~cls:"account-status alert alert-warning" ~children:[
 			child span ~cls:"user" ~text:username ();
+			logout_button "Log out";
 			child span ~cls:"offline" ~children:[
-				stream offline_message;
-			] ~mechanism:(fun offline ->
+				frag offline_message;
+				frag sync_button;
+			] ~mechanism:(fun elem ->
 				let continue = ref true in
 				while_lwt !continue do
+					set_busy true;
 					continue := false;
 					let open Server in
 					match_lwt Server.post_json ~data:creds token_validate_url with
 					| OK _ -> set_auth_state (Active_user (username, creds)); return_unit
-					| Failed (msg, json) ->
-						log#warn "failed auth: %s" msg;
-						let reason = json |> Option.bind (J.get_field "reason") |> Option.bind J.as_string in
-						match reason with
-							| Some reason ->
-									log#warn "credentials rejected: %s" reason;
-									set_auth_state Anonymous;
-									stored_credentials#delete;
-									return_unit
-							| None ->
-								continue := true;
-								set_offline_message (
-									span ~children:[
-										child i ~cls:"glyphicon glyphicon-remove" ();
-										child span ~text:"offline" ();
-									] ());
-								log#info "no reason given for rejection; assuming connectivity issue";
-								Ui.withContent offline ?before:(offline##firstChild |> Js.Opt.to_option) (a ~cls:"link retry disabled" ~children:[
-									child i ~cls:"glyphicon glyphicon-refresh" ();
-									child span ~text:"retry" ();
-								] ()) (fun elem ->
-									pick [
-										(
-											lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
-											return_unit
-										);
-										(Lwt_js.sleep 60.0);
-									]
-								)
+					| Unauthorized msg ->
+						log#warn "failed auth: %a" (Option.print output_string) msg;
+						set_auth_state (Failed_login username);
+						return_unit
+					| Failed (msg, _) ->
+						log#warn "unknown failure, assuming connectivity issue: %s" msg;
+						continue := true;
+						set_busy false;
+						Lwt.pick [
+							(
+								lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+								return_unit
+							);
+							(Lwt_js.sleep 60.0);
+						]
 				done
 			) ()
 		] ()
@@ -310,13 +328,7 @@ let ui () =
 	| Active_user ((username, _) as auth) -> (
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
-			child a ~cls:"hover-visible btn btn-default" ~text:"Log out"
-			~mechanism:(fun elem ->
-				Lwt_js_events.clicks elem (fun evt _ ->
-					set_auth_state Anonymous;
-					return_unit;
-				)
-			) ();
+			logout_button "Log out";
 			child span ~cls:"online" ~children:[
 				sync_state_widget auth;
 			] ()

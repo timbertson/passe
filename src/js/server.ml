@@ -7,6 +7,7 @@ exception Unsupported_protocol
 
 type response =
 	| OK of J.json
+	| Unauthorized of string option
 	| Failed of string * (J.json option)
 
 (* let root = *)
@@ -101,6 +102,12 @@ let handle_json_response frame =
 	let payload = json_payload frame in
 	return (match (frame.Xhr.code, payload) with
 		| 200, Some json -> OK json
+		| 401, json -> Unauthorized (
+			json |> Option.bind (fun json ->
+				json
+				|> J.get_field "reason"
+				|> Option.bind J.as_string)
+			)
 		| code, response -> (
 			let error_msg = response
 			|> Option.bind (J.get_field "error")
