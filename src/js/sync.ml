@@ -7,7 +7,7 @@ module Xhr = XmlHttpRequest
 
 let log = Logging.get_logger "sync"
 
-let credentials = Config.field "credentials"
+let stored_credentials = Config.field "credentials"
 let last_sync = Config.field "last_sync"
 let set_last_sync_time t = last_sync#save (`Float t)
 let last_sync_time = last_sync#signal |> signal_lift_opt (function
@@ -22,12 +22,12 @@ let token_validate_url = Server.path ["auth"; "validate"]
 let db_url username = Server.path ["db"; username]
 
 type username = string
-type auth_token = J.json
+type credentials = string * J.json
 type auth_state =
 	| Anonymous
 	| Expired_user of username
-	| Saved_user of username * auth_token
-	| Active_user of username * auth_token
+	| Saved_user of credentials
+	| Active_user of credentials
 
 type date = float
 type sync_state =
@@ -36,12 +36,17 @@ type sync_state =
 	| Syncing
 	| Local_changes of int
 
+let parse_credentials (token:J.json) : credentials =
+	let user = token
+		|> J.get_field username_key
+		|> Option.bind (J.as_string)
+		|> Option.default_fn (fun () ->
+				raise (AssertionError ("no username found in auth token")))
+	in (user, token)
+
 let auth_state, _set_auth_state =
-	let initial = credentials#get
-		|> Option.bind (fun token -> token
-			|> J.get_field username_key
-			|> Option.bind (J.as_string)
-			|> Option.map (fun (u:string) -> Saved_user (u, token)))
+	let initial = stored_credentials#get
+		|> Option.map (fun token -> Saved_user (parse_credentials token))
 		|> Option.default Anonymous
 	in
 	S.create initial
@@ -68,43 +73,53 @@ let db_signal :Store.t signal =
 		|> Option.default Store.empty
 )
 
-let sync_running, (run_sync:unit -> unit Lwt.t) =
-	let s, up = S.create false in
-	(s, fun () ->
-		if (S.value s) then raise (AssertionError "sync already running!");
-		S.value current_username |> Option.map (fun username ->
-			up true;
-			try_lwt
-				log#info "syncing...";
-				let db_storage = local_db_for_user username in
-				let get_latest_db () =
-					db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+let sync_running, (run_sync:credentials -> unit Lwt.t) =
+	let running_sync = ref None in
+	let s, set_busy = S.create false in
+	(s, fun (username, token) ->
+		match !running_sync with
+			| Some (future,_) -> future
+			| None -> begin
+				let (future, sync_complete) as task = Lwt.wait () in
+				running_sync := Some task;
+				set_busy true;
+				try_lwt
+					log#info "syncing...";
+					let db_storage = local_db_for_user username in
+					let get_latest_db () =
+						db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
 
-				let sent_changes = (get_latest_db ()).Store.changes in
+					let sent_changes = (get_latest_db ()).Store.changes in
 
-				lwt response = (match sent_changes with
-					| [] -> Server.get_json (db_url username)
-					| sent_changes ->
-							let data = (Store.Format.json_of_changes sent_changes) in
-							Server.post_json ~data (db_url username)
-				) in
-				(match response with
-					| Server.OK json ->
-							let new_core = Store.Format.core_of_json json in
-							let new_db = Store.drop_applied_changes
-								~from:(get_latest_db ())
-								~new_core sent_changes in
-							db_storage#save (Store.to_json new_db);
-							set_last_sync_time (Date.time ());
-					| Server.Failed (msg, _) ->
-						log#error "sync failed: %s" msg
-				);
-				return_unit;
-			finally (
-				up false;
-				return_unit
-			)
-		) |> Option.default return_unit
+					lwt response = (match sent_changes with
+						| [] -> Server.get_json (db_url username)
+						| sent_changes ->
+								let data = (Store.Format.json_of_changes sent_changes) in
+								Server.post_json ~data (db_url username)
+					) in
+					(match response with
+						| Server.OK json ->
+								let new_core = Store.Format.core_of_json json in
+								let new_db = Store.drop_applied_changes
+									~from:(get_latest_db ())
+									~new_core sent_changes in
+								db_storage#save (Store.to_json new_db);
+								set_last_sync_time (Date.time ());
+						| Server.Failed (msg, _) ->
+							log#error "sync failed: %s" msg
+					);
+					return_unit;
+				with e -> (
+					Lwt.wakeup_exn sync_complete e;
+					raise e
+				)
+				finally (
+					running_sync := None;
+					set_busy false;
+					Lwt.wakeup sync_complete ();
+					return_unit
+				)
+		end
 	)
 
 let sync_state = S.bind sync_running (fun is_running ->
@@ -123,11 +138,11 @@ let remember_me = signal_of_checkbox ~initial:true remember_me_input
 
 (* wrap set_auth_state aith automatic updating of localStorage *)
 let set_auth_state state = begin match state with
-	| Anonymous -> credentials#delete
+	| Anonymous -> stored_credentials#delete
 	(* TODO: Expired_user & Saved_user *)
 	| Active_user (_, creds) ->
 			if S.value remember_me then
-				credentials#save creds
+				stored_credentials#save creds
 	| _ -> ()
 	end;
 	_set_auth_state state
@@ -179,7 +194,7 @@ let login_form (username:string option) =
 				|> S.map (fun remember_me ->
 						log#info "remember me changed to: %b" remember_me;
 						if (not remember_me) then (
-							credentials#delete
+							stored_credentials#delete
 						)
 				)
 			)
@@ -208,12 +223,12 @@ let login_form (username:string option) =
 		) ()
 	] ()
 
-let sync_state_widget () =
+let sync_state_widget auth =
 	let open Ui in
 	let _node w = (w:>Dom.node widget_t) in
 	let sync_mech = (fun elem ->
 		Lwt_js_events.clicks elem (fun event _ ->
-			run_sync ()
+			run_sync auth
 		)
 	) in
 	sync_state |> S.map (function
@@ -266,7 +281,7 @@ let ui () =
 							| Some reason ->
 									log#warn "credentials rejected: %s" reason;
 									set_auth_state Anonymous;
-									credentials#delete;
+									stored_credentials#delete;
 									return_unit
 							| None ->
 								continue := true;
@@ -292,7 +307,7 @@ let ui () =
 			) ()
 		] ()
 	)
-	| Active_user (username, _) -> (
+	| Active_user ((username, _) as auth) -> (
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
 			child a ~cls:"hover-visible btn btn-default" ~text:"Log out"
@@ -303,8 +318,22 @@ let ui () =
 				)
 			) ();
 			child span ~cls:"online" ~children:[
-				sync_state_widget ();
+				sync_state_widget auth;
 			] ()
-		] ()
+		]
+		~mechanism:(fun elem ->
+			let run_sync () = run_sync auth in
+			while_lwt true do
+				log#info "sync loop running..";
+				Lwt.pick [
+					(* every 2 minutes, attempt a sync *)
+					(Lwt_js.sleep 120.0 >>= run_sync);
+					(effectful_stream_mechanism (sync_state |> S.map (function
+						| Local_changes _ -> Lwt_js.sleep 2.0 >>= run_sync
+						| _ -> return_unit
+					)));
+				]
+			done
+		) ()
 	)
 ) |> Ui.stream

@@ -1,4 +1,0 @@
-#!/bin/bash
-set -eux
-exec vim-watch --huppy bash -c 'gup -u _build/native/service.byte && exec ./_build/native/service.byte'
-
