@@ -20,22 +20,24 @@ end
 
 let local_storage : local_storage t = Js.Unsafe.variable "localStorage"
 
+let _records = ref []
+
 let erase_all () = local_storage##clear()
 
-class record key =
+class record_t key =
   let key = Js.string key in
-  let listeners: (Json.json -> unit) list ref = ref [] in
+  let listeners: (Json.json option -> unit) list ref = ref [] in
   object (self)
   method get_str = local_storage##getItem(key) |> Opt.to_option
   method get = self#get_str |> Option.map to_string |> Option.map Json.from_string
 
   method save v =
     local_storage##setItem(key, Js.string (Json.to_string v));
-    self#update v
+    self#update (Some v)
 
   method delete =
     local_storage##removeItem(key);
-    self#update `Null
+    self#update None
 
   method watch l = listeners := l :: !listeners
   method unwatch l =
@@ -45,3 +47,8 @@ class record key =
 
   method private update v = !listeners |> List.iter (fun l -> l v)
 end
+
+let record key =
+  let rv = new record_t key in
+  _records := rv :: !_records;
+  rv

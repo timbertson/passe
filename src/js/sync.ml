@@ -335,6 +335,7 @@ let ui () = auth_state |> S.map (fun auth ->
 		]
 		~mechanism:(fun elem ->
 			let run_sync () = run_sync auth in
+			lwt () = run_sync () in
 			while_lwt true do
 				log#info "sync loop running..";
 				Lwt.pick [

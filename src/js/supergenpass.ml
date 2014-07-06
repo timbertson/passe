@@ -36,6 +36,30 @@ let db_display () : #Dom_html.element Ui.widget =
 		Ui.frag display;
 	] ()
 
+let footer () =
+	let open Ui in
+	div ~cls:"row" ~children:[
+		child div ~cls:"col col-xs-6" ~children:[
+			child ul ~children:[
+				child li ~text:"About this site" ();
+			] ()
+		] ();
+		child div ~cls:"col col-xs-6" ~children:[
+			child ul ~children:[
+				child li ~children:[
+					child a ~cls:"link"
+						~text:"Forget all saved data"
+						~mechanism:(fun elem ->
+							Lwt_js_events.clicks elem (fun event _ ->
+								Local_storage.erase_all ();
+								return_unit
+							)
+						) ();
+				] ();
+			] ()
+		] ()
+	] ()
+
 let password_form () : #Dom_html.element Ui.widget =
 	let open Ui in
 
@@ -418,10 +442,17 @@ let show_form (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	log#info "Hello container!";
-	let all_content = Ui.div () in
-	all_content#append @@ Sync.ui ();
-	all_content#append @@ password_form ();
-	all_content#append @@ db_display ();
+	let all_content = Ui.div
+		~children:[
+			Ui.child Ui.div ~cls:"container" ~children:[
+				Ui.frag @@ Sync.ui ();
+				Ui.frag @@ password_form ();
+			] ();
+			Ui.child Ui.div ~cls:"container footer" ~children:[
+				Ui.frag @@ footer ();
+			]()
+		] () in
+	(* all_content#append @@ db_display (); *)
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
 		log#info "ALL DONE";

@@ -9,11 +9,32 @@
 	cursor:pointer;
 }
 
+body {
+	background-color:#556;
+}
+
+.container {
+	background-color:#fff;
+	box-shadow: 0px 7px 10px rgba(0, 0, 0, 0.19);
+	padding-bottom:15px;
+
+	&.footer {
+		border-top: 1px solid rgb(208, 209, 211);
+		border-radius:10px;
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+		background:#e0e0e0;
+		color:#555;
+		padding-top:20px;
+	}
+}
+
 .password-display {
 	&:extend(.well, .well-sm);
 	font-size: 1.5em;
 	text-align:center;
 	padding:1px;
+	margin-bottom:0;
 	width:auto;
 	display:block-inline;
 	margin-left:1em;
@@ -88,6 +109,7 @@
 
 	width:100%;
 	display:table;
+	margin-bottom:5px;
 
 	.inline {
 		span {
@@ -168,13 +190,29 @@
 }
 
 .account-status {
+	&:extend(.row);
 
-	width:100%;
+	&.alert {
+		padding:20px;
+		padding-top: 7px;
+		padding-bottom: 5px;
+	}
+	&.alert-info {
+		padding-left: 10px;
+		padding-right: 10px;
+		box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.23);
+	}
+
 	margin-bottom:0;
 	border-top:0;
+	border-left:0;
+	border-right:0;
+	border-radius:0;
+	/*
 	border-top-left-radius:0;
 	border-top-right-radius:0;
 	box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.12);
+	*/
 
 	.user {
 		font-weight: bold;
