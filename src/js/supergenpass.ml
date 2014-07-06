@@ -247,6 +247,24 @@ let password_form () : #Dom_html.element Ui.widget =
 			| None -> false
 	) domain_record domain_info in
 
+	let save_db new_db =
+		log#info "Saving new DB: %s" (Store.to_json_string new_db);
+		(match S.value Sync.current_user_db with
+			| None -> log#warn "no db to save to!"
+			| Some db -> db#save (Store.to_json new_db)
+		);
+		Lwt.return_unit
+	in
+
+	let save_current_domain () =
+		let current_db = S.value db_signal in
+		save_db (Store.update
+			~db:current_db
+			~original:(S.value domain_record |> Option.map (fun d -> Domain d))
+			(Some (Domain (S.value domain_info)))
+		)
+	in
+
 	let domain_panel = Ui.div ~cls:"domain-info panel" () in
 	let () =
 		let open Store in
@@ -254,30 +272,34 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_panel#class_s "unknown" domain_is_unknown;
 		domain_panel#class_s "hidden" empty_domain;
 
-		let save_button = input ~attrs:[("type","button");("value","save")] () in
-		save_button#class_s "hidden" (S.l2 (fun unchanged current_user ->
-			unchanged || Option.is_none current_user) unchanged_domain Sync.current_username);
+		let no_user = Sync.current_username |> S.map Option.is_none in
+		let save_button = input ~attrs:[("type","button");("value","save");("title","(ctrl+s)")] () in
+		save_button#class_s "hidden" (S.l2 (||) no_user unchanged_domain);
+
 		save_button#mechanism (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
 				Ui.stop event;
-				let current_db = S.value db_signal in
-				let new_db = Store.update
-					~db:current_db
-					~original:(S.value domain_record |> Option.map (fun d -> Domain d))
-					(Domain (S.value domain_info)) in
+				save_current_domain ();
+			)
+		);
 
-				log#info "Saving new DB: %s" (Store.to_json_string new_db);
-				(match S.value Sync.current_user_db with
-					| None -> log#warn "no db to save to!"
-					| Some db -> db#save (Store.to_json new_db)
-				);
-				Lwt.return_unit
+		let delete_button = a ~cls:"delete link" ~children:[icon "remove"] () in
+		delete_button#class_s "hidden" (S.l2 (||) no_user domain_is_unknown);
+		delete_button#mechanism (fun elem ->
+			Lwt_js_events.clicks elem (fun event _ ->
+				stop event;
+				let current_db = S.value db_signal in
+				save_db (Store.update ~db:current_db
+					~original:(S.value domain_record |> Option.map (fun d -> Domain d))
+					None
+				)
 			)
 		);
 
 		domain_panel#append_all [
 			child div ~cls:"panel-heading" ~children:[
 				child h3 ~children: [
+					frag delete_button;
 					(S.l3 (fun domain unknown unchanged ->
 						if unknown || unchanged
 							then domain
@@ -362,6 +384,15 @@ let password_form () : #Dom_html.element Ui.widget =
 
 
 	form#mechanism (fun elem ->
+		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
+			log#info "EVENT!";
+			Console.console##log(event);
+			if (to_bool event##ctrlKey && event##keyCode = 83) then (
+				stop event;
+				save_current_domain ()
+			) else return_unit
+		)
+		<&>
 		Lwt_js_events.submits elem (fun event _ ->
 			Ui.stop event;
 			log#info "form submitted";

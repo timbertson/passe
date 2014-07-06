@@ -211,6 +211,7 @@ let h3 = wrap Dom_html.createH3
 let ul = wrap Dom_html.createUl
 let li = wrap Dom_html.createLi
 let input = wrap Dom_html.createInput
+let button = wrap Dom_html.createButton
 let i = wrap Dom_html.createI
 
 let stop event =

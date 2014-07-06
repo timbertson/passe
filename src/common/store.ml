@@ -527,11 +527,14 @@ let keys_like (db:t) query =
 let update ~(db:t) ~original updated =
 	log#info "modifying %a -> %a"
 		(Option.print J.print) (Option.map Format.json_of_record original)
-		(J.print) (Format.json_of_record updated);
+		(Option.print J.print) (Option.map Format.json_of_record updated);
 
 	let changes = match original, updated with
-		| None, _ -> [Create updated]
-		| Some (Domain orig), Domain u -> [Edit (
+		| None, None -> []
+		| None, Some updated -> [Create updated]
+		| Some orig, None -> [Delete (id_of orig)]
+
+		| Some (Domain orig), Some (Domain u) -> [Edit (
 				orig.domain,
 				`Domain (filter_some [
 					Option.cond (orig.domain <> u.domain) (`Domain u.domain);
@@ -541,7 +544,7 @@ let update ~(db:t) ~original updated =
 					Option.cond (orig.digest <> u.digest) (`Digest u.digest);
 				])
 			)]
-		| Some (Alias orig), Alias u -> [Edit (
+		| Some (Alias orig), Some (Alias u) -> [Edit (
 				orig.alias,
 				`Alias (filter_some [
 					Option.cond (orig.alias <> u.alias) (`Alias u.alias);
@@ -549,8 +552,8 @@ let update ~(db:t) ~original updated =
 				])
 			)]
 		(* type change is handled by just deleting / creating *)
-		| Some (Domain _ as orig), (Alias _ as updated)
-		| Some (Alias _ as orig), (Domain _ as updated) ->
+		| Some (Domain _ as orig), Some (Alias _ as updated)
+		| Some (Alias _ as orig), Some (Domain _ as updated) ->
 				[Delete (id_of orig); Create updated]
 		in
 	{db with changes=db.changes @ changes}
