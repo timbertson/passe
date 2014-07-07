@@ -20,24 +20,24 @@ end
 
 let local_storage : local_storage t = Js.Unsafe.variable "localStorage"
 
-let _records = ref []
+class type record_i = object
+  method refresh:unit
+end
 
-let erase_all () = local_storage##clear()
-
-class record_t key =
+class ['s] record_t key =
   let key = Js.string key in
-  let listeners: (Json.json option -> unit) list ref = ref [] in
+  let listeners = ref [] in
   object (self)
   method get_str = local_storage##getItem(key) |> Opt.to_option
   method get = self#get_str |> Option.map to_string |> Option.map Json.from_string
 
-  method save v =
+  method save ?(step:'s option) v =
     local_storage##setItem(key, Js.string (Json.to_string v));
-    self#update (Some v)
+    self#update ?step (Some v)
 
-  method delete =
+  method delete ?(step:'s option) =
     local_storage##removeItem(key);
-    self#update None
+    self#update ?step None
 
   method watch l = listeners := l :: !listeners
   method unwatch l =
@@ -45,10 +45,18 @@ class record_t key =
     listeners := !listeners |> List.filter (fun item -> item == l);
     if List.length !listeners <> expected then raise Not_found
 
-  method private update v = !listeners |> List.iter (fun l -> l v)
+  method refresh = self#update (self#get)
+
+  method private update ?(step:'s option) v = !listeners |> List.iter (fun l -> l ?step v)
 end
+
+let _records:record_i list ref = ref []
+
+let erase_all () = local_storage##clear();
+  !_records |> List.iter (fun r -> r#refresh)
+
 
 let record key =
   let rv = new record_t key in
-  _records := rv :: !_records;
+  _records := (rv:>record_i) :: !_records;
   rv

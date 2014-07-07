@@ -29,6 +29,13 @@ type auth_state =
 	| Saved_user of credentials
 	| Active_user of credentials
 
+let string_of_auth_state = function
+	| Anonymous -> "Anonymous"
+	| Failed_login u -> "Failed_login(" ^ u ^ ")"
+	| Saved_user (u, _) -> "Saved_user(" ^ u ^ ", <creds>)"
+	| Active_user (u, _) -> "Active_user(" ^ u ^ ", <creds>)"
+
+
 type date = float
 type sync_state =
 	| Uptodate
@@ -44,12 +51,34 @@ let parse_credentials (token:J.json) : credentials =
 				raise (AssertionError ("no username found in auth token")))
 	in (user, token)
 
-let auth_state, _set_auth_state =
-	let initial = stored_credentials#get
-		|> Option.map (fun token -> Saved_user (parse_credentials token))
-		|> Option.default Anonymous
+
+let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
+let remember_me = signal_of_checkbox ~initial:true remember_me_input
+
+let auth_state, set_auth_state =
+	let source = stored_credentials#signal |> S.map ~eq:never_eq
+		(fun credentials ->
+			credentials
+			|> Option.map (fun token -> Saved_user (parse_credentials token))
+			|> Option.default Anonymous
+		) in
+	let auth_state, _set_auth_state = editable_signal source in
+
+	let set_auth_state state =
+		let step = Step.create () in
+		begin match state with
+		| Anonymous -> stored_credentials#delete ~step ()
+		(* TODO: Failed_login & Saved_user *)
+		| Active_user (_, creds) ->
+				if S.value remember_me then
+					stored_credentials#save ~step creds
+		| _ -> ()
+		end;
+		_set_auth_state ~step state;
+		Step.execute step
 	in
-	S.create initial
+	(auth_state, set_auth_state)
+
 
 let current_username = auth_state |> S.map (function
 	| Anonymous -> None
@@ -72,20 +101,6 @@ let db_signal :Store.t signal =
 		|> Option.map Store.parse_json
 		|> Option.default Store.empty
 )
-
-let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
-let remember_me = signal_of_checkbox ~initial:true remember_me_input
-
-(* wrap set_auth_state aith automatic updating of localStorage *)
-let set_auth_state state = begin match state with
-	| Anonymous -> stored_credentials#delete
-	(* TODO: Failed_login & Saved_user *)
-	| Active_user (_, creds) ->
-			if S.value remember_me then
-				stored_credentials#save creds
-	| _ -> ()
-	end;
-	_set_auth_state state
 
 
 let sync_running, (run_sync:credentials -> unit Lwt.t) =
@@ -198,7 +213,7 @@ let login_form (username:string option) =
 				|> S.map (fun remember_me ->
 						log#info "remember me changed to: %b" remember_me;
 						if (not remember_me) then (
-							stored_credentials#delete
+							stored_credentials#delete ()
 						)
 				)
 			)
@@ -258,12 +273,6 @@ let sync_state_widget auth =
 					~mechanism:sync_mech ()
 			] ()
 	) |> stream
-
-let string_of_auth_state = function
-	| Anonymous -> "Anonymous"
-	| Failed_login u -> "Failed_login(" ^ u ^ ")"
-	| Saved_user (u, _) -> "Saved_user(" ^ u ^ ", <creds>)"
-	| Active_user (u, _) -> "Active_user(" ^ u ^ ", <creds>)"
 
 let logout_button tooltip = child a
 	~cls:"hover-reveal link"

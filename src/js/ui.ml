@@ -104,7 +104,7 @@ end
 
 let effectful_stream_mechanism effect : unit Lwt.t =
 	try_lwt
-		log#info "starting effectful mechanism";
+		(* log#info "starting effectful mechanism"; *)
 		pause ()
 	finally
 		log#info "stopping effectful mechanism";
@@ -119,7 +119,7 @@ let stream_attribute_mechanism name value = fun elem ->
 let stream_class_mechanism name value = fun elem ->
 	let name_js = Js.string name in
 	let set v =
-		log#info "setting class %s to %b" name v;
+		(* log#info "setting class %s to %b" name v; *)
 		let cls = elem##classList in
 		if v then cls##add(name_js) else cls##remove(name_js)
 	in
@@ -242,23 +242,21 @@ let withContent :
 
 let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js.t) ->
 	let new_widget = Lwt_condition.create () in
-	let effect : unit S.t = s |> S.map (fun w ->
-		Lwt_condition.signal new_widget (w:>Dom.node widget_t)) in
+	let watch : unit S.t = s |> S.map (fun _ ->
+		Lwt_condition.signal new_widget ()) in
 	let p = (placeholder##parentNode) |> non_null in
 	let elem = ref placeholder in
 	try_lwt
-		let widget = ref @@ ((S.value s):>Dom.node widget_t) in
 		while_lwt true do
-			withContent p ~before:placeholder !widget (fun new_elem ->
+			let widget = ((S.value s):>Dom.node widget_t) in
+			withContent p ~before:placeholder widget (fun new_elem ->
 				elem := new_elem;
 				(* wait until next update *)
-				lwt w = Lwt_condition.wait new_widget in
-				widget := w;
-				Lwt.return_unit
+				Lwt_condition.wait new_widget
 			)
 		done
 	finally
-		S.stop ~strong:true effect;
+		S.stop ~strong:true watch;
 		Lwt.return_unit
 
 

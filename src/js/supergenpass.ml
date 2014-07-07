@@ -48,7 +48,7 @@ let footer () =
 			child ul ~children:[
 				child li ~children:[
 					child a ~cls:"link"
-						~text:"Forget all saved data"
+						~text:"Erase local data"
 						~mechanism:(fun elem ->
 							Lwt_js_events.clicks elem (fun event _ ->
 								Local_storage.erase_all ();
