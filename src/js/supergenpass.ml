@@ -19,9 +19,13 @@ let check cond = Printf.ksprintf (function s ->
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
-let db_signal = Sync.db_signal
+let config_provider, set_config_provider = S.create (Lazy.force Config.persistent)
+
+let sync = Sync.build config_provider
+
+let db_signal = sync.Sync.db_signal
 let db_display () : #Dom_html.element Ui.widget =
-	let contents:string signal = Sync.stored_json |> S.map (fun json ->
+	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
 			|> Option.map (J.to_string ~std:true)
 			|> Option.default "<no DB>"
@@ -51,7 +55,7 @@ let footer () =
 						~text:"Erase local data"
 						~mechanism:(fun elem ->
 							Lwt_js_events.clicks elem (fun event _ ->
-								Local_storage.erase_all ();
+								(Lazy.force Local_storage.persistent)#erase_all;
 								return_unit
 							)
 						) ();
@@ -273,7 +277,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	let save_db new_db =
 		log#info "Saving new DB: %s" (Store.to_json_string new_db);
-		(match S.value Sync.current_user_db with
+		(match S.value sync.Sync.current_user_db with
 			| None -> log#warn "no db to save to!"
 			| Some db -> db#save (Store.to_json new_db)
 		);
@@ -296,7 +300,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		domain_panel#class_s "unknown" domain_is_unknown;
 		domain_panel#class_s "hidden" empty_domain;
 
-		let no_user = Sync.current_username |> S.map Option.is_none in
+		let no_user = sync.Sync.current_username |> S.map Option.is_none in
 		let save_button = input ~attrs:[("type","button");("value","save");("title","(ctrl+s)")] () in
 		save_button#class_s "hidden" (S.l2 (||) no_user unchanged_domain);
 
@@ -445,7 +449,7 @@ let show_form (container:Dom_html.element Js.t) =
 	let all_content = Ui.div
 		~children:[
 			Ui.child Ui.div ~cls:"container" ~children:[
-				Ui.frag @@ Sync.ui ();
+				Ui.frag @@ Sync.ui sync;
 				Ui.frag @@ password_form ();
 			] ();
 			Ui.child Ui.div ~cls:"container footer" ~children:[

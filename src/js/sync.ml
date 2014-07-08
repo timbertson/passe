@@ -7,15 +7,6 @@ module Xhr = XmlHttpRequest
 
 let log = Logging.get_logger "sync"
 
-let stored_credentials = Config.field "credentials"
-let last_sync = Config.field "last_sync"
-let set_last_sync_time t = last_sync#save (`Float t)
-let last_sync_time = last_sync#signal |> signal_lift_opt (function
-	| `Float t -> t
-	| _ -> raise @@ AssertionError ("invalid `last_sync` value")
-)
-
-
 let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
 let token_validate_url = Server.path ["auth"; "validate"]
@@ -51,241 +42,292 @@ let parse_credentials (token:J.json) : credentials =
 				raise (AssertionError ("no username found in auth token")))
 	in (user, token)
 
+let local_db_for_user config_provider user =
+	config_provider.Config.field ("db_"^user)
 
-let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] ()
-let remember_me = signal_of_checkbox ~initial:true remember_me_input
+type state = {
+	config_provider: Config.t signal;
+	current_username: username option signal;
+	current_user_db: Config.child option signal;
+	last_sync: Config.child signal;
+	stored_json: J.json option signal;
+	db_signal: Store.t signal;
+	stored_credentials: Config.child signal;
+	stored_credentials_signal: J.json option signal;
+	auth_state: auth_state signal;
+	set_auth_state: bool -> auth_state -> unit;
+}
 
-let auth_state, set_auth_state =
-	let source = stored_credentials#signal |> S.map ~eq:never_eq
-		(fun credentials ->
-			credentials
-			|> Option.map (fun token -> Saved_user (parse_credentials token))
-			|> Option.default Anonymous
-		) in
-	let auth_state, _set_auth_state = editable_signal source in
+let build config_provider =
+	let field key:Config.child signal = config_provider |> S.map (fun impl -> impl.Config.field key) in
 
-	let set_auth_state state =
-		let step = Step.create () in
-		begin match state with
-		| Anonymous -> stored_credentials#delete ~step ()
-		(* TODO: Failed_login & Saved_user *)
-		| Active_user (_, creds) ->
-				if S.value remember_me then
-					stored_credentials#save ~step creds
-		| _ -> ()
-		end;
-		_set_auth_state ~step state;
-		Step.execute step
+	let _stored_credentials = field "credentials" in
+	let stored_credentials () = S.value _stored_credentials in
+	let stored_credentials_signal = S.bind _stored_credentials (fun s -> s#signal) in
+	let last_sync = field "last_sync" in
+
+	let auth_state, set_auth_state =
+		let source = stored_credentials_signal |> S.map ~eq:never_eq
+			(fun credentials ->
+				credentials
+				|> Option.map (fun token -> Saved_user (parse_credentials token))
+				|> Option.default Anonymous
+			) in
+		let auth_state, _set_auth_state = editable_signal source in
+
+		let set_auth_state remember_me state =
+			let step = Step.create () in
+			begin match state with
+			| Anonymous -> (stored_credentials ())#delete ~step ()
+			(* TODO: Failed_login & Saved_user *)
+			| Active_user (_, creds) ->
+					if remember_me then
+						(stored_credentials ())#save ~step creds
+			| _ -> ()
+			end;
+			_set_auth_state ~step state;
+			Step.execute step
+		in
+		(auth_state, set_auth_state)
 	in
-	(auth_state, set_auth_state)
+
+	let current_username = auth_state |> S.map (function
+		| Anonymous -> None
+		| Failed_login u | Saved_user (u, _) | Active_user (u, _) -> Some u
+	) in
+
+	let current_user_db : Config.child option signal =
+		S.l2 (Option.map % local_db_for_user) config_provider current_username in
+
+	let stored_json : J.json option signal = S.bind current_user_db (fun storage ->
+		storage
+			|> Option.map (fun s -> s#signal)
+			|> Option.default (S.const None)
+	) in
+
+	let db_signal :Store.t signal =
+		stored_json |> S.map ~eq:Store.eq (fun json ->
+			json
+			|> Option.map Store.parse_json
+			|> Option.default Store.empty
+	) in
+
+	{
+		current_username=current_username;
+		current_user_db=current_user_db;
+		stored_json=stored_json;
+		db_signal=db_signal;
+		last_sync=last_sync;
+		stored_credentials=_stored_credentials;
+		stored_credentials_signal=stored_credentials_signal;
+		auth_state=auth_state;
+		set_auth_state=set_auth_state;
+		config_provider=config_provider;
+	}
 
 
-let current_username = auth_state |> S.map (function
-	| Anonymous -> None
-	| Failed_login u | Saved_user (u, _) | Active_user (u, _) -> Some u
-)
+let ui state =
+	(* let config_provider, set_config_provider = S.create (Lazy.force ephemeral_config) in *)
+	let set_last_sync_time t = (S.value state.last_sync)#save (`Float t) in
+	let last_sync_signal = S.bind state.last_sync (fun s -> s#signal) in
+	let last_sync_time = last_sync_signal |> signal_lift_opt (function
+		| `Float t -> t
+		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
+	) in
 
-let local_db_for_user user = Config.field ("db_" ^ user)
-let current_user_db : Config.child option signal =
-	current_username |> signal_lift_opt local_db_for_user
+	let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] () in
+	let remember_me = signal_of_checkbox ~initial:true remember_me_input in
+	let set_auth_state = state.set_auth_state (S.value remember_me) in
 
-let stored_json : J.json option signal = S.bind current_user_db (fun storage ->
-	storage
-		|> Option.map (fun s -> s#signal)
-		|> Option.default (S.const None)
-)
+	let sync_running, (run_sync:credentials -> unit Lwt.t) =
+		let running_sync = ref None in
+		let s, set_busy = S.create false in
+		(s, fun (username, token) ->
+			match !running_sync with
+				| Some (future,_) -> future
+				| None -> begin
+					let (future, sync_complete) as task = Lwt.wait () in
+					running_sync := Some task;
+					set_busy true;
+					try_lwt
+						log#info "syncing...";
+						let db_storage = local_db_for_user
+							(S.value state.config_provider)
+							username in
 
-let db_signal :Store.t signal =
-	stored_json |> S.map ~eq:Store.eq (fun json ->
-		json
-		|> Option.map Store.parse_json
-		|> Option.default Store.empty
-)
+						let get_latest_db () =
+							db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+
+						let sent_changes = (get_latest_db ()).Store.changes in
+
+						lwt response = (match sent_changes with
+							| [] -> Server.get_json (db_url username)
+							| sent_changes ->
+									let data = (Store.Format.json_of_changes sent_changes) in
+									Server.post_json ~data (db_url username)
+						) in
+						(match response with
+							| Server.OK json ->
+									let new_core = Store.Format.core_of_json json in
+									let new_db = Store.drop_applied_changes
+										~from:(get_latest_db ())
+										~new_core sent_changes in
+									db_storage#save (Store.to_json new_db);
+									set_last_sync_time (Date.time ());
+							| Server.Unauthorized msg ->
+								log#error "authentication failed: %a" (Option.print output_string) msg;
+								set_auth_state (Failed_login username)
+							| Server.Failed (msg, _) ->
+								log#error "sync failed: %s" msg
+						);
+						return_unit;
+					with e -> (
+						Lwt.wakeup_exn sync_complete e;
+						raise e
+					)
+					finally (
+						running_sync := None;
+						set_busy false;
+						Lwt.wakeup sync_complete ();
+						return_unit
+					)
+			end
+		) in
+
+	let sync_state = S.bind sync_running (fun is_running ->
+		if is_running then S.const Syncing else (
+			S.l2 (fun db sync_time ->
+				let len = List.length db.Store.changes in
+				if len = 0 then
+					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
+				else Local_changes len
+			) state.db_signal last_sync_time
+		)) in
 
 
-let sync_running, (run_sync:credentials -> unit Lwt.t) =
-	let running_sync = ref None in
-	let s, set_busy = S.create false in
-	(s, fun (username, token) ->
-		match !running_sync with
-			| Some (future,_) -> future
-			| None -> begin
-				let (future, sync_complete) as task = Lwt.wait () in
-				running_sync := Some task;
-				set_busy true;
-				try_lwt
-					log#info "syncing...";
-					let db_storage = local_db_for_user username in
-					let get_latest_db () =
-						db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+	let login_form (username:string option) =
+		let error, set_error = S.create None in
 
-					let sent_changes = (get_latest_db ()).Store.changes in
+		let error_widget = error
+			|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+				child i ~cls:"glyphicon glyphicon-remove" ();
+			] ())
+			|> Ui.stream in
+		
+		div ~cls:"account-status login alert alert-info" ~children:[
+			child form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
+				error_widget;
+				child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
+				child div ~cls:"form-group form-group-sm email" ~children:[
+					child label ~cls:"sr-only" ~text:"User" ();
+					child input ~cls:"form-control" ~attrs:[
+						("name","user");
+						("placeholder","User");
+						("type","text");
+						("value", Option.default "" username);
+					] ();
+				] ();
+				space;
 
-					lwt response = (match sent_changes with
-						| [] -> Server.get_json (db_url username)
-						| sent_changes ->
-								let data = (Store.Format.json_of_changes sent_changes) in
-								Server.post_json ~data (db_url username)
-					) in
-					(match response with
-						| Server.OK json ->
-								let new_core = Store.Format.core_of_json json in
-								let new_db = Store.drop_applied_changes
-									~from:(get_latest_db ())
-									~new_core sent_changes in
-								db_storage#save (Store.to_json new_db);
-								set_last_sync_time (Date.time ());
-						| Server.Unauthorized msg ->
-							log#error "authentication failed: %a" (Option.print output_string) msg;
-							set_auth_state (Failed_login username)
-						| Server.Failed (msg, _) ->
-							log#error "sync failed: %s" msg
-					);
-					return_unit;
-				with e -> (
-					Lwt.wakeup_exn sync_complete e;
-					raise e
+				child div ~cls:"form-group form-group-sm password" ~children:[
+					child label ~cls:"sr-only" ~text:"password" ();
+					child input ~cls:"form-control" ~attrs:[
+						("type","password");
+						("name","password");
+						("placeholder","password")
+					] ();
+				] ();
+
+				space;
+
+				child div ~cls:"checkbox remember-me form-group" ~children:[
+					frag remember_me_input;
+					space;
+					child label ~text:"Remember me" ();
+				] ();
+
+				child div ~cls:"clearfix" ();
+			] ~mechanism:(fun elem ->
+				effectful_stream_mechanism (remember_me
+					|> S.map (fun remember_me ->
+							log#info "remember me changed to: %b" remember_me;
+							if (not remember_me) then (
+								(S.value state.stored_credentials)#delete ()
+							)
+					)
 				)
-				finally (
-					running_sync := None;
-					set_busy false;
-					Lwt.wakeup sync_complete ();
+				<&>
+				Lwt_js_events.submits elem (fun event _ ->
+					stop event;
+					log#info "form submitted";
+					let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
+					let open Server in
+					set_error None;
+					lwt response = post_json ~data login_url in
+					begin match response with
+					| OK creds ->
+						let username = creds
+							|> J.get_field username_key
+							|> Option.bind J.as_string in
+						(match username with
+							| Some user -> set_auth_state (Active_user (user, creds))
+							| None -> raise (AssertionError "credentials doesn't contain a user key")
+						)
+					| Failed (message, _) -> set_error (Some message)
+					| Unauthorized _ -> assert false
+					end;
 					return_unit
 				)
-		end
-	)
+			) ()
+		] ()
+	in
 
-let sync_state = S.bind sync_running (fun is_running ->
-	if is_running then S.const Syncing else (
-		S.l2 (fun db sync_time ->
-			let len = List.length db.Store.changes in
-			if len = 0 then
-				sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
-			else Local_changes len
-		) db_signal last_sync_time
-	))
-
-
-let login_form (username:string option) =
-	let error, set_error = S.create None in
-
-	let error_widget = error
-		|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-			child i ~cls:"glyphicon glyphicon-remove" ();
-		] ())
-		|> Ui.stream in
-	
-	div ~cls:"account-status login alert alert-info" ~children:[
-		child form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
-			error_widget;
-			child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
-			child div ~cls:"form-group form-group-sm email" ~children:[
-				child label ~cls:"sr-only" ~text:"User" ();
-				child input ~cls:"form-control" ~attrs:[
-					("name","user");
-					("placeholder","User");
-					("type","text");
-					("value", Option.default "" username);
-				] ();
-			] ();
-			space;
-
-			child div ~cls:"form-group form-group-sm password" ~children:[
-				child label ~cls:"sr-only" ~text:"password" ();
-				child input ~cls:"form-control" ~attrs:[
-					("type","password");
-					("name","password");
-					("placeholder","password")
-				] ();
-			] ();
-
-			space;
-
-			child div ~cls:"checkbox remember-me form-group" ~children:[
-				frag remember_me_input;
-				space;
-				child label ~text:"Remember me" ();
-			] ();
-
-			child div ~cls:"clearfix" ();
-		] ~mechanism:(fun elem ->
-			effectful_stream_mechanism (remember_me
-				|> S.map (fun remember_me ->
-						log#info "remember me changed to: %b" remember_me;
-						if (not remember_me) then (
-							stored_credentials#delete ()
-						)
-				)
+	let sync_state_widget auth =
+		let open Ui in
+		let _node w = (w:>Dom.node widget_t) in
+		let sync_mech = (fun elem ->
+			Lwt_js_events.clicks elem (fun event _ ->
+				run_sync auth
 			)
-			<&>
-			Lwt_js_events.submits elem (fun event _ ->
-				stop event;
-				log#info "form submitted";
-				let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
-				let open Server in
-				set_error None;
-				lwt response = post_json ~data login_url in
-				begin match response with
-				| OK creds ->
-					let username = creds
-						|> J.get_field username_key
-						|> Option.bind J.as_string in
-					(match username with
-						| Some user -> set_auth_state (Active_user (user, creds))
-						| None -> raise (AssertionError "credentials doesn't contain a user key")
-					)
-				| Failed (message, _) -> set_error (Some message)
-				| Unauthorized _ -> assert false
-				end;
-				return_unit
+		) in
+		sync_state |> S.map (function
+			| Uptodate -> _node @@ empty ()
+			| Updated_at date ->
+					let now = Date.time () in
+					let time_diff = max 0.0 (now -. date) in
+					_node @@ a ~cls:"link has-tooltip"
+						~attrs:[("title", "Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago")]
+						~children:[icon "refresh"]
+						~mechanism:sync_mech ()
+			| Syncing ->
+				_node @@ span
+					~cls:"syncing"
+					~children:[icon "refresh"] ()
+			| Local_changes count ->
+					_node @@ span
+						~attrs:[("title", (string_of_int count) ^ " pending changes...")]
+						~children:[
+					child a
+						~cls:"link"
+						~children:[icon "upload"]
+						~mechanism:sync_mech ()
+				] ()
+		) |> stream
+	in
+
+	let logout_button tooltip = child a
+		~cls:"hover-reveal link"
+		~attrs:["title",tooltip]
+		~children:[icon "remove"]
+		~mechanism:(fun elem ->
+			Lwt_js_events.clicks elem (fun evt _ ->
+				set_auth_state Anonymous;
+				return_unit;
 			)
 		) ()
-	] ()
+	in
 
-let sync_state_widget auth =
-	let open Ui in
-	let _node w = (w:>Dom.node widget_t) in
-	let sync_mech = (fun elem ->
-		Lwt_js_events.clicks elem (fun event _ ->
-			run_sync auth
-		)
-	) in
-	sync_state |> S.map (function
-		| Uptodate -> _node @@ empty ()
-		| Updated_at date ->
-				let now = Date.time () in
-				let time_diff = max 0.0 (now -. date) in
-				_node @@ a ~cls:"link has-tooltip"
-					~attrs:[("title", "Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago")]
-					~children:[icon "refresh"]
-					~mechanism:sync_mech ()
-		| Syncing ->
-			_node @@ span
-				~cls:"syncing"
-				~children:[icon "refresh"] ()
-		| Local_changes count ->
-				_node @@ span
-					~attrs:[("title", (string_of_int count) ^ " pending changes...")]
-					~children:[
-				child a
-					~cls:"link"
-					~children:[icon "upload"]
-					~mechanism:sync_mech ()
-			] ()
-	) |> stream
-
-let logout_button tooltip = child a
-	~cls:"hover-reveal link"
-	~attrs:["title",tooltip]
-	~children:[icon "remove"]
-	~mechanism:(fun elem ->
-		Lwt_js_events.clicks elem (fun evt _ ->
-			set_auth_state Anonymous;
-			return_unit;
-		)
-	) ()
-
-let ui () = auth_state |> S.map (fun auth ->
+	state.auth_state |> S.map (fun auth ->
 	log#info "Auth state: %s" (string_of_auth_state auth);
 
 	match auth with
