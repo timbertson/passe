@@ -19,7 +19,10 @@ let check cond = Printf.ksprintf (function s ->
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
-let config_provider, set_config_provider = S.create (Lazy.force Config.persistent)
+let do_persist_data, set_do_persist_data = S.create true
+let storage_provider = (new Local_storage.provider (S.value do_persist_data))
+let config_provider = Config.build storage_provider
+let _ = do_persist_data |> S.map (fun v -> storage_provider#set_persistent v)
 
 let sync = Sync.build config_provider
 
@@ -55,7 +58,7 @@ let footer () =
 						~text:"Erase local data"
 						~mechanism:(fun elem ->
 							Lwt_js_events.clicks elem (fun event _ ->
-								(Lazy.force Local_storage.persistent)#erase_all;
+								storage_provider#erase_all;
 								return_unit
 							)
 						) ();

@@ -46,24 +46,22 @@ let local_db_for_user config_provider user =
 	config_provider.Config.field ("db_"^user)
 
 type state = {
-	config_provider: Config.t signal;
+	config_provider: Config.t;
 	current_username: username option signal;
 	current_user_db: Config.child option signal;
-	last_sync: Config.child signal;
+	last_sync: Config.child;
 	stored_json: J.json option signal;
 	db_signal: Store.t signal;
-	stored_credentials: Config.child signal;
+	stored_credentials: Config.child;
 	stored_credentials_signal: J.json option signal;
 	auth_state: auth_state signal;
 	set_auth_state: bool -> auth_state -> unit;
 }
 
 let build config_provider =
-	let field key:Config.child signal = config_provider |> S.map (fun impl -> impl.Config.field key) in
-
-	let _stored_credentials = field "credentials" in
-	let stored_credentials () = S.value _stored_credentials in
-	let stored_credentials_signal = S.bind _stored_credentials (fun s -> s#signal) in
+	let field key:Config.child = config_provider.Config.field key in
+	let stored_credentials = field "credentials" in
+	let stored_credentials_signal = stored_credentials#signal in
 	let last_sync = field "last_sync" in
 
 	let auth_state, set_auth_state =
@@ -78,11 +76,11 @@ let build config_provider =
 		let set_auth_state remember_me state =
 			let step = Step.create () in
 			begin match state with
-			| Anonymous -> (stored_credentials ())#delete ~step ()
+			| Anonymous -> (stored_credentials)#delete ~step ()
 			(* TODO: Failed_login & Saved_user *)
 			| Active_user (_, creds) ->
 					if remember_me then
-						(stored_credentials ())#save ~step creds
+						(stored_credentials)#save ~step creds
 			| _ -> ()
 			end;
 			_set_auth_state ~step state;
@@ -97,7 +95,7 @@ let build config_provider =
 	) in
 
 	let current_user_db : Config.child option signal =
-		S.l2 (Option.map % local_db_for_user) config_provider current_username in
+		S.map (Option.map (local_db_for_user config_provider)) current_username in
 
 	let stored_json : J.json option signal = S.bind current_user_db (fun storage ->
 		storage
@@ -118,7 +116,7 @@ let build config_provider =
 		stored_json=stored_json;
 		db_signal=db_signal;
 		last_sync=last_sync;
-		stored_credentials=_stored_credentials;
+		stored_credentials=stored_credentials;
 		stored_credentials_signal=stored_credentials_signal;
 		auth_state=auth_state;
 		set_auth_state=set_auth_state;
@@ -128,8 +126,8 @@ let build config_provider =
 
 let ui state =
 	(* let config_provider, set_config_provider = S.create (Lazy.force ephemeral_config) in *)
-	let set_last_sync_time t = (S.value state.last_sync)#save (`Float t) in
-	let last_sync_signal = S.bind state.last_sync (fun s -> s#signal) in
+	let set_last_sync_time t = (state.last_sync)#save (`Float t) in
+	let last_sync_signal = state.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
 		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
@@ -152,7 +150,7 @@ let ui state =
 					try_lwt
 						log#info "syncing...";
 						let db_storage = local_db_for_user
-							(S.value state.config_provider)
+							state.config_provider
 							username in
 
 						let get_latest_db () =
@@ -252,7 +250,7 @@ let ui state =
 					|> S.map (fun remember_me ->
 							log#info "remember me changed to: %b" remember_me;
 							if (not remember_me) then (
-								(S.value state.stored_credentials)#delete ()
+								(state.stored_credentials)#delete ()
 							)
 					)
 				)

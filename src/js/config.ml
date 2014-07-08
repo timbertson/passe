@@ -33,6 +33,3 @@ let build (impl:Local_storage.provider) =
 	{
 		field = fun key -> new child root key
 	}
-
-let persistent = lazy (build (Lazy.force Local_storage.persistent))
-let ephemeral = lazy (build (Lazy.force Local_storage.ephemeral))
