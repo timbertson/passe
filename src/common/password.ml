@@ -1,5 +1,5 @@
 open Store
-open Re
+open Re_compat
 open Common
 
 let rec foldi i f acc =

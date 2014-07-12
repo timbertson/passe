@@ -1,5 +1,5 @@
 open Common
-open Re
+open Re_compat
 module J = Json_ext
 let log = Logging.get_logger "store"
 exception InvalidFormat of string
