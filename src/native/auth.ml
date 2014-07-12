@@ -35,6 +35,12 @@ module Token = struct
 		stored_contents = J.string_field "contents" j |> force;
 	}
 
+	let hash t =
+		{
+			stored_contents = "hash of " ^ t.sensitive_contents;
+			stored_metadata = t.sensitive_metadata;
+		}
+
 	let to_stored_json (t:stored_token) =
 		let info = t.stored_metadata in
 		`Assoc [
@@ -65,10 +71,13 @@ module User = struct
 		active_tokens: Token.stored_token list;
 	}
 
-	let authenticate username password : Token.sensitive_token = {
-		sensitive_metadata = { Token.username = username; expires = 0.0 };
-		sensitive_contents = "sekret_token"
-	}
+	let authenticate user password : (t * Token.sensitive_token) option =
+		let new_token = {
+			sensitive_metadata = { Token.username = user.username; expires = 0.0 };
+			sensitive_contents = "sekret_token"
+		} in
+		let user = { user with active_tokens = (Token.hash new_token :: user.active_tokens) } in
+		Some (user, new_token)
 	
 	let password_of_json j = {
 		stored_metadata = {
@@ -138,8 +147,8 @@ module User = struct
 
 end
 
-type signup_response = [
-	| `Success of Token.sensitive_token
+type 'a either = [
+	| `Success of 'a
 	| `Failed of string
 ]
 
@@ -165,13 +174,11 @@ class storage filename =
 				else Lwt.return_unit
 		)
 
-	method read fn =
-		Lwt_mutex.with_lock lock (fun () ->
-			self#_read fn
-		)
+	method read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
+		Lwt_mutex.with_lock lock (fun () -> self#_read fn)
 
 	(* NOTE: must only be called while holding `lock` *)
-	method private _read (fn:User.t Lwt_stream.t -> 'a Lwt.t) =
+	method private _read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
 		Lwt_io.with_file ~mode:Lwt_io.input filename (fun f ->
 			let lines = Lwt_io.read_lines f in
 			let users = Lwt_stream.map (fun line -> J.from_string line |> User.of_json) lines in
@@ -181,7 +188,7 @@ end
 
 exception Conflict
 
-let signup ~(storage:storage) username password : signup_response Lwt.t =
+let signup ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
 	let created = ref None in
 	lwt success = storage#modify (fun users write_user ->
 		try_lwt
@@ -200,4 +207,34 @@ let signup ~(storage:storage) username password : signup_response Lwt.t =
 	return (match !created with
 		| Some rv -> `Success rv
 		| None -> `Failed "Account creation failed")
+
+
+let get_user ~(storage:storage) username : User.t option Lwt.t =
+	storage#read (fun users ->
+		users |> Lwt_stream.find (fun user -> user.User.username = username)
+	)
+
+exception Invalid_credentials
+
+let authenticate ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
+	let created = ref None in
+	lwt success = storage#modify (fun users write_user ->
+		try_lwt
+			lwt () = users |> Lwt_stream.iter_s (fun user ->
+				if user.User.username = username then
+					match User.authenticate user password with
+						| Some (user, token) ->
+							created := Some token;
+							write_user user
+						| None -> raise Invalid_credentials
+				else
+					write_user user
+				;
+			) in
+			return_true
+		with Invalid_credentials -> return_false
+	) in
+	return (match !created with
+		| Some rv -> `Success rv
+		| None -> `Failed "Authentication failed")
 
