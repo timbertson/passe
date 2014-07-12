@@ -58,7 +58,9 @@ module Token = struct
 		]
 end
 
+
 module User = struct
+	let max_tokens = 10
 	type password_info = {
 		salt:string;
 		iterations:int;
@@ -76,7 +78,11 @@ module User = struct
 			sensitive_metadata = { Token.username = user.username; expires = 0.0 };
 			sensitive_contents = "sekret_token"
 		} in
-		let user = { user with active_tokens = (Token.hash new_token :: user.active_tokens) } in
+		let tokens = Token.hash new_token :: user.active_tokens in
+
+		(* limit number of historical tokens to 10 per user *)
+		let tokens = if List.length tokens > max_tokens then Batteries.List.take max_tokens tokens else tokens in
+		let user = { user with active_tokens = tokens } in
 		Some (user, new_token)
 	
 	let password_of_json j = {
@@ -155,12 +161,20 @@ type 'a either = [
 class storage filename =
 	let lock = Lwt_mutex.create () in
 	let tmp_name = filename ^ ".tmp" in
+
 	object (self)
 	method modify (fn:User.t Lwt_stream.t -> (User.t -> unit Lwt.t) -> bool Lwt.t) =
 		Lwt_mutex.with_lock lock (fun () ->
 			let modified = ref false in
 			lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp_name (fun output_file ->
+				let now = Unix.time () in
 				let write_user user =
+					(* whenever we save a user, trim their tokens to just those
+					 * which have not yet expired *)
+					let user = {
+						user with User.active_tokens = user.User.active_tokens |> List.filter
+							(fun tok -> tok.stored_metadata.Token.expires > now)
+					} in
 					let json = User.to_json user in
 					let line = J.to_single_line_string ~std:true json in
 					Lwt_io.write_line output_file line
