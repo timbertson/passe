@@ -4,4 +4,5 @@ gup -u \
 	index.html \
 	js/supergenpass.js \
 	native/supergenpass.byte \
+	native/service.byte \
 	;

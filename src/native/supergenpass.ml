@@ -27,10 +27,10 @@ module Actions = struct
 	open OptParse
 	let home_dir = try Some (Unix.getenv "HOME") with Not_found -> None
 	let generate ~length args =
-		let db = Option.bind home_dir (fun home ->
-			load_store (Filename.concat home ".config/supergenpass/ogp.json")
-		) in
-		let length = Opt.get length in
+		(* let db = Option.bind home_dir (fun home -> *)
+		(* 	load_store (Filename.concat home ".config/supergenpass/ogp.json") *)
+		(* ) in *)
+		(* let length = Opt.get length in *)
 		let domain = match args with
 			| [] ->
 					prerr_string "Domain: ";
@@ -42,7 +42,7 @@ module Actions = struct
 		let password = "test" in
 		let domain = Store.default domain in
 		let generated = Password.generate ~domain password in
-		print_endline ("generated password for " ^ domain.domain ^ ": " ^ generated)
+		print_endline ("generated password for " ^ domain.Store.domain ^ ": " ^ generated)
 end
 
 module Options =

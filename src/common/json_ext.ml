@@ -5,6 +5,15 @@ let print_str () = pretty_to_string ~std:false
 let as_string obj = match obj with
 	| `String s -> Some s | _ -> None
 
+let as_int obj = match obj with
+	| `Int i -> Some i | _ -> None
+
+let as_float obj = match obj with
+	| `Float f -> Some f | _ -> None
+
+let as_list obj = match obj with
+	| `List i -> Some i | _ -> None
+
 let get_field key obj = match obj with
 	| `Assoc pairs -> (
 			match Common.find_safe (fun (k,v) -> k = key) pairs with
@@ -12,6 +21,12 @@ let get_field key obj = match obj with
 				| _ -> None
 		)
 	| _ -> None
+
+let get_field_as fn key j = get_field key j |> Option.bind fn
+let string_field : string -> json -> string option = get_field_as as_string
+let int_field : string -> json -> int option = get_field_as as_int
+let list_field : string -> json -> json list option = get_field_as as_list
+let float_field : string -> json -> float option = get_field_as as_float
 
 type obj = [
 	| `Assoc of (string * json) list
@@ -29,9 +44,13 @@ let without_field key (obj:obj option) = match obj with
 				| _ -> Some (`Assoc pairs)
 		)
 	| None -> None
-	| _ -> raise (Common.AssertionError "can't remove field on non-object")
 
 let set_field key value (obj:obj option) = match (without_field key obj) with
 	| Some (`Assoc pairs) -> `Assoc ((key, value) :: pairs)
 	| None -> `Assoc [(key, value)]
-	| _ -> raise (Common.AssertionError "can't set field on non-object")
+
+let to_single_line_string ~std j =
+	let rv = Yojson.Safe.to_string ~std j in
+	if String.contains rv '\n' then failwith "to_json result contains a newline";
+	rv
+

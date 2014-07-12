@@ -1,6 +1,7 @@
 open Lwt
-open Cohttp
-open Cohttp_lwt_unix
+module Header = Cohttp.Header
+module Server = Cohttp_lwt_unix.Server
+module Connection = Cohttp.Connection
 module J = Json_ext
 
 let log = Logging.get_logger "service"
@@ -28,7 +29,7 @@ let respond_json ~status ~body () =
 		~headers:json_content_type
 		~status ~body:(J.to_string ~std:true body) ()
 
-let handler ~document_root ~data_root sock req body =
+let handler ~document_root ~data_root ~user_db sock req body =
 	let uri = Cohttp.Request.uri req in
 	let data_path = Filename.concat data_root in
 	let document_path = Filename.concat document_root in
@@ -58,6 +59,17 @@ let handler ~document_root ~data_root sock req body =
 			)
 		| `POST -> (
 			match path with
+				| ["auth"; "signup"] -> (
+						lwt body = (Cohttp_lwt_body.to_string body) in
+						let params = J.from_string body in
+						let user = params |> J.string_field "user" |> Option.force in
+						let password = params |> J.string_field "password" |> Option.force in
+						lwt token = Auth.signup ~storage:user_db user password in
+						respond_json ~status:`OK ~body:(match token with
+							| `Success tok -> `Assoc [("token", Auth.Token.to_json tok)]
+							| `Failed msg -> `Assoc [("error", `String msg)]
+						) ()
+				)
 				| ["auth"; "login"] -> (
 						lwt body = (Cohttp_lwt_body.to_string body) in
 						log#debug "got body: %s" body;
@@ -126,7 +138,7 @@ let abs p = if Filename.is_relative p
 	then Filename.concat cwd p
 	else p
 
-let start_server ~host ~port ~document_root ~data_root () =
+let start_server ~host ~port ~document_root ~data_root ~user_db () =
 	log#info "Listening on: %s %d" host port;
 	let document_root = abs document_root
 	and data_root = abs data_root in
@@ -134,7 +146,7 @@ let start_server ~host ~port ~document_root ~data_root () =
 	log#info "Data root: %s" data_root;
 	let conn_closed id () = log#info "connection %s closed"
 			(Connection.to_string id) in
-	let callback = handler ~document_root ~data_root in
+	let callback = handler ~document_root ~data_root ~user_db in
 	let config = { Server.callback; conn_closed } in
 	Server.create ~address:host ~port:port config
 
@@ -158,11 +170,14 @@ let main () =
 		prerr_endline "Too many arguments";
 		exit 1
 	);
+	let document_root = Opt.get document_root in
+	let user_db = new Auth.storage (Filename.concat document_root "users.db.json") in
 	Lwt_unix.run (start_server
 		~port:(Opt.get port)
 		~host:(Opt.get host)
-		~document_root:(Opt.get document_root)
 		~data_root:(Opt.get data_root)
+		~document_root
+		~user_db
 	())
 
 let () = main ()
