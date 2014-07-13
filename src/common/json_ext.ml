@@ -22,6 +22,10 @@ let get_field key obj = match obj with
 		)
 	| _ -> None
 
+let mandatory getter key obj = match (getter key obj) with
+	| Some x -> x
+	| None -> failwith ("missing JSON field: " ^ key)
+
 let get_field_as fn key j = get_field key j |> Option.bind fn
 let string_field : string -> json -> string option = get_field_as as_string
 let int_field : string -> json -> int option = get_field_as as_int

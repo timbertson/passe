@@ -1,16 +1,20 @@
+open Common
 module J = Json_ext
 open Lwt
+module Base64 = Batteries.Base64
 
-let force = Option.force
+let log = Logging.get_logger "auth"
 
-type 't stored = {
-	stored_contents: string;
+let mandatory = J.mandatory
+
+type ('c, 't) stored = {
+	stored_contents: 'c;
 	stored_metadata: 't;
 }
 
-type 't sensitive = {
+type ('c, 't) sensitive = {
 	(* for in-memory use, not to be stored *)
-	sensitive_contents: string;
+	sensitive_contents: 'c;
 	sensitive_metadata: 't;
 }
 
@@ -18,138 +22,191 @@ let stored_eq eq a b =
 	a.stored_contents = b.stored_contents && eq a.stored_metadata b.stored_metadata
 
 type date = float
+let one_day = 1.0 *. (60.0 *. 60.0 *. 24.0)
+
+module type BYTES = sig
+	type t
+	val raw : string -> t
+	val to_string : t -> string
+	val to_json : t -> J.json
+	val lift : (string -> 'a) -> t -> 'a
+	val field : string -> J.json -> t option
+end
+module Bytes: BYTES = struct
+	type t = string
+	let raw b = b
+	let to_string b = Base64.str_encode b
+	let of_string s = Base64.str_decode s
+	let to_json b = `String (to_string b)
+	let lift fn bytes = fn bytes
+	let field k o : t option = J.string_field k o |> Option.map of_string
+end
+
+
+let random_bytes len: Bytes.t Lwt.t =
+	Lwt_io.with_file ~mode:Lwt_io.input "/dev/urandom" (fun f ->
+		let buf = String.create len in
+		lwt () = Lwt_io.read_into_exactly f buf 0 len in
+		return (Bytes.raw buf)
+	)
+
+module Password = struct
+	let iterations = 6
+	let salt_length = 16
+end
 
 module Token = struct
 	type info = {
-		username: string;
+		user: string;
 		expires: date;
 	}
-	type stored_token = info stored
-	type sensitive_token = info sensitive
+	type stored_token = (string, info) stored
+	type sensitive_token = (Bytes.t, info) sensitive
 
-	let of_stored_json username j = {
+	let of_stored_json ~username j = {
 		stored_metadata = {
-			username = username;
-			expires = J.float_field "expires" j |> force;
+			user = username;
+			expires = mandatory J.float_field "expires" j;
 		};
-		stored_contents = J.string_field "contents" j |> force;
+		stored_contents = mandatory J.string_field "contents" j;
 	}
 
-	let hash t =
+	let of_json j : sensitive_token = {
+		sensitive_metadata = {
+			user = mandatory J.string_field "user" j;
+			expires = mandatory J.float_field "expires" j;
+		};
+		sensitive_contents = mandatory Bytes.field "contents" j;
+	}
+
+	let hash (t:sensitive_token) : stored_token =
+		let sha256 : string -> string = (Sha256.to_hex % Sha256.string) in
+		let hashed_contents = Bytes.lift sha256 t.sensitive_contents in
 		{
-			stored_contents = "hash of " ^ t.sensitive_contents;
+			stored_contents = hashed_contents;
 			stored_metadata = t.sensitive_metadata;
 		}
 
 	let to_stored_json (t:stored_token) =
 		let info = t.stored_metadata in
 		`Assoc [
-			("username", `String info.username);
-			("contents", `Float info.expires);
-			("expires", `String t.stored_contents);
+			("expires", `Float info.expires);
+			("contents", `String t.stored_contents);
 		]
 
 	let to_json (t:sensitive_token) =
 		let info = t.sensitive_metadata in
 		`Assoc [
-			("username", `String info.username);
-			("contents", `Float info.expires);
-			("expires", `String t.sensitive_contents);
+			("user", `String info.user);
+			("expires", `Float info.expires);
+			("contents", Bytes.to_json t.sensitive_contents);
 		]
+	
+	let create ~username () : sensitive_token Lwt.t =
+		let now = Unix.time () in
+		let expires = now +. (14.0 *. one_day) in
+		lwt contents = random_bytes 20 in
+		return {
+			sensitive_contents = contents;
+			sensitive_metadata = {
+				expires = expires;
+				user = username;
+			}
+		}
+
 end
 
 
 module User = struct
 	let max_tokens = 10
 	type password_info = {
-		salt:string;
+		salt:Bytes.t;
 		iterations:int;
 	}
-	type stored_password = password_info stored
+	type stored_password = (string, password_info) stored
 
 	type t = {
-		username: string;
+		name: string;
 		password: stored_password;
 		active_tokens: Token.stored_token list;
 	}
 
-	let authenticate user password : (t * Token.sensitive_token) option =
-		let new_token = {
-			sensitive_metadata = { Token.username = user.username; expires = 0.0 };
-			sensitive_contents = "sekret_token"
-		} in
-		let tokens = Token.hash new_token :: user.active_tokens in
+	let gen_token user password : (t * Token.sensitive_token) option Lwt.t =
+		let stored_hash = user.password.stored_contents |> Bcrypt.hash_of_string in
+		if Bcrypt.verify password stored_hash then (
+			lwt new_token = Token.create ~username:user.name () in
+			let tokens = Token.hash new_token :: user.active_tokens in
 
-		(* limit number of historical tokens to 10 per user *)
-		let tokens = if List.length tokens > max_tokens then Batteries.List.take max_tokens tokens else tokens in
-		let user = { user with active_tokens = tokens } in
-		Some (user, new_token)
+			(* limit number of historical tokens to 10 per user *)
+			let tokens = if List.length tokens > max_tokens
+				then Batteries.List.take max_tokens tokens
+				else tokens
+			in
+			let user = { user with active_tokens = tokens } in
+			return (Some (user, new_token))
+		) else return_none
 	
 	let password_of_json j = {
 		stored_metadata = {
-			salt = J.string_field "salt" j |> force;
-			iterations = J.int_field "iterations" j |> force;
+			salt = mandatory Bytes.field "salt" j;
+			iterations = mandatory J.int_field "iterations" j;
 		};
-		stored_contents = J.string_field "contents" j |> force;
+		stored_contents = mandatory J.string_field "contents" j;
 	}
 
 	let json_of_password p =
 		let info = p.stored_metadata in
 		`Assoc [
-			("salt", `String info.salt);
+			("salt", info.salt |> Bytes.to_json);
 			("iterations", `Int info.iterations);
 			("contents", `String p.stored_contents);
 		]
 	
 	
 	let of_json j =
-		let username =  J.string_field "username" j |> force in
+		let name =  mandatory J.string_field "name" j in
 		{
-			username = username;
-			password = J.get_field "password" j |> force |> password_of_json;
-			active_tokens = J.list_field "tokens" j |> force |> List.map (Token.of_stored_json username);
+			name = name;
+			password = mandatory J.get_field "password" j |> password_of_json;
+			active_tokens = mandatory J.list_field "tokens" j |> List.map (Token.of_stored_json ~username:name);
 		}
 
 	let to_json (u:t) =
 		`Assoc [
-			("username", `String u.username);
+			("name", `String u.name);
 			("password", json_of_password u.password);
 			("tokens", `List (u.active_tokens |> List.map (Token.to_stored_json)));
 		]
 	
-	let create username password =
-		let password = {
-			stored_contents = "TODO";
+	let create ~username password =
+		lwt salt = random_bytes Password.salt_length in
+		let iterations = Password.iterations in
+		let crypt = fun seed -> Bcrypt.hash ~count:iterations ~seed password
+			|> Bcrypt.string_of_hash in
+		let hashed_password = Bytes.lift crypt salt in
+		let password : stored_password = {
+			stored_contents = hashed_password;
 			stored_metadata = {
-				salt = "TODO";
-				iterations = 10000;
+				salt = salt;
+				iterations = iterations;
 			}
 		} in
 
-		let token = {
-			sensitive_contents = "TODO";
-			sensitive_metadata = {
-				Token.username = username;
-				expires = 0.0;
-			}
-		} in
-
-		let stored_token = {
-			stored_contents = "TODO";
-			stored_metadata = {
-				Token.username = username;
-				expires = 0.0;
-			}
-		} in
-
+		lwt token = Token.create ~username () in
+		let stored_token = Token.hash token in
 		let user = {
-			username = username;
+			name = username;
 			password = password;
 			active_tokens = [stored_token];
 		}
 		in
-		(user, token)
+		return (user, token)
 
+
+	let validate user (token:Token.sensitive_token) : bool =
+		assert (token.sensitive_metadata.Token.user = user.name);
+		let hashed = Token.hash token in
+		user.active_tokens |> List.exists (fun tok -> tok = hashed)
 
 end
 
@@ -160,6 +217,7 @@ type 'a either = [
 
 class storage filename =
 	let lock = Lwt_mutex.create () in
+	let () = log#info "storage located at %s" filename in
 	let tmp_name = filename ^ ".tmp" in
 
 	object (self)
@@ -179,7 +237,12 @@ class storage filename =
 					let line = J.to_single_line_string ~std:true json in
 					Lwt_io.write_line output_file line
 				in
-				lwt _mod = self#_read (fun users -> fn users write_user) in
+				lwt _mod =
+					try_lwt
+						self#_read (fun users -> fn users write_user)
+					with Unix.Unix_error (Unix.ENOENT, "open", filename) ->
+						fn (Lwt_stream.of_list []) write_user
+				in
 				modified := _mod;
 				return_unit
 			) in
@@ -207,12 +270,12 @@ let signup ~(storage:storage) username password : Token.sensitive_token either L
 	lwt success = storage#modify (fun users write_user ->
 		try_lwt
 			lwt () = users |> Lwt_stream.iter_s (fun user ->
-				if user.User.username = username then
+				if user.User.name = username then
 					raise Conflict
 				;
 				write_user user
 			) in
-			let (new_user, token) = User.create username password in
+			lwt (new_user, token) = User.create ~username password in
 			lwt () = write_user new_user in
 			created := Some token;
 			return_true
@@ -225,18 +288,18 @@ let signup ~(storage:storage) username password : Token.sensitive_token either L
 
 let get_user ~(storage:storage) username : User.t option Lwt.t =
 	storage#read (fun users ->
-		users |> Lwt_stream.find (fun user -> user.User.username = username)
+		users |> Lwt_stream.find (fun user -> user.User.name = username)
 	)
 
 exception Invalid_credentials
 
-let authenticate ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
+let login ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
 	let created = ref None in
 	lwt success = storage#modify (fun users write_user ->
 		try_lwt
 			lwt () = users |> Lwt_stream.iter_s (fun user ->
-				if user.User.username = username then
-					match User.authenticate user password with
+				if user.User.name = username then
+					match_lwt User.gen_token user password with
 						| Some (user, token) ->
 							created := Some token;
 							write_user user
@@ -251,4 +314,17 @@ let authenticate ~(storage:storage) username password : Token.sensitive_token ei
 	return (match !created with
 		| Some rv -> `Success rv
 		| None -> `Failed "Authentication failed")
+
+let validate ~(storage:storage) token : bool Lwt.t =
+	let info = token.sensitive_metadata in
+	let expires = info.Token.expires in
+	if expires < Unix.time () then
+		return_false
+	else (
+		lwt user = get_user ~storage (info.Token.user) in
+		return (match user with
+			| Some user -> User.validate user token
+			| None -> false
+		)
+	)
 

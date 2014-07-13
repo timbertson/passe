@@ -1,3 +1,3 @@
-true: debug, package(batteries,yojson, camlp4.macro, lwt, lwt.unix, lwt.syntax), syntax(camlp4o)
+true: debug, package(batteries,yojson, camlp4.macro, lwt, lwt.unix, lwt.syntax, sha, safepass), syntax(camlp4o)
 "common": include
 <service.*>: package(cohttp, cohttp.lwt)
