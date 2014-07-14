@@ -53,14 +53,23 @@ let handler ~document_root ~data_root ~user_db sock req body =
 			| None -> return_none
 		in
 
-		let validate_get_user () =
-			validate_token (Uri.get_query_param uri "token" |> Option.map J.from_string) in
+		let validate_user () =
+			let tok = Header.get (Cohttp.Request.headers req) "Authorization" |> Option.bind (fun tok ->
+				let tok =
+					try Some (Str.split (Str.regexp " ") tok |> List.find (fun tok ->
+							Str.string_match (Str.regexp "t=") tok 0
+						))
+					with Not_found -> None in
+				tok |> Option.map (fun t -> String.sub t 2 ((String.length t) - 2) |> Uri.pct_decode |> J.from_string)
+			) in
+			validate_token tok
+		in
 
 		match Cohttp.Request.meth req with
 			| `GET -> (
 				match path with
 					| ["db"] ->
-							lwt user = validate_get_user () in
+							lwt user = validate_user () in
 							begin match user with
 								| Some user ->
 									let username = user.Auth.User.name in
@@ -84,9 +93,6 @@ let handler ~document_root ~data_root ~user_db sock req body =
 						| `Failed msg -> `Assoc [("error", `String msg)]
 					) ()
 				in
-				let validate_post_user () =
-					validate_token (J.get_field "token" params) in
-
 				let mandatory = J.mandatory in
 
 				match path with
@@ -113,12 +119,12 @@ let handler ~document_root ~data_root ~user_db sock req body =
 						respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 					)
 					| ["db"] ->
-							lwt user = validate_post_user () in
+							lwt user = validate_user () in
 							begin match user with
 								| None -> respond_unauthorized ()
 								| Some user -> (
 									let username = user.Auth.User.name in
-									let db = J.mandatory J.get_field "db" params in
+									let db = params in
 									let db_path = db_path_for username in
 									log#debug "saving db for user: %s" username;
 									(* XXX locking *)

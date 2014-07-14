@@ -43,13 +43,18 @@ let json_payload frame =
 			log#debug "No content-type given";
 			None
 
-let request ?content_type ~meth ?data url =
+let request ?content_type ?token ~meth ?data url =
 	let (res, w) = Lwt.task () in
 	let req = Xhr.create () in
 	let url = Uri.to_string url in
 	req##_open (Js.string meth, Js.string url, Js._true);
 	content_type |> Option.may (fun content_type ->
 		req##setRequestHeader (Js.string "Content-type", Js.string content_type)
+	);
+
+	token |> Option.may (fun token ->
+		req##setRequestHeader (Js.string "Authorization",
+			Js.string ("api-token t=" ^ (J.to_string ~std:true token |> Uri.pct_encode)))
 	);
 
 	let headers s =
@@ -114,8 +119,9 @@ let handle_json_response frame =
 		)
 	)
 
-let post_json ~(data:J.json) url =
+let post_json ?token ~(data:J.json) url =
 	lwt frame = request
+		?token
 		~content_type:json_content_type
 		~meth:"POST"
 		~data:(J.to_string ~std:true data)
@@ -124,8 +130,9 @@ let post_json ~(data:J.json) url =
 	handle_json_response frame
 
 
-let get_json url =
+let get_json ?token url =
 	lwt frame = request
+		?token
 		~content_type:json_content_type
 		~meth:"GET"
 		url in
