@@ -81,6 +81,11 @@ let handler ~document_root ~data_root ~user_db sock req body =
 							lwt token = Auth.login ~storage:user_db user password in
 							respond_token token
 						)
+					| ["auth"; "logout"] -> (
+							let token = Auth.Token.of_json params in
+							lwt () = Auth.logout ~storage:user_db token in
+							respond_json ~status:`OK ~body:(`Assoc []) ()
+						)
 					| ["auth"; "validate"] -> (
 						let token = Auth.Token.of_json params in
 						lwt valid = Auth.validate ~storage:user_db token in

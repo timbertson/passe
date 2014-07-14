@@ -9,6 +9,7 @@ let log = Logging.get_logger "sync"
 
 let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
+let logout_url = Server.path ["auth"; "logout"]
 let token_validate_url = Server.path ["auth"; "validate"]
 let db_url username = Server.path ["db"; username]
 
@@ -263,13 +264,12 @@ let ui state =
 					set_error None;
 					lwt response = post_json ~data login_url in
 					begin match response with
-					| OK creds ->
-						let username = creds
-							|> J.get_field username_key
-							|> Option.bind J.as_string in
-						(match username with
-							| Some user -> set_auth_state (Active_user (user, creds))
-							| None -> raise (AssertionError "credentials doesn't contain a user key")
+					| OK response ->
+						let creds = J.get_field "token" response in
+						let username = creds |> Option.bind (J.string_field username_key) in
+						(match (username, creds) with
+							| Some user, Some creds -> set_auth_state (Active_user (user, creds))
+							| _ -> raise (AssertionError "credentials doesn't contain a user key")
 						)
 					| Failed (message, _) -> set_error (Some message)
 					| Unauthorized _ -> assert false
@@ -313,14 +313,20 @@ let ui state =
 		) |> stream
 	in
 
-	let logout_button tooltip = child a
+	let logout_button tooltip creds = child a
 		~cls:"hover-reveal link"
 		~attrs:["title",tooltip]
 		~children:[icon "remove"]
 		~mechanism:(fun elem ->
 			Lwt_js_events.clicks elem (fun evt _ ->
-				set_auth_state Anonymous;
-				return_unit;
+				let open Server in
+				match_lwt post_json ~data:creds logout_url with
+					| OK _ | Unauthorized _ ->
+						set_auth_state Anonymous;
+						return_unit;
+					| Failed (msg,_) ->
+						log#error "Can't log out: %s" msg;
+						return_unit
 			)
 		) ()
 	in
@@ -343,7 +349,7 @@ let ui state =
 
 		div ~cls:"account-status alert alert-warning" ~children:[
 			child span ~cls:"user" ~text:username ();
-			logout_button "Log out";
+			logout_button "Log out" creds;
 			child span ~cls:"offline" ~children:[
 				frag offline_message;
 				frag sync_button;
@@ -374,10 +380,10 @@ let ui state =
 			) ()
 		] ()
 	)
-	| Active_user ((username, _) as auth) -> (
+	| Active_user ((username, creds) as auth) -> (
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
-			logout_button "Log out";
+			logout_button "Log out" creds;
 			child span ~cls:"online" ~children:[
 				sync_state_widget auth;
 			] ()

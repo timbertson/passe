@@ -100,20 +100,21 @@ let handle_json_response frame =
 	;
 
 	let payload = json_payload frame in
+	let error = payload |> Option.bind (J.string_field "error") in
 	return (match (frame.Xhr.code, payload) with
-		| 200, Some json -> OK json
 		| 401, json -> Unauthorized (
 			json |> Option.bind (fun json ->
 				json
 				|> J.get_field "reason"
 				|> Option.bind J.as_string)
 			)
+		| 200, (Some json as response) -> (
+			match error with
+				| Some error -> Failed (error, response)
+				| None -> OK json
+			)
 		| code, response -> (
-			let error_msg = response
-			|> Option.bind (J.get_field "error")
-			|> Option.bind J.as_string
-			|> Option.default frame.Xhr.content in
-			Failed (error_msg, response)
+			Failed (error |> Option.default frame.Xhr.content, response)
 		)
 	)
 

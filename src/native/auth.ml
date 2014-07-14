@@ -203,10 +203,22 @@ module User = struct
 		return (user, token)
 
 
-	let validate user (token:Token.sensitive_token) : bool =
+	let _find_token user (token:Token.sensitive_token) : Token.stored_token option =
 		assert (token.sensitive_metadata.Token.user = user.name);
 		let hashed = Token.hash token in
-		user.active_tokens |> List.exists (fun tok -> tok = hashed)
+		try
+			Some (user.active_tokens |> List.find (fun tok -> tok = hashed))
+		with Not_found -> None
+
+	let validate user (token:Token.sensitive_token) : bool =
+		match _find_token user token with
+			| None -> false
+			| Some _ -> true
+
+	let remove_token user (token:Token.sensitive_token) : t option =
+		_find_token user token |> Option.map (fun tok ->
+			{ user with active_tokens = user.active_tokens |> List.filter (fun t -> t != tok) }
+		)
 
 end
 
@@ -325,6 +337,29 @@ let validate ~(storage:storage) token : bool Lwt.t =
 		return (match user with
 			| Some user -> User.validate user token
 			| None -> false
+		)
+	)
+
+let logout ~(storage:storage) token : unit Lwt.t =
+	let info = token.sensitive_metadata in
+	let expires = info.Token.expires in
+	if expires < Unix.time () then
+		return_unit
+	else (
+		let username = info.Token.user in
+		storage#modify (fun users write_user ->
+			try_lwt
+				lwt () = users |> Lwt_stream.iter_s (fun user ->
+					if user.User.name = username then (
+						match User.remove_token user token with
+							| Some user -> write_user user
+							| None -> ((raise Invalid_credentials):>unit Lwt.t)
+					) else
+						write_user user
+					;
+				) in
+				return_true
+			with Invalid_credentials -> return_false
 		)
 	)
 
