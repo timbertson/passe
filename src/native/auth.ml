@@ -327,17 +327,18 @@ let login ~(storage:storage) username password : Token.sensitive_token either Lw
 		| Some rv -> `Success rv
 		| None -> `Failed "Authentication failed")
 
-let validate ~(storage:storage) token : bool Lwt.t =
+let validate ~(storage:storage) token : User.t option Lwt.t =
 	let info = token.sensitive_metadata in
 	let expires = info.Token.expires in
 	if expires < Unix.time () then
-		return_false
+		return_none
 	else (
 		lwt user = get_user ~storage (info.Token.user) in
-		return (match user with
-			| Some user -> User.validate user token
-			| None -> false
-		)
+		return (user |> Option.bind (fun user ->
+				if User.validate user token
+					then Some user
+					else None
+		))
 	)
 
 let logout ~(storage:storage) token : unit Lwt.t =

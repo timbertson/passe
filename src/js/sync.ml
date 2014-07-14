@@ -11,7 +11,7 @@ let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
 let logout_url = Server.path ["auth"; "logout"]
 let token_validate_url = Server.path ["auth"; "validate"]
-let db_url username = Server.path ["db"; username]
+let db_url = Server.path ["db"]
 
 type username = string
 type credentials = string * J.json
@@ -160,10 +160,14 @@ let ui state =
 						let sent_changes = (get_latest_db ()).Store.changes in
 
 						lwt response = (match sent_changes with
-							| [] -> Server.get_json (db_url username)
+							| [] -> Server.get_json
+									(Uri.with_query' db_url ["token", J.to_string ~std:true token])
 							| sent_changes ->
-									let data = (Store.Format.json_of_changes sent_changes) in
-									Server.post_json ~data (db_url username)
+									let data = `Assoc [
+										("db", (Store.Format.json_of_changes sent_changes));
+										("token", token);
+									] in
+									Server.post_json ~data (db_url)
 						) in
 						(match response with
 							| Server.OK json ->

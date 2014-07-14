@@ -10,19 +10,15 @@ type response =
 	| Unauthorized of string option
 	| Failed of string * (J.json option)
 
-(* let root = *)
-(* 	let open Url in *)
-(* 	match Url.Current.get () with *)
-(* 	| Some (Http u) ->  *)
-(* 	| Some (Https u) -> u (* with {hu_path = []}*) *)
-(* 	| None | Some (File _) -> raise Unsupported_protocol *)
-(*  *)
-let path p =
+let root_url =
 	let open Url in
 	match Url.Current.get () with
-	| Some (Http u) -> Http {u with hu_path = p }
-	| Some (Https u) -> Https {u with hu_path = p }
+	| Some (Http _ as u)
+	| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
 	| None | Some (File _) -> raise Unsupported_protocol
+
+let path p = Uri.with_path root_url (String.concat "/" p)
+
 
 let json_content_type = "application/json"
 
@@ -50,7 +46,7 @@ let json_payload frame =
 let request ?content_type ~meth ?data url =
 	let (res, w) = Lwt.task () in
 	let req = Xhr.create () in
-	let url = Url.string_of_url url in
+	let url = Uri.to_string url in
 	req##_open (Js.string meth, Js.string url, Js._true);
 	content_type |> Option.may (fun content_type ->
 		req##setRequestHeader (Js.string "Content-type", Js.string content_type)

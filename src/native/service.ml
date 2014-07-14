@@ -1,3 +1,4 @@
+open Common
 open Lwt
 module Header = Cohttp.Header
 module Server = Cohttp_lwt_unix.Server
@@ -29,6 +30,9 @@ let respond_json ~status ~body () =
 		~headers:json_content_type
 		~status ~body:(J.to_string ~std:true body) ()
 
+let respond_unauthorized () =
+	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
+
 let handler ~document_root ~data_root ~user_db sock req body =
 	try_lwt
 		let uri = Cohttp.Request.uri req in
@@ -41,15 +45,29 @@ let handler ~document_root ~data_root ~user_db sock req body =
 			Server.respond_file ~fname:(document_path relpath) () in
 		let db_path_for user =
 			data_path (Filename.concat "user_db" (user ^ ".json")) in
+	
+		let validate_token token = match token with
+			| Some token ->
+					let token = Auth.Token.of_json token in
+					Auth.validate ~storage:user_db token
+			| None -> return_none
+		in
+
+		let validate_get_user () =
+			validate_token (Uri.get_query_param uri "token" |> Option.map J.from_string) in
 
 		match Cohttp.Request.meth req with
 			| `GET -> (
 				match path with
-					| ["db"; user] ->
-							(* XXX authentication! *)
-							log#debug "serving db for user: %s" user;
-							lwt () = Lwt_unix.sleep 2.0 in
-							Server.respond_file ~headers:json_content_type ~fname:(db_path_for user) ()
+					| ["db"] ->
+							lwt user = validate_get_user () in
+							begin match user with
+								| Some user ->
+									let username = user.Auth.User.name in
+									log#debug "serving db for user: %s" username;
+									Server.respond_file ~headers:json_content_type ~fname:(db_path_for username) ()
+								| None -> respond_unauthorized ()
+							end
 					| [] -> serve_file "index.html"
 					| _ -> serve_file (String.concat "/" path)
 				)
@@ -66,6 +84,9 @@ let handler ~document_root ~data_root ~user_db sock req body =
 						| `Failed msg -> `Assoc [("error", `String msg)]
 					) ()
 				in
+				let validate_post_user () =
+					validate_token (J.get_field "token" params) in
+
 				let mandatory = J.mandatory in
 
 				match path with
@@ -88,43 +109,48 @@ let handler ~document_root ~data_root ~user_db sock req body =
 						)
 					| ["auth"; "validate"] -> (
 						let token = Auth.Token.of_json params in
-						lwt valid = Auth.validate ~storage:user_db token in
-						respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool valid)]) ()
+						lwt user = Auth.validate ~storage:user_db token in
+						respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 					)
-					| ["db"; user] ->
-							(* XXX authentication *)
-							log#debug "saving db for user: %s" user;
-							(* XXX locking *)
-							lwt db_file_contents = (try_lwt
-								lwt contents = Lwt_io.with_file ~mode:Lwt_io.input (db_path_for user) (fun f ->
-									Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
-								) in
-								return (Some contents)
-								with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
-							) in
+					| ["db"] ->
+							lwt user = validate_post_user () in
+							begin match user with
+								| None -> respond_unauthorized ()
+								| Some user -> (
+									let username = user.Auth.User.name in
+									let db = J.mandatory J.get_field "db" params in
+									let db_path = db_path_for username in
+									log#debug "saving db for user: %s" username;
+									(* XXX locking *)
+									lwt db_file_contents = (try_lwt
+										lwt contents = Lwt_io.with_file ~mode:Lwt_io.input db_path (fun f ->
+											Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
+										) in
+										return (Some contents)
+										with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
+									) in
 
-							let existing_core = db_file_contents |> Option.map J.from_string in
-							let open Store in
-							let open Store.Format in
-							let existing_core = existing_core
-								|> Option.map (fun json -> Store.Format.core.getter (Some json))
-								|> Option.default empty_core in
-							lwt body = body |> Cohttp_lwt_body.to_string in
-							let changes = Some (J.from_string body) |> Store.Format.changes.getter in
-							let updated_core = {
-								version = succ existing_core.version;
-								records = Store.apply_changes existing_core changes;
-							} |> Store.Format.core.setter |> Option.force in
-							let tmp = ((db_path_for user) ^ ".tmp") in
-							lwt () = Lwt_io.with_file
-								~mode:Lwt_io.output
-								tmp
-								(fun f ->
-									Lwt_io.write f (J.to_string ~std:true updated_core)
+									let existing_core = db_file_contents |> Option.map J.from_string in
+									let open Store in
+									let open Store.Format in
+									let existing_core = existing_core
+										|> Option.map (fun json -> Store.Format.core.getter (Some json))
+										|> Option.default empty_core in
+									let changes = Some (db) |> Store.Format.changes.getter in
+									let updated_core = {
+										version = succ existing_core.version;
+										records = Store.apply_changes existing_core changes;
+									} |> Store.Format.core.setter |> Option.force in
+									let tmp = (db_path ^ ".tmp") in
+									lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
+										(fun f ->
+											Lwt_io.write f (J.to_string ~std:true updated_core)
+										)
+									in
+									lwt () = Lwt_unix.rename tmp db_path in
+									respond_json ~status:`OK ~body:updated_core ()
 								)
-							in
-							lwt () = Lwt_unix.rename tmp (db_path_for user) in
-							respond_json ~status:`OK ~body:updated_core ()
+							end
 					| _ -> Server.respond_not_found ~uri ()
 				)
 			| _ ->
