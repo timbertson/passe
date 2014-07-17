@@ -1,6 +1,7 @@
 open Js
 open React_ext
 module Json = Json_ext
+let log = Logging.get_logger "local_storage"
 
 module StringMap = Map.Make(String)
 
@@ -19,7 +20,9 @@ class in_memory_provider : base =
   method set key value = root := StringMap.add key value !root
   method delete key = root := StringMap.remove key !root
   method iter fn = StringMap.iter fn !root
-  method erase_all = root := StringMap.empty
+  method erase_all =
+    log#debug "erasing in-memory storage provider";
+    root := StringMap.empty
 end
 
 (* interface Storage {
@@ -54,10 +57,12 @@ class browser_provider : base =
       let key = local_storage##key(!i) |> force in
       let value = local_storage##getItem(key) |> Opt.to_option in
       value |> Option.may (fun value -> fn (to_string key) (to_string value));
-      i := pred !i;
+      i := succ !i;
     done
 
-  method erase_all = local_storage##clear()
+  method erase_all:unit =
+    log#debug "erasing localStorage";
+    local_storage##clear()
 end
 
 
@@ -107,9 +112,11 @@ and provider do_persist =
   method set key value = !active#set key value
   method delete key = !active#delete key
   method set_persistent p =
+    log#info "setting persistent to: %b" p;
     let new_impl = if p then persistent else ephemeral in
     if new_impl != !active then (
       new_impl#erase_all;
+      log#debug "transferring data";
       !active#iter new_impl#set;
       !active#erase_all;
       active := new_impl;

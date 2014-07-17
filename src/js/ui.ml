@@ -276,49 +276,74 @@ let option_stream s : fragment_t =
 let node_signal_of_string str_sig : (Dom.node leaf_widget) signal = str_sig |> S.map text
 let text_stream s : fragment_t = stream (node_signal_of_string s)
 
-type 'a editable = (<value:Js.js_string Js.t Js.prop; ..> as 'a) Js.t
+type 'a lwt_js_events =
+	?cancel_handler:bool ->
+	?use_capture:bool ->
+	(#Dom_html.eventTarget as 'a) Js.t ->
+	(Dom_html.event Js.t -> unit Lwt.t -> unit Lwt.t) -> unit Lwt.t
 
-let editable_of_signal ?(events=Lwt_js_events.inputs) ~(cons:(unit -> 't editable) ) ?update source =
+let editable_of_signal : 'v 'elem.
+	cons:(unit -> ((#Dom_html.inputElement) as 'elem) Js.t)
+	-> ?events:'elem lwt_js_events
+	-> get:('elem Js.t -> 'v)
+	-> set:('elem Js.t -> 'v -> unit)
+	-> ?update:('v -> unit)
+	-> 'v signal
+	-> 'elem widget
+	=
+	fun ~cons ?(events=Lwt_js_events.inputs) ~get ~set ?update source ->
 	let clear_error elem = elem##classList##remove(Js.string"error") in
 	let set_error elem = elem##classList##add(Js.string"error") in
 
-	let widget:<value:Js.js_string Js.t Js.prop; ..> widget = element cons in
+	let widget = element cons in
 
 	let update_loop elem = match update with
 		| None -> Lwt.return_unit
-		| Some update -> events elem (fun event _ ->
-			log#info "responding to input change (%s)" (elem##value |> Js.to_string);
-			clear_error elem;
-			begin
-				try update (elem##value |> Js.to_string)
-				with err -> set_error elem
-			end;
-			Lwt.return_unit
-		)
+		| Some update ->
+			events elem (fun event _ ->
+				log#info "responding to input change";
+				clear_error elem;
+				begin
+					try update (get elem)
+					with err -> set_error elem
+				end;
+				Lwt.return_unit
+			)
 	in
 
 	let watch_loop elem =
 		effectful_stream_mechanism (source |> S.map (fun v ->
-			log#info "responding to signal change (%s)" v;
 			clear_error elem;
-			elem##value <- (Js.string v)
+			set elem v
 		))
 	in
 
 	widget#mechanism (fun elem -> watch_loop elem <&> update_loop elem);
 	widget
 
+let get_input_value elem = elem##value |> Js.to_string
+let set_input_value elem v = elem##value <- Js.string v
+
+let get_checkbox_value elem = elem##checked |> Js.to_bool
+let set_checkbox_value elem v = elem##checked <- Js.bool v
+
 let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
 	let cons = match cons with Some c -> c | None -> (
 		fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"text")
 	) in
-	editable_of_signal ~events ~cons ?update source
+	editable_of_signal
+		~get:get_input_value
+		~set:set_input_value
+		~events ~cons ?update source
 
-let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons  ?update source =
+let checkbox_of_signal ?(events=Lwt_js_events.changes) ?cons ?update source =
 	let cons = match cons with Some c -> c | None -> (
-		fun () -> Dom_html.createTextarea Dom_html.document
+		fun () -> Dom_html.createInput Dom_html.document ~_type:(Js.string"checkbox")
 	) in
-	editable_of_signal ~events ~cons ?update source
+	editable_of_signal
+		~get:get_checkbox_value
+		~set:set_checkbox_value
+		~events ~cons ?update source
 
 let signal_of_widget
 	~events

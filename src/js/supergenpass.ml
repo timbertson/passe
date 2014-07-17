@@ -19,10 +19,10 @@ let check cond = Printf.ksprintf (function s ->
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
-let do_persist_data, set_do_persist_data = S.create true
-let storage_provider = (new Local_storage.provider (S.value do_persist_data))
+let incognito, set_incognito = S.create false
+let storage_provider = (new Local_storage.provider (true))
 let config_provider = Config.build storage_provider
-let _ = do_persist_data |> S.map (fun v -> storage_provider#set_persistent v)
+let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v))
 
 let sync = Sync.build config_provider
 
@@ -367,13 +367,21 @@ let password_form () : #Dom_html.element Ui.widget =
 		];
 	in
 
-
+	let incognito_checkbox = Ui.checkbox_of_signal ~update:set_incognito incognito in
 
 	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
 		child div ~cls:"row" ~children:[
 			child div ~cls:"col-sm-7" ~children:[
 				child div ~cls:"col-xs-offset-2" ~children:[
 					child h1 ~text:"SuperGenPass" ();
+				] ();
+			] ();
+			child div ~cls:"col-sm-5" ~children:[
+				child div ~cls:"pull-right" ~children:[
+					frag incognito_checkbox;
+					child span ~text:"Incognito" ~attrs:[
+						"title","Don't store anything on this browser"
+					] ();
 				] ();
 			] ();
 		] ();
@@ -416,7 +424,6 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	form#mechanism (fun elem ->
 		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
-			log#info "EVENT!";
 			Console.console##log(event);
 			if (to_bool event##ctrlKey && event##keyCode = 83) then (
 				stop event;
