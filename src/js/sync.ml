@@ -9,6 +9,7 @@ let log = Logging.get_logger "sync"
 
 let username_key = "user"
 let login_url = Server.path ["auth"; "login"]
+let signup_url = Server.path ["auth"; "signup"]
 let logout_url = Server.path ["auth"; "logout"]
 let token_validate_url = Server.path ["auth"; "validate"]
 let db_url = Server.path ["db"]
@@ -56,7 +57,7 @@ type state = {
 	stored_credentials: Config.child;
 	stored_credentials_signal: J.json option signal;
 	auth_state: auth_state signal;
-	set_auth_state: bool -> auth_state -> unit;
+	set_auth_state: auth_state -> unit;
 }
 
 let build config_provider =
@@ -74,14 +75,12 @@ let build config_provider =
 			) in
 		let auth_state, _set_auth_state = editable_signal source in
 
-		let set_auth_state remember_me state =
+		let set_auth_state state =
 			let step = Step.create () in
 			begin match state with
 			| Anonymous -> (stored_credentials)#delete ~step ()
 			(* TODO: Failed_login & Saved_user *)
-			| Active_user (_, creds) ->
-					if remember_me then
-						(stored_credentials)#save ~step creds
+			| Active_user (_, creds) -> stored_credentials#save ~step creds
 			| _ -> ()
 			end;
 			_set_auth_state ~step state;
@@ -134,9 +133,9 @@ let ui state =
 		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
 	) in
 
-	let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] () in
-	let remember_me = signal_of_checkbox ~initial:true remember_me_input in
-	let set_auth_state = state.set_auth_state (S.value remember_me) in
+	(* let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] () in *)
+	(* let remember_me = signal_of_checkbox ~initial:true remember_me_input in *)
+	let set_auth_state = state.set_auth_state in
 
 	let sync_running, (run_sync:credentials -> unit Lwt.t) =
 		let running_sync = ref None in
@@ -216,8 +215,7 @@ let ui state =
 		div ~cls:"account-status login alert alert-info" ~children:[
 			child form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
 				error_widget;
-				child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
-				child div ~cls:"form-group form-group-sm email" ~children:[
+				child div ~cls:"form-group form-group-xs email" ~children:[
 					child label ~cls:"sr-only" ~text:"User" ();
 					child input ~cls:"form-control" ~attrs:[
 						("name","user");
@@ -228,7 +226,7 @@ let ui state =
 				] ();
 				space;
 
-				child div ~cls:"form-group form-group-sm password" ~children:[
+				child div ~cls:"form-group form-group-xs password" ~children:[
 					child label ~cls:"sr-only" ~text:"password" ();
 					child input ~cls:"form-control" ~attrs:[
 						("type","password");
@@ -238,31 +236,19 @@ let ui state =
 				] ();
 
 				space;
-
-				child div ~cls:"checkbox remember-me form-group" ~children:[
-					frag remember_me_input;
-					space;
-					child label ~text:"Remember me" ();
-				] ();
+				child input ~cls:"btn btn-default muted signup pull-right" ~attrs:[("type","button"); ("value","Register")] ~text:"Register" ();
+				child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
 
 				child div ~cls:"clearfix" ();
 			] ~mechanism:(fun elem ->
-				effectful_stream_mechanism (remember_me
-					|> S.map (fun remember_me ->
-							log#info "remember me changed to: %b" remember_me;
-							if (not remember_me) then (
-								(state.stored_credentials)#delete ()
-							)
-					)
-				)
-				<&>
-				Lwt_js_events.submits elem (fun event _ ->
-					stop event;
+				let signup_button = elem##querySelector(".signup") |> non_null in
+				let submit url =
 					log#info "form submitted";
-					let data = `Assoc (Form.get_form_contents elem |> List.map (fun (name, value) -> (name, `String value))) in
+					let data = `Assoc (Form.get_form_contents elem
+						|> List.map (fun (name, value) -> (name, `String value))) in
 					let open Server in
 					set_error None;
-					lwt response = post_json ~data login_url in
+					lwt response = post_json ~data url in
 					begin match response with
 					| OK response ->
 						let creds = J.get_field "token" response in
@@ -275,6 +261,16 @@ let ui state =
 					| Unauthorized _ -> assert false
 					end;
 					return_unit
+				in
+
+				Lwt_js_events.clicks signup_button (fun event _ ->
+					stop event;
+					submit signup_url
+				)
+				<&>
+				Lwt_js_events.submits elem (fun event _ ->
+					stop event;
+					submit login_url
 				)
 			) ()
 		] ()

@@ -83,14 +83,8 @@ body {
 	background-repeat:no-repeat;
 	background-size: auto 100%;
 	background-position-x:100%;
-	width:5.2em;
-	height:3em;
-	display:block;
-	padding-left: 0em;
-	padding-top: 0.8em;
-	position:relative;
-	top:1em;
-	left:10px;
+	width:2em;
+	float:right;
 
 	opacity:0.5;
 	transition: 0.3s opacity;
@@ -263,15 +257,12 @@ body {
 
 	&.login {
 		.form-group {
-			/*width: 193px;*/
-			display:inline-block;
-		}
-		input[type="submit"] {
-			float:right;
 		}
 
-		input[type="checkbox"] {
-			margin-left:0;
+		.btn.muted {
+			background: rgb(239, 245, 250);
+			border-color: rgb(176, 199, 212);
+			color: rgb(84, 97, 109);
 		}
 	}
 

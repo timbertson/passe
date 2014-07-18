@@ -208,9 +208,13 @@ let main () =
 	);
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
+	let host = match (Opt.get host) with
+		| "any" -> "0.0.0.0"
+		| h -> h
+	in
 	Lwt_unix.run (start_server
 		~port:(Opt.get port)
-		~host:(Opt.get host)
+		~host
 		~data_root
 		~document_root
 	())
