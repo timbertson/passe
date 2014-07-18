@@ -368,6 +368,13 @@ let password_form () : #Dom_html.element Ui.widget =
 	in
 
 	let incognito_checkbox = Ui.checkbox_of_signal ~update:set_incognito incognito in
+	incognito_checkbox#attr "title" "Don't store anything on this browser";
+
+	let incognito_container = div ~cls:"pull-right incognito-checkbox" ~children:[
+		frag incognito_checkbox;
+	] () in
+	incognito_container#class_s "selected" incognito;
+
 
 	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
 		child div ~cls:"row" ~children:[
@@ -377,12 +384,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				] ();
 			] ();
 			child div ~cls:"col-sm-5" ~children:[
-				child div ~cls:"pull-right" ~children:[
-					frag incognito_checkbox;
-					child span ~text:"Incognito" ~attrs:[
-						"title","Don't store anything on this browser"
-					] ();
-				] ();
+				frag incognito_container
 			] ();
 		] ();
 

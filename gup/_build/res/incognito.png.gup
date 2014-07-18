@@ -1,0 +1,9 @@
+#!bash -eu
+src=../../src/img/"$(basename "$2" .png).svg"
+inkscape \
+	--without-gui \
+	--file="$src" \
+	--export-png="$1" \
+	--export-area-drawing \
+	--export-dpi=90 \
+	;

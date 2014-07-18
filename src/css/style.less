@@ -78,6 +78,27 @@ body {
 	}
 }
 
+.incognito-checkbox {
+	background: url('../incognito.png');
+	background-repeat:no-repeat;
+	background-size: auto 100%;
+	background-position-x:100%;
+	width:5.2em;
+	height:3em;
+	display:block;
+	padding-left: 0em;
+	padding-top: 0.8em;
+	position:relative;
+	top:1em;
+	left:10px;
+
+	opacity:0.5;
+	transition: 0.3s opacity;
+	&.selected {
+		opacity: 0.85;
+	}
+}
+
 .domain-info {
 	strong {
 		&:extend(.text-muted);
