@@ -70,6 +70,7 @@ try:
 	class SyscallTracer(object):
 		def parseOptions(self):
 			parser = OptionParser(usage="%prog [options] -- program [arg1 arg2 ...]")
+			parser.add_option('--trace', action='store_true')
 			self.options, self.program = parser.parse_args()
 			self.program[0] = locateProgram(self.program[0])
 			if not self.program:
@@ -201,7 +202,9 @@ try:
 					# opening a file in write mode doesn't count as a dependency
 					return
 
-			# print("ACCESS[%s]: %s" % ("OK" if successful else "ERR", filename))
+			if self.options.trace:
+				print("[gup-autotrace] %s[%s]: %s" % (name, "OK" if successful else "ERR", filename))
+
 			if successful:
 				ifchange_paths.add(filename)
 			else:
@@ -246,7 +249,8 @@ try:
 			process.syscall()
 
 		def processExited(self, event):
-			if event.process is self.mainProcess:
+			# print(repr(event))
+			if event.process is self.mainProcess or self.mainProcess is None:
 				if event.signum is None:
 					self.exitStatus = event.exitcode
 
@@ -264,6 +268,7 @@ try:
 
 		def runDebugger(self):
 			# Create debugger and traced process
+			# print(repr(self.program))
 			pid = createChild(self.program, no_stdout = False, env=None)
 			self.mainProcess = self.debugger.addProcess(pid, is_attached=True)
 
@@ -272,9 +277,7 @@ try:
 
 		def main(self):
 			self.parseOptions()
-
-			status = self._main()
-			sys.exit(status)
+			return self._main()
 
 		def should_include(self, path):
 			if os.path.isabs(path):
@@ -286,6 +289,7 @@ try:
 
 		def _main(self):
 			self.exitStatus = 1
+			self.mainProcess = None
 			self.debugger = PtraceDebugger()
 			self.debugger.traceFork()
 			self.debugger.traceExec()
@@ -304,24 +308,21 @@ try:
 
 			return self.exitStatus
 
-		def createChild(self, program):
-			pid = Application.createChild(self, program)
-			# error("execve(%s, %s, [/* 40 vars */]) = %s" % ( program[0], program, pid))
-			return pid
+	tracer = SyscallTracer()
+	tracer.main()
 
-	status = SyscallTracer().main()
-
+except SystemExit as e:
+	# print(repr(e))
+	raise e
+except Exception as e:
+	# print(repr(e))
+	fallback()
 	written_paths = set(map(os.path.normpath, written_paths))
-
-	def filter_paths(set):
-		rv = set(map(os.path.normpath, set))
-		# print(set, repr(written_paths))
-		# def not_written(p):
-		# 	is_written = map(lambda written: os.path.samefile(p, written), written_paths)
-		# 	return not any(is_written)
+else:
+	def filter_paths(paths):
+		rv = set(map(os.path.normpath, paths))
 		rv = rv.difference(written_paths)
-		# rv = filter(not_written, set)
-		rv = filter(self.should_include, rv)
+		rv = filter(tracer.should_include, rv)
 		return list(rv)
 
 	ifcreate_paths = filter_paths(ifcreate_paths)
@@ -333,9 +334,5 @@ try:
 	if ifchange_paths:
 		subprocess.check_call(['gup', '-u'] + list(ifchange_paths))
 	
-	sys.exit(status)
+	sys.exit(tracer.exitStatus)
 
-except SystemExit as e:
-	raise e
-except:
-	fallback()
