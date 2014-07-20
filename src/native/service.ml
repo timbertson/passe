@@ -24,10 +24,11 @@ let normpath p =
 
 let content_type_header v = Header.init_with "Content-Type" v
 let json_content_type = content_type_header "application/json"
+let no_cache h = Header.add h "Cache-control" "no-cache"
 
 let respond_json ~status ~body () =
 	Server.respond_string
-		~headers:json_content_type
+		~headers:(json_content_type |> no_cache)
 		~status ~body:(J.to_string ~std:true body) ()
 
 let respond_unauthorized () =
@@ -42,7 +43,38 @@ let handler ~document_root ~data_root ~user_db sock req body =
 		log#info "HIT: %s" path;
 		let path = normpath path in
 		let serve_file relpath =
-			Server.respond_file ~fname:(document_path relpath) () in
+			let path = document_path relpath in
+			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
+			lwt latest_etag =
+				try_lwt
+					Lwt_io.with_file ~mode:Lwt_io.input path (fun f ->
+						let hash = Sha256.init () in
+						let chunks = Lwt_stream.from (fun () ->
+							lwt str = Lwt_io.read ~count:1024 f in
+							return (str |> Option.non_empty ~zero:"")
+						) in
+						lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
+						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
+						return (Some ("\"" ^ (digest ) ^ "\""))
+					)
+				with Unix.Unix_error (Unix.ENOENT, _, _) -> return_none
+			in
+			
+			if match latest_etag, client_etag with
+				| Some a, Some b -> a = b
+				| _ -> false
+			then
+				Server.respond
+					~body:Cohttp_lwt_body.empty
+					~status:`Not_modified ()
+			else
+				let headers = Header.init () |> no_cache in
+				let headers = match latest_etag with
+					| None -> headers
+					| Some etag -> Header.add headers "etag" etag
+				in
+				Server.respond_file ~fname:path ~headers () in
+
 		let db_path_for user =
 			data_path (Filename.concat "user_db" (user ^ ".json")) in
 	
