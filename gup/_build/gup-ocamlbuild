@@ -1,17 +1,19 @@
 #!bash -eu
-. "$(dirname "$0")"/env.sh
+here="$(dirname "$0")"
+. "$here/env.sh"
 ocamlbuild_args="-quiet"
 if [ "${GUP_XTRACE:-}" -eq 1 ]; then
 	set -x
 	ocamlbuild_args=""
 fi
-gup --always
+# gup --always
 BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
 target="${target#*/}"
 
 pushd "../src/$compile_mode" >/dev/null
-ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target" -I common
+"$here/gup-autotrace" -- \
+	ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target" -I common
 popd >/dev/null
 
 touch "$2"

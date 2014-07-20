@@ -1,7 +1,7 @@
 # sets $build_type to prod|dev
-here="$(realpath --no-symlinks ${BASH_SOURCE[0]})"
-gup -u "$here"
-build_dir="$(basename "$(dirname "$here")")"
+self="$(realpath --no-symlinks ${BASH_SOURCE[0]})"
+gup -u "$self"
+build_dir="$(basename "$(dirname "$self")")"
 case $build_dir in
 	_build) build_type="dev";;
 	_build.prod) build_type="prod";;

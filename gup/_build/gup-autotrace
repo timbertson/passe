@@ -1,0 +1,341 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import os, sys, subprocess
+def fallback():
+	args = sys.argv[1:]
+	double_dash = args.index('--')
+	args = args[double_dash+1:]
+
+	verbosity = int(os.environ.get('GUP_VERBOSE', '0'))
+	prefix = "[gup-autotrace] "
+	if verbosity > 0:
+		import traceback
+		for line in traceback.format_exc().splitlines():
+			print(prefix + line, file=sys.stderr)
+
+	if verbosity > 0 or os.environ.get('GUP_XTRACE', '0') == '1':
+		print(prefix + "-- ptrace failed, falling back to `gup --always`", file=sys.stderr)
+
+	subprocess.check_call(['gup','--always'])
+	os.execvp(args[0], args)
+
+try:
+	import re
+	from ptrace import PtraceError
+	from ptrace.tools import locateProgram
+	from ptrace.debugger.child import createChild
+	from ptrace.debugger import (PtraceDebugger, Application,
+		ProcessExit, ProcessSignal, NewProcessEvent, ProcessExecution)
+	from ptrace.syscall import (SYSCALL_NAMES, SYSCALL_PROTOTYPES,
+		FILENAME_ARGUMENTS, SOCKET_SYSCALL_NAMES, FILENAME_ARGUMENTS)
+	from ptrace.func_call import FunctionCallOptions
+	from sys import stderr, exit
+	from optparse import OptionParser
+	from logging import getLogger, error
+	from ptrace.syscall.socketcall_constants import SOCKETCALL
+	from ptrace.error import PTRACE_ERRORS, writeError
+	from ptrace.ctypes_tools import formatAddress
+
+	from ptrace.linux_proc import (ProcError, openProc,
+			readProcessProcList, readProcessLink, readProcessStat)
+
+	def getProcessCwd(process):
+		return readProcessLink(process.pid, 'cwd')
+
+	FILE_SYSCALLS = frozenset([
+		'open',
+		'stat',
+		'lstat',
+		# 'getdents',
+	])
+
+	IGNORED_ROOTS = frozenset([
+		'proc',
+		'sys',
+		'dev',
+		'etc',
+	])
+
+	written_paths = set()
+	ifcreate_paths = set()
+	ifchange_paths = set()
+	
+	gup_target = os.environ.get('GUP_TARGET', None)
+	if gup_target:
+		written_paths.add(gup_target)
+
+	for call in FILE_SYSCALLS:
+		assert call in SYSCALL_NAMES.values(), call
+
+	class SyscallTracer(object):
+		def parseOptions(self):
+			parser = OptionParser(usage="%prog [options] -- program [arg1 arg2 ...]")
+			self.options, self.program = parser.parse_args()
+			self.program[0] = locateProgram(self.program[0])
+			if not self.program:
+				parser.print_help()
+				sys.exit(1)
+
+		def ignoreSyscall(self, syscall):
+			name = syscall.name
+			if name.startswith('exec'):
+
+				## XXX workaround
+				if syscall.process.read_mem_file:
+					syscall.process.read_mem_file.close()
+					syscall.process.read_mem_file = None
+
+			return name not in FILE_SYSCALLS
+
+		def displaySyscall(self, syscall):
+			name = syscall.name
+			process = syscall.process
+			text = syscall.format()
+
+			result = syscall.result
+			assert result is not None, repr(syscall)
+
+			# print(name)
+			# if (self.ignoreSyscall(syscall)): return
+			# import pdb;pdb.set_trace()
+
+			first_arg = syscall.arguments[0]
+			assert first_arg.name in FILENAME_ARGUMENTS, "not a filename argument: %s" % first_arg.name
+			# def readCString(address):
+			# 	if address:
+			# 		max_size = 4096
+
+			# 		def _readBytes(self, address, size):
+			# 				if not self.read_mem_file:
+			# 						filename = '/proc/%u/mem' % self.pid
+			# 						try:
+			# 								self.read_mem_file = open(filename, 'rb', 0)
+			# 								print("Opened: " + filename)
+			# 						except IOError, err:
+			# 								message = "Unable to open %s: fallback to ptrace implementation" % filename
+			# 								if err.errno != EACCES:
+			# 										error(message)
+			# 								else:
+			# 										info(message)
+			# 								self.readBytes = self._readBytes
+			# 								return self.readBytes(address, size)
+
+			# 				try:
+			# 						print("reading %s bytes from offset %s of pid %s" % (size, address, self.pid))
+			# 						mem = self.read_mem_file
+			# 						# mem = open(mem.name, 'rb', 0)
+			# 						# print(repr(mem))
+			# 						mem.seek(address)
+			# 						rv = mem.read(size)
+
+			# 						# if not rv:
+			# 						# 	# import pdb;pdb.set_trace();
+			# 						# 	# print("XXX reading %s bytes from offset %s of pid %s" % (size, address, self.pid))
+			# 						# 	mem = open(self.read_mem_file.name, 'rb', 0)
+			# 						# 	mem.seek(address)
+			# 						# 	rv = mem.read(size)
+
+			# 						#XXX submit as patch?
+			# 						if not rv:
+			# 							# import time
+			# 							# time.sleep(1)
+			# 							# import pdb; pdb.set_trace()
+			# 							raise EOFError
+			# 						return rv
+			# 				except (IOError, ValueError), err:
+			# 						raise ProcessError(self, "readBytes(%s, %s) error: %s" % (
+			# 								formatAddress(address), size, err))
+
+			# 		def _readCString(self, address, max_size, chunk_length=256):
+			# 				from ptrace.six import b
+			# 				string = []
+			# 				size = 0
+			# 				truncated = False
+			# 				print("Read!")
+			# 				while True:
+			# 						done = False
+			# 						data = _readBytes(self, address, chunk_length)
+			# 						print("got data: %r" % (data[:20]))
+			# 						pos = data.find(b('\0'))
+			# 						if pos != -1:
+			# 								done = True
+			# 								data = data[:pos]
+			# 						if max_size <= size+chunk_length:
+			# 								data = data[:(max_size-size)]
+			# 								string.append(data)
+			# 								truncated = True
+			# 								break
+			# 						string.append(data)
+			# 						if done:
+			# 								break
+			# 						size += chunk_length
+			# 						address += chunk_length
+			# 				return ''.join(string), truncated
+
+			# 		val, truncated = _readCString(process, address, max_size)
+			# 		# val, truncated = process.readCString(address, max_size)
+			# 		assert not truncated, "filename too long - got %r" % (val,)
+			# 		return val
+			# 	else:
+			# 		return None
+
+			assert type(syscall.result) is long, type(syscall.result)
+
+			filename, truncated = process.readCString(first_arg.value, 4096)
+			assert not truncated, "filename too long - got %r" % (filename,)
+
+			successful = syscall.result >= 0
+
+			if not os.path.isabs(filename):
+				cwd = getProcessCwd(process)
+				filename = os.path.join(cwd, filename)
+
+			if filename in written_paths:
+				# don't bother about files we've already written
+				return
+
+			if successful and name == 'open':
+				flags = syscall.arguments[1].value
+				if flags & os.O_WRONLY:
+					written_paths.add(filename)
+					# opening a file in write mode doesn't count as a dependency
+					return
+
+			# print("ACCESS[%s]: %s" % ("OK" if successful else "ERR", filename))
+			if successful:
+				ifchange_paths.add(filename)
+			else:
+				ifcreate_paths.add(filename)
+
+		def syscallTrace(self, process):
+			# First query to break at next syscall
+			self.prepareProcess(process)
+
+			while True:
+				# No more process? Exit
+				if not self.debugger:
+					break
+
+				# Wait until next syscall enter
+				try:
+					event = self.debugger.waitSyscall()
+					process = event.process
+				except ProcessExit as event:
+					self.processExited(event)
+					continue
+				except ProcessSignal as event:
+					process.syscall(event.signum)
+					continue
+				except NewProcessEvent as event:
+					self.newProcess(event)
+					continue
+				except ProcessExecution as event:
+					self.processExecution(event)
+					continue
+
+				# Process syscall enter or exit
+				self.syscall(process)
+
+		def syscall(self, process):
+			state = process.syscall_state
+			syscall = state.event(self.syscall_options)
+			if syscall and (syscall.result is not None):
+				self.displaySyscall(syscall)
+
+			# Break at next syscall
+			process.syscall()
+
+		def processExited(self, event):
+			if event.process is self.mainProcess:
+				if event.signum is None:
+					self.exitStatus = event.exitcode
+
+		def prepareProcess(self, process):
+			process.syscall()
+			process.syscall_state.ignore_callback = self.ignoreSyscall
+
+		def newProcess(self, event):
+			process = event.process
+			self.prepareProcess(process)
+			process.parent.syscall()
+
+		def processExecution(self, event):
+			event.process.syscall()
+
+		def runDebugger(self):
+			# Create debugger and traced process
+			pid = createChild(self.program, no_stdout = False, env=None)
+			self.mainProcess = self.debugger.addProcess(pid, is_attached=True)
+
+			self.syscall_options = FunctionCallOptions()
+			self.syscallTrace(self.mainProcess)
+
+		def main(self):
+			self.parseOptions()
+
+			status = self._main()
+			sys.exit(status)
+
+		def should_include(self, path):
+			if os.path.isabs(path):
+				first_component = path.split(os.path.sep, 2)[1]
+				if first_component:
+					if first_component in IGNORED_ROOTS:
+						return False
+			return True
+
+		def _main(self):
+			self.exitStatus = 1
+			self.debugger = PtraceDebugger()
+			self.debugger.traceFork()
+			self.debugger.traceExec()
+			try:
+				self.runDebugger()
+			except ProcessExit as event:
+				self.processExited(event)
+			# except PtraceError as err:
+			# 	error("ptrace() error: %s" % err)
+			except KeyboardInterrupt:
+				error("Interrupted.")
+				return 1
+			finally:
+				self.debugger.quit()
+			# print("IFCREATE: %r, IFCHANGE: %r" % (ifcreate_paths, ifchange_paths))
+
+			return self.exitStatus
+
+		def createChild(self, program):
+			pid = Application.createChild(self, program)
+			# error("execve(%s, %s, [/* 40 vars */]) = %s" % ( program[0], program, pid))
+			return pid
+
+	status = SyscallTracer().main()
+
+	written_paths = set(map(os.path.normpath, written_paths))
+
+	def filter_paths(set):
+		rv = set(map(os.path.normpath, set))
+		# print(set, repr(written_paths))
+		# def not_written(p):
+		# 	is_written = map(lambda written: os.path.samefile(p, written), written_paths)
+		# 	return not any(is_written)
+		rv = rv.difference(written_paths)
+		# rv = filter(not_written, set)
+		rv = filter(self.should_include, rv)
+		return list(rv)
+
+	ifcreate_paths = filter_paths(ifcreate_paths)
+	ifchange_paths = filter_paths(ifchange_paths)
+
+	if ifcreate_paths:
+		subprocess.check_call(['gup', '--ifcreate'] + list(ifcreate_paths))
+
+	if ifchange_paths:
+		subprocess.check_call(['gup', '-u'] + list(ifchange_paths))
+	
+	sys.exit(status)
+
+except SystemExit as e:
+	raise e
+except:
+	fallback()
