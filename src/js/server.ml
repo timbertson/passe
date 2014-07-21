@@ -115,7 +115,12 @@ let handle_json_response frame =
 				| None -> OK json
 			)
 		| code, response -> (
-			Failed (error |> Option.default frame.Xhr.content, response)
+			let contents = match frame.Xhr.content with
+				| "" -> "Request failed"
+				| contents -> contents
+			in
+
+			Failed (error |> Option.default contents, response)
 		)
 	)
 
