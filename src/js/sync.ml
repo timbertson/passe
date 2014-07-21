@@ -140,7 +140,8 @@ let ui state =
 	let sync_running, (run_sync:credentials -> unit Lwt.t) =
 		let running_sync = ref None in
 		let s, set_busy = S.create false in
-		(s, fun (username, token) ->
+		(s, fun credentials ->
+			let (username, token) = credentials in
 			match !running_sync with
 				| Some (future,_) -> future
 				| None -> begin
@@ -176,7 +177,8 @@ let ui state =
 								log#error "authentication failed: %a" (Option.print output_string) msg;
 								set_auth_state (Failed_login username)
 							| Server.Failed (msg, _) ->
-								log#error "sync failed: %s" msg
+								log#error "sync failed: %s" msg;
+								set_auth_state (Saved_user credentials)
 						);
 						return_unit;
 					with e -> (
