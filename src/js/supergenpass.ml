@@ -490,7 +490,27 @@ let main () = Lwt.async (fun () ->
 		let main_elem = (document##getElementById (s"main")) in
 		check (Opt.test main_elem) "main_elem not found!";
 		let main_elem = Opt.get main_elem (fun _ -> raise Fail) in
-		lwt () = show_form main_elem in
+		lwt () =
+			show_form main_elem
+			<&>
+			App_cache.update_monitor (fun () ->
+				log#info("appcache update ready");
+				let busy = document##body##querySelector(Js.string"input:focus")
+					|> Opt.to_option
+					|> Option.map (fun elem ->
+							let value = (Js.Unsafe.get elem (Js.string"value")) in
+							value##length > 0
+					) |> Option.default false
+				in
+				begin if busy then
+					log#warn "Not reloading; active input is nonempty"
+				else
+					Dom_html.window##location##reload()
+				end;
+				return_unit)
+			<&>
+			App_cache.poll_server ()
+		in
 		return_unit
 	) with e -> (
 		print_exc "Toplevel" e;

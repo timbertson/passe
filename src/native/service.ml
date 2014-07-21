@@ -40,7 +40,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 		let data_path = Filename.concat data_root in
 		let document_path = Filename.concat document_root in
 		let path = Uri.path uri in
-		log#info "HIT: %s" path;
+		(* log#info "HIT: %s" path; *)
 		let path = normpath path in
 		let serve_file relpath =
 			let path = document_path relpath in
@@ -110,6 +110,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 								| None -> respond_unauthorized ()
 							end
 					| [] -> serve_file "index.html"
+					| ["hold"] -> Lwt.wait () |> Tuple.fst
 					| _ -> serve_file (String.concat "/" path)
 				)
 			| `POST -> (

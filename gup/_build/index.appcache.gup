@@ -6,6 +6,7 @@ sources = [
 	"js/supergenpass.js",
 	"res/css/style.css",
 	"res/incognito.png",
+	"res/fonts/glyphicons-halflings-regular.woff",
 ]
 
 import subprocess
@@ -28,3 +29,7 @@ with open(sys.argv[1], 'w') as output:
 	output.write("# md5: " + digest.hexdigest() + "\n")
 	for fname in sources:
 		output.write(fname + "\n")
+	output.write("\n".join([
+		"NETWORK:",
+		"*",
+	]))

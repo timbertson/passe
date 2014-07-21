@@ -281,7 +281,8 @@ let ui state =
 		let _node w = (w:>Dom.node widget_t) in
 		let sync_mech = (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
-				run_sync auth
+				lwt () = run_sync auth in
+				return (App_cache.update ())
 			)
 		) in
 		sync_state |> S.map (function
