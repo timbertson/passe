@@ -20,6 +20,19 @@ let with_open_out file fn =
 
 let empty = `Assoc []
 
+let makedirs ?(mode=0o777) path =
+	let rec loop path =
+		if not (Sys.file_exists path) then (
+			let parent = (Filename.dirname path) in
+			assert (path <> parent);
+			loop parent;
+			try
+				Unix.mkdir path mode
+			with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
+		)
+	in
+	loop path
+
 class provider path =
 	let read () : Json.obj =
 		try with_open_in path (fun f ->
@@ -29,7 +42,12 @@ class provider path =
 	in
 	let current_contents = ref (Lazy.from_fun read) in
 
+	let written = ref false in
 	let write (contents : Json.obj) =
+		if not !written then (
+			makedirs (Filename.dirname path);
+			written := true
+		);
 		let tmp_path = (path ^ ".tmp") in
 		with_open_out tmp_path (fun f ->
 			Json.pretty_to_channel ~std:true f (contents:>Json.json)

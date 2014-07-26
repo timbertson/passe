@@ -64,10 +64,21 @@ struct
 	;;
 end
 
+let getenv name = try Some (Unix.getenv name) with Not_found -> None
+
 let () =
 	let p = Options.main () in
 	let posargs = OptParse.OptParser.parse ~first:1 p Sys.argv in
-	let storage_provider = new Config_storage.provider "/tmp/whatever.json" in
+	let storage_provider =
+		let config_dir = match getenv "XDG_CONFIG_HOME" with
+			| Some conf -> conf
+			| None ->
+				let conf = getenv "HOME" |> Option.map (fun home -> Filename.concat home ".config") in
+				Option.get_exn conf (SafeError "neither $XDG_CONFIG_HOME or $HOME are defined")
+		in
+		let path = Filename.concat config_dir "ogp/db.json" in
+		new Config_storage.provider path
+	in
 	let env = {
 		config = Config.build storage_provider;
 	} in
