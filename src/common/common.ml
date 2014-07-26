@@ -9,3 +9,11 @@ end
 let find_safe fn l = try Some (List.find fn l) with Not_found -> None
 
 let (%) f g = (fun x -> f (g x))
+
+let finally_do cleanup resource f =
+	let result =
+		try f resource
+		with ex -> cleanup resource; raise ex in
+	let () = cleanup resource in
+	result
+

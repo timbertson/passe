@@ -14,19 +14,15 @@ module Json = Yojson.Safe
 
 let log = Logging.get_logger "ogp"
 
-let load_store path =
-	let json = try
-		Some (Json.from_file path)
-	with Sys_error _ as e -> (
-		log#warn "Failed to load db at %s:\n  %a" path print_exc e;
-		None
-	) in
-	json |> Option.map Store.parse_json
+type env = {
+	config : Config.t;
+}
 
 module Actions = struct
 	open OptParse
 	let home_dir = try Some (Unix.getenv "HOME") with Not_found -> None
-	let generate ~length args =
+	let generate ~length env args =
+		ignore (env.config.Config.field "test");
 		(* let db = Option.bind home_dir (fun home -> *)
 		(* 	load_store (Filename.concat home ".config/supergenpass/ogp.json") *)
 		(* ) in *)
@@ -71,4 +67,8 @@ end
 let () =
 	let p = Options.main () in
 	let posargs = OptParse.OptParser.parse ~first:1 p Sys.argv in
-	!Options.action posargs
+	let storage_provider = new Config_storage.provider "/tmp/whatever.json" in
+	let env = {
+		config = Config.build storage_provider;
+	} in
+	!Options.action env posargs

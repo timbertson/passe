@@ -1,15 +1,16 @@
 open Js
 open React_ext
+open Common
 module Json = Json_ext
 let log = Logging.get_logger "local_storage"
 
 module StringMap = Map.Make(String)
 
 class type base = object
-  method get : string -> string option
-  method set : string -> string -> unit
+  method get : string -> Json.json option
+  method set : string -> Json.json -> unit
   method delete : string -> unit
-  method iter : (string -> string -> unit) -> unit
+  method iter : (string -> Json.json -> unit) -> unit
   method erase_all : unit
 end
 
@@ -43,20 +44,26 @@ class type local_storage = object
   method length : int prop
 end
 
-class browser_provider : base =
+class browser_provider =
   let local_storage : local_storage t = Js.Unsafe.variable "localStorage" in
-  object (self)
-  method get key = local_storage##getItem(Js.string key) |> Opt.to_option |> Option.map to_string
-  method set key value = local_storage##setItem(Js.string key, Js.string value)
+  object (self : #base)
+  method _get key =
+    local_storage##getItem(key)
+    |> Opt.to_option
+    |> Option.map (Json.from_string % to_string)
+
+  method get key = self#_get (Js.string key)
+
+  method set key value = local_storage##setItem(Js.string key, Js.string (Json.to_string ~std:true value))
   method delete key = local_storage##removeItem(Js.string key)
-  method iter (fn : string -> string -> unit) =
+  method iter (fn : string -> Json.json -> unit) =
     let len = local_storage##length in
     let i = ref 0 in
     let force opt = Opt.get opt (fun () -> assert false) in
     while !i < len do
       let key = local_storage##key(!i) |> force in
-      let value = local_storage##getItem(key) |> Opt.to_option in
-      value |> Option.may (fun value -> fn (to_string key) (to_string value));
+      let value = self#_get key in
+      value |> Option.may (fun value -> fn (to_string key) value);
       i := succ !i;
     done
 
@@ -65,48 +72,16 @@ class browser_provider : base =
     local_storage##clear()
 end
 
-
-class record (impl:provider) key =
-  let get () = impl#get key |> Option.map Json.from_string in
-  let signal, update_signal = S.create (get ()) in
-  object (self)
-  method get = get ()
-
-  method save ?(step:step option) v =
-    impl#set key (Json.to_string v);
-    self#update ?step (Some v)
-
-  method delete ?(step:step option) =
-    impl#delete key;
-    self#update ?step None
-
-  method refresh = self#update (self#get)
-
-  method signal = signal
-
-  method private update ?(step:step option) v =
-    update_signal ?step v
-end
-
 and provider do_persist =
-  let persistent = new browser_provider in
-  let ephemeral = new in_memory_provider in
+  let persistent = ((new browser_provider):>base) in
+  let ephemeral = ((new in_memory_provider):>base) in
   let active: base ref = ref (if do_persist then persistent else ephemeral) in
-  let cache: record StringMap.t ref = ref StringMap.empty in
-  object (self)
-  method create key =
-    try
-      StringMap.find key !cache
-    with Not_found -> (
-      let rv = new record (self:>provider) key in
-      cache := StringMap.add key rv !cache;
-      rv
-    )
+  object (self : #Config.provider_t)
+  inherit Config.base_provider
 
-  method erase_all =
+  method _erase_all =
     persistent#erase_all;
     ephemeral#erase_all;
-    StringMap.bindings !cache |> List.iter (fun (_k,v) -> v#refresh)
 
   method get key = !active#get key
   method set key value = !active#set key value
@@ -124,4 +99,4 @@ and provider do_persist =
 end
 
 let erase_all impl = impl#erase_all
-let record ~(impl:provider) key : record = impl#create key
+let record ~(impl:provider) key : Config.record = impl#create key
