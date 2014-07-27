@@ -1,2 +1,2 @@
-true: debug, package(yojson, camlp4.macro), syntax(camlp4o)
+true: debug, package(yojson, uri, camlp4.macro), syntax(camlp4o)
 "logging_js.ml": package(js_of_ocaml, js_of_ocaml.syntax)

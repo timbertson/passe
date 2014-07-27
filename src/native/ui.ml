@@ -46,7 +46,7 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 	lwt copied = if use_clipboard then copy_to_clipboard text else return false in
 	if copied then (
 		if quiet then return_unit else
-			LTerm.fprintf term "  Generated password for %s\n  (copied to clipboard)" domain
+			LTerm.fprintlf term "  (copied to clipboard)"
 	) else (
 		lwt () =
 			if quiet then return_unit else
@@ -56,6 +56,8 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 	)
 
 let main ~domain ~length ~quiet ~use_clipboard () =
+
+	(* XXX *)
 	Logging.current_level := (Logging.ord Logging.Warn);
 	lwt term = Lazy.force LTerm.stderr in
 	try_lwt
@@ -63,10 +65,11 @@ let main ~domain ~length ~quiet ~use_clipboard () =
 			| Some d -> return d
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
-		let domain = { Store.default domain with Store.length = length } in
-		lwt password = (new password_prompt term "Password: ")#run in
+		lwt domain_text = (Domain.guess domain) in
+		let domain = { Store.default domain_text with Store.length = length } in
+		lwt password = (new password_prompt term ("["^domain_text ^ "] password: "))#run in
 		let generated = Password.generate ~domain password in
-		output_password ~use_clipboard ~quiet ~term ~domain:(domain.Store.domain) generated
+		output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated
 
 	with
 		| LTerm_read_line.Interrupt
