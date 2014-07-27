@@ -57,7 +57,7 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 
 let main ~domain ~length ~quiet ~use_clipboard () =
 
-	(* XXX *)
+	(* XXX make logging work with LTerm *)
 	Logging.current_level := (Logging.ord Logging.Warn);
 	lwt term = Lazy.force LTerm.stderr in
 	try_lwt
