@@ -43,7 +43,7 @@ let generate ~domain:domain password =
 		| Some suff -> password^suff
 		| None -> password
 	in
-	log#debug "master password: %s" password;
+	(* log#debug "master password: %s" password; *)
 	let generated = (password^":"^domain.domain)
 		|> foldi 10 iter
 		|> fold_until (valid_password % trim) iter

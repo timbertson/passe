@@ -1,4 +1,5 @@
 (* common interface between js / native logger module *)
+include Logging_common
 
 let get_logger name =
 	IFDEF JS THEN
