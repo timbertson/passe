@@ -463,7 +463,7 @@ let show_form (container:Dom_html.element Js.t) =
 	let all_content = Ui.div
 		~children:[
 			Ui.child Ui.div ~cls:"container" ~children:[
-				Ui.frag @@ Sync.ui sync;
+				Ui.frag @@ Sync_ui.ui sync;
 				Ui.frag @@ password_form ();
 			] ();
 			Ui.child Ui.div ~cls:"container footer" ~children:[

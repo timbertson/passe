@@ -1,3 +1,2 @@
-true: debug, package(batteries,yojson, lambda-term, react,camlp4.macro, uri, lwt, lwt.unix, lwt.syntax, sha, safepass), syntax(camlp4o)
+true: debug, package(batteries,yojson, cohttp,cohttp.lwt, lambda-term, react,camlp4.macro, uri, lwt, lwt.unix, lwt.syntax, sha, safepass), syntax(camlp4o)
 "common": include
-<service.*>: package(cohttp, cohttp.lwt)

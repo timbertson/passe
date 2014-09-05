@@ -32,6 +32,21 @@ module Actions = struct
 			~quiet:(Opt.get quiet)
 			~use_clipboard:(Opt.get use_clipboard)
 			())
+
+	let sync env args =
+		let () = match args with
+			| [] -> ()
+			| _ -> raise @@ SafeError "too many arguments"
+		in
+		print_endline "TODO: sync";
+		Lwt_main.run (
+			(* XXX *)
+			let sync = Sync.build env.config in
+			lwt result = Server.get_json (Uri.of_string "http://localhost:8080/") in
+			print_endline "...";
+			ignore result;
+			Lwt.return ()
+		)
 end
 
 module Options =
@@ -41,6 +56,7 @@ struct
 	let length = StdOpt.int_option ~default:10 ()
 	let use_clipboard = StdOpt.store_false ()
 	let quiet = StdOpt.store_true ()
+	let sync = StdOpt.store_true ()
 	(* let trace = StdOpt.store_true () *)
 	(* let verbosity = ref Var.default_verbosity *)
 	(* let quiet = StdOpt.decr_option   ~dest:verbosity () *)
@@ -49,7 +65,12 @@ struct
 	(* let dry_run = StdOpt.store_true () *)
 	(* let force = StdOpt.store_true () *)
 	(* let metadata = StdOpt.store_true () *)
-	let action = ref (Actions.generate ~length ~use_clipboard ~quiet)
+	let action env posargs =
+		if Opt.get sync then
+			Actions.sync env posargs
+		else
+			Actions.generate ~length ~use_clipboard ~quiet env posargs
+
 	open OptParser
 
 	let main () =
@@ -57,6 +78,7 @@ struct
 		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length;
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
+		add options ~long_name:"sync" sync;
 		options
 	;;
 end
@@ -79,4 +101,4 @@ let () =
 	let env = {
 		config = Config.build storage_provider;
 	} in
-	!Options.action env posargs
+	Options.action env posargs

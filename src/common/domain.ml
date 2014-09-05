@@ -24,7 +24,7 @@ let known_common_slds =
 			rv
 		)
 
-let re_dot = Str.regexp "\."
+let re_dot = Str.regexp "\\."
 
 let guess s =
 	let s = hostname s in
