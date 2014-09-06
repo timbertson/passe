@@ -12,7 +12,7 @@ let with_open_in file fn =
 	)
 
 let with_open_out file fn =
-	let fd = Unix.openfile file [Unix.O_WRONLY] 0 in
+	let fd = Unix.openfile file [Unix.O_WRONLY ; Unix.O_CREAT] 0o600 in
 	Common.finally_do Unix.close fd (fun fd ->
 		let ch = Unix.out_channel_of_descr fd in
 		fn ch

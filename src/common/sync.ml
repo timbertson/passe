@@ -1,6 +1,5 @@
 open Common
 open React_ext
-open Ui
 open Lwt
 module J = Json_ext
 
@@ -57,6 +56,8 @@ type state = {
 	stored_credentials_signal: J.json option signal;
 	auth_state: auth_state signal;
 	set_auth_state: auth_state -> unit;
+	sync_running: bool signal;
+	run_sync: credentials -> unit Lwt.t;
 }
 
 let build config_provider =
@@ -109,6 +110,63 @@ let build config_provider =
 			|> Option.default Store.empty
 	) in
 
+	let set_last_sync_time t = last_sync#save (`Float t) in
+
+	let sync_running, (run_sync:credentials -> unit Lwt.t) =
+		let running_sync = ref None in
+		let s, set_busy = S.create false in
+		(s, fun credentials ->
+			let (username, token) = credentials in
+			match !running_sync with
+				| Some (future,_) -> future
+				| None -> begin
+					let (future, sync_complete) as task = Lwt.wait () in
+					let finish err =
+						running_sync := None;
+						set_busy false;
+						match err with
+							| Some e -> Lwt.wakeup_exn sync_complete e; raise e
+							| None   -> Lwt.wakeup sync_complete (); return_unit
+					in
+
+					running_sync := Some task;
+					set_busy true;
+					try_lwt
+						log#info "syncing...";
+						let db_storage = local_db_for_user config_provider username in
+
+						let get_latest_db () =
+							db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+
+						let sent_changes = (get_latest_db ()).Store.changes in
+
+						lwt response = (match sent_changes with
+							| [] -> Server.get_json ~token db_url
+							| sent_changes ->
+									let data = Store.Format.json_of_changes sent_changes in
+									Server.post_json ~data ~token (db_url)
+						) in
+						(match response with
+							| Server.OK json ->
+									let new_core = Store.Format.core_of_json json in
+									let new_db = Store.drop_applied_changes
+										~from:(get_latest_db ())
+										~new_core sent_changes in
+									db_storage#save (Store.to_json new_db);
+									set_last_sync_time (Date.time ());
+							| Server.Unauthorized msg ->
+								log#error "authentication failed: %a" (Option.print output_string) msg;
+								set_auth_state (Failed_login username)
+							| Server.Failed (msg, _) ->
+								log#error "sync failed: %s" msg;
+								set_auth_state (Saved_user credentials)
+						);
+						finish None
+					with e -> finish (Some e)
+			end
+		)
+	in
+
 	{
 		current_username=current_username;
 		current_user_db=current_user_db;
@@ -120,6 +178,8 @@ let build config_provider =
 		auth_state=auth_state;
 		set_auth_state=set_auth_state;
 		config_provider=config_provider;
+		sync_running=sync_running;
+		run_sync=run_sync;
 	}
 
 

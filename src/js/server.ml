@@ -17,7 +17,7 @@ let root_url =
 	| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
 	| None | Some (File _) -> raise Unsupported_protocol
 
-let path p = Uri.with_path root_url (String.concat "/" p)
+let path p = Uri.with_path root_url ("/" ^ String.concat "/" p)
 
 
 let json_content_type = "application/json"

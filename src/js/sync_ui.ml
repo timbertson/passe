@@ -8,7 +8,6 @@ open Sync
 
 let ui state =
 	(* let config_provider, set_config_provider = S.create (Lazy.force ephemeral_config) in *)
-	let set_last_sync_time t = (state.last_sync)#save (`Float t) in
 	let last_sync_signal = state.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
@@ -19,62 +18,8 @@ let ui state =
 	(* let remember_me = signal_of_checkbox ~initial:true remember_me_input in *)
 	let set_auth_state = state.set_auth_state in
 
-	let sync_running, (run_sync:credentials -> unit Lwt.t) =
-		let running_sync = ref None in
-		let s, set_busy = S.create false in
-		(s, fun credentials ->
-			let (username, token) = credentials in
-			match !running_sync with
-				| Some (future,_) -> future
-				| None -> begin
-					let (future, sync_complete) as task = Lwt.wait () in
-					running_sync := Some task;
-					set_busy true;
-					try_lwt
-						log#info "syncing...";
-						let db_storage = local_db_for_user
-							state.config_provider
-							username in
-
-						let get_latest_db () =
-							db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
-
-						let sent_changes = (get_latest_db ()).Store.changes in
-
-						lwt response = (match sent_changes with
-							| [] -> Server.get_json ~token db_url
-							| sent_changes ->
-									let data = Store.Format.json_of_changes sent_changes in
-									Server.post_json ~data ~token (db_url)
-						) in
-						(match response with
-							| Server.OK json ->
-									let new_core = Store.Format.core_of_json json in
-									let new_db = Store.drop_applied_changes
-										~from:(get_latest_db ())
-										~new_core sent_changes in
-									db_storage#save (Store.to_json new_db);
-									set_last_sync_time (Date.time ());
-							| Server.Unauthorized msg ->
-								log#error "authentication failed: %a" (Option.print output_string) msg;
-								set_auth_state (Failed_login username)
-							| Server.Failed (msg, _) ->
-								log#error "sync failed: %s" msg;
-								set_auth_state (Saved_user credentials)
-						);
-						return_unit;
-					with e -> (
-						Lwt.wakeup_exn sync_complete e;
-						raise e
-					)
-					finally (
-						running_sync := None;
-						set_busy false;
-						Lwt.wakeup sync_complete ();
-						return_unit
-					)
-			end
-		) in
+	let sync_running = state.sync_running in
+	let run_sync = state.run_sync in
 
 	let sync_state = S.bind sync_running (fun is_running ->
 		if is_running then S.const Syncing else (
@@ -131,19 +76,13 @@ let ui state =
 					let data = `Assoc (Form.get_form_contents elem
 						|> List.map (fun (name, value) -> (name, `String value))) in
 					let open Server in
+					let open Either in
 					set_error None;
-					lwt response = post_json ~data url in
-					begin match response with
-					| OK response ->
-						let creds = J.get_field "token" response in
-						let username = creds |> Option.bind (J.string_field username_key) in
-						(match (username, creds) with
-							| Some user, Some creds -> set_auth_state (Active_user (user, creds))
-							| _ -> raise (AssertionError "credentials doesn't contain a user key")
-						)
-					| Failed (message, _) -> set_error (Some message)
-					| Unauthorized _ -> assert false
-					end;
+					lwt result = Client_auth.submit url data in
+					let () = match result with
+						| Left err -> set_error (Some err)
+						| Right creds -> set_auth_state (Active_user creds)
+					in
 					return_unit
 				in
 

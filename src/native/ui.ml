@@ -9,6 +9,7 @@
 
 (* Read a password and display it. *)
 
+open Common
 open Lwt
 open Lwt_react
 open LTerm_style
@@ -77,3 +78,17 @@ let main ~domain ~length ~quiet ~use_clipboard () =
 	finally
 		LTerm.flush term
 
+let sync_ui sync =
+	lwt term = Lazy.force LTerm.stderr in
+	lwt user = (new plain_prompt term "Username: ")#run in
+	lwt password = (new password_prompt term "Password: ")#run in
+	lwt auth = Client_auth.login ~user ~password in
+	let open Either in
+	lwt () = match auth with
+		| Left err -> raise (AssertionError err)
+		| Right creds ->
+			lwt () = sync.Sync.run_sync creds in
+			log#info "Sync completed successfully";
+			return_unit
+	in
+	Lwt.return ()

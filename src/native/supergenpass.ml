@@ -1,8 +1,3 @@
-(* type options = { *)
-(* 	length of int; *)
-(* 	domain of string; *)
-(* } *)
-
 exception SafeError of string
 
 let print_exc dest exc =
@@ -29,7 +24,7 @@ module Actions = struct
 		Lwt_main.run (Ui.main
 			~domain
 			~length:(Opt.get length)
-			~quiet:(Opt.get quiet)
+			~quiet
 			~use_clipboard:(Opt.get use_clipboard)
 			())
 
@@ -38,16 +33,26 @@ module Actions = struct
 			| [] -> ()
 			| _ -> raise @@ SafeError "too many arguments"
 		in
-		print_endline "TODO: sync";
 		Lwt_main.run (
-			(* XXX *)
 			let sync = Sync.build env.config in
-			lwt result = Server.get_json (Uri.of_string "http://localhost:8080/") in
-			print_endline "...";
-			ignore result;
-			Lwt.return ()
+			Ui.sync_ui sync
 		)
 end
+
+let apply_verbosity verbosity =
+	let open Logging in
+	(* enable backtraces if at least one -v is given *)
+	if verbosity > 1 then Printexc.record_backtrace true;
+	let new_level = (match verbosity with
+		| 1 -> Warn
+		| 2 -> Info
+		| 3 -> Debug
+		| n -> if n <= 0 then Error else Trace
+	) in
+	Logging.current_level := Logging.ord new_level;
+	log#info "Log level: %s" (Logging.string_of_level new_level)
+
+let default_verbosity = 1 (* warnings only *)
 
 module Options =
 struct
@@ -55,21 +60,22 @@ struct
 	(* let update = StdOpt.store_true () *)
 	let length = StdOpt.int_option ~default:10 ()
 	let use_clipboard = StdOpt.store_false ()
-	let quiet = StdOpt.store_true ()
 	let sync = StdOpt.store_true ()
 	(* let trace = StdOpt.store_true () *)
-	(* let verbosity = ref Var.default_verbosity *)
-	(* let quiet = StdOpt.decr_option   ~dest:verbosity () *)
-	(* let verbose = StdOpt.incr_option ~dest:verbosity () *)
+	let verbosity = ref default_verbosity
+	let quiet = StdOpt.decr_option   ~dest:verbosity ()
+	let verbose = StdOpt.incr_option ~dest:verbosity ()
 	(* let interactive = StdOpt.store_true () *)
 	(* let dry_run = StdOpt.store_true () *)
 	(* let force = StdOpt.store_true () *)
 	(* let metadata = StdOpt.store_true () *)
 	let action env posargs =
+		apply_verbosity !verbosity;
 		if Opt.get sync then
 			Actions.sync env posargs
 		else
-			Actions.generate ~length ~use_clipboard ~quiet env posargs
+			(* XXX remove `quiet` argument *)
+			Actions.generate ~length ~use_clipboard ~quiet:(!verbosity <=0) env posargs
 
 	open OptParser
 
@@ -78,6 +84,7 @@ struct
 		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length;
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
+		add options ~short_name:'v' ~long_name:"verbose" verbose;
 		add options ~long_name:"sync" sync;
 		options
 	;;
