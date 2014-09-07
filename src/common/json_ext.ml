@@ -15,6 +15,9 @@ let as_float obj = match obj with
 let as_list obj = match obj with
 	| `List i -> Some i | _ -> None
 
+let as_bool obj = match obj with
+	| `Bool i -> Some i | _ -> None
+
 let get_field key obj = match obj with
 	| `Assoc pairs -> (
 			match Common.find_safe (fun (k,v) -> k = key) pairs with
@@ -32,6 +35,7 @@ let string_field : string -> json -> string option = get_field_as as_string
 let int_field : string -> json -> int option = get_field_as as_int
 let list_field : string -> json -> json list option = get_field_as as_list
 let float_field : string -> json -> float option = get_field_as as_float
+let bool_field : string -> json -> bool option = get_field_as as_bool
 
 type obj = [
 	| `Assoc of (string * json) list

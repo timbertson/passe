@@ -44,13 +44,15 @@ class provider path =
 
 	let written = ref false in
 	let write (contents : Json.obj) =
+		let json_contents = (contents:>Json.json) in
+		(* log#debug "Saving contents: %a" Json.print json_contents; *)
 		if not !written then (
 			makedirs (Filename.dirname path);
 			written := true
 		);
 		let tmp_path = (path ^ ".tmp") in
 		with_open_out tmp_path (fun f ->
-			Json.pretty_to_channel ~std:true f (contents:>Json.json)
+			Json.pretty_to_channel ~std:true f json_contents
 		);
 		Unix.rename tmp_path path;
 		current_contents := lazy contents

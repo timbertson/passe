@@ -2,30 +2,11 @@ open Common
 open React_ext
 open Lwt
 module J = Json_ext
+module Auth = Client_auth
 
 let log = Logging.get_logger "sync"
 
-let username_key = "user"
-let login_url = Server.path ["auth"; "login"]
-let signup_url = Server.path ["auth"; "signup"]
-let logout_url = Server.path ["auth"; "logout"]
-let token_validate_url = Server.path ["auth"; "validate"]
 let db_url = Server.path ["db"]
-
-type username = string
-type credentials = string * J.json
-type auth_state =
-	| Anonymous
-	| Failed_login of username
-	| Saved_user of credentials
-	| Active_user of credentials
-
-let string_of_auth_state = function
-	| Anonymous -> "Anonymous"
-	| Failed_login u -> "Failed_login(" ^ u ^ ")"
-	| Saved_user (u, _) -> "Saved_user(" ^ u ^ ", <creds>)"
-	| Active_user (u, _) -> "Active_user(" ^ u ^ ", <creds>)"
-
 
 type date = float
 type sync_state =
@@ -34,30 +15,22 @@ type sync_state =
 	| Syncing
 	| Local_changes of int
 
-let parse_credentials (token:J.json) : credentials =
-	let user = token
-		|> J.get_field username_key
-		|> Option.bind (J.as_string)
-		|> Option.default_fn (fun () ->
-				raise (AssertionError ("no username found in auth token")))
-	in (user, token)
-
 let local_db_for_user config_provider user =
 	config_provider.Config.field ("db_"^user)
 
 type state = {
 	config_provider: Config.t;
-	current_username: username option signal;
+	current_username: Auth.username option signal;
 	current_user_db: Config.child option signal;
 	last_sync: Config.child;
 	stored_json: J.json option signal;
 	db_signal: Store.t signal;
 	stored_credentials: Config.child;
 	stored_credentials_signal: J.json option signal;
-	auth_state: auth_state signal;
-	set_auth_state: auth_state -> unit;
+	auth_state: Auth.auth_state signal;
+	set_auth_state: Auth.auth_state -> unit;
 	sync_running: bool signal;
-	run_sync: credentials -> unit Lwt.t;
+	run_sync: Auth.credentials -> unit Lwt.t;
 }
 
 let build config_provider =
@@ -67,6 +40,7 @@ let build config_provider =
 	let last_sync = field "last_sync" in
 
 	let auth_state, set_auth_state =
+		let open Auth in
 		let source = stored_credentials_signal |> S.map ~eq:never_eq
 			(fun credentials ->
 				credentials
@@ -76,6 +50,7 @@ let build config_provider =
 		let auth_state, _set_auth_state = editable_signal source in
 
 		let set_auth_state state =
+			log#debug "set_auth_state(%s)" (string_of_auth_state state);
 			let step = Step.create () in
 			begin match state with
 			| Anonymous -> (stored_credentials)#delete ~step ()
@@ -89,7 +64,7 @@ let build config_provider =
 		(auth_state, set_auth_state)
 	in
 
-	let current_username = auth_state |> S.map (function
+	let current_username = let open Auth in auth_state |> S.map (function
 		| Anonymous -> None
 		| Failed_login u | Saved_user (u, _) | Active_user (u, _) -> Some u
 	) in
@@ -112,7 +87,7 @@ let build config_provider =
 
 	let set_last_sync_time t = last_sync#save (`Float t) in
 
-	let sync_running, (run_sync:credentials -> unit Lwt.t) =
+	let sync_running, (run_sync:Auth.credentials -> unit Lwt.t) =
 		let running_sync = ref None in
 		let s, set_busy = S.create false in
 		(s, fun credentials ->
@@ -156,10 +131,10 @@ let build config_provider =
 									set_last_sync_time (Date.time ());
 							| Server.Unauthorized msg ->
 								log#error "authentication failed: %a" (Option.print print_string) msg;
-								set_auth_state (Failed_login username)
+								set_auth_state (Auth.Failed_login username)
 							| Server.Failed (msg, _) ->
 								log#error "sync failed: %s" msg;
-								set_auth_state (Saved_user credentials)
+								set_auth_state (Auth.Saved_user credentials)
 						);
 						finish None
 					with e -> finish (Some e)
@@ -183,3 +158,30 @@ let build config_provider =
 	}
 
 
+let login ~user ~password t =
+	lwt response = Server.post_json ~data:(Auth.payload ~user ~password) Auth.login_url in
+	let open Server in
+	let result = begin match response with
+		| OK response ->
+			(Auth.Active_user (Auth.get_response_credentials response))
+		| Failed (message, _) ->
+				log#warn "Failed login: %s" message;
+				Auth.Failed_login user
+		| Unauthorized _ -> assert false
+	end in
+	t.set_auth_state result;
+	return result
+
+let validate_credentials t creds =
+	let (username, token) = creds in
+	lwt response = Server.post_json ~data:token Auth.token_validate_url in
+	let new_state = match response with
+		| Server.OK response ->
+				if (response |> J.(mandatory bool_field "valid"))
+				then (Auth.Active_user creds)
+				else (Auth.Failed_login username)
+		| Server.Failed (msg, _) -> failwith msg
+		| Server.Unauthorized _ -> assert false
+	in
+	t.set_auth_state new_state;
+	return new_state

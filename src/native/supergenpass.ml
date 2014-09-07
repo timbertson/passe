@@ -34,8 +34,8 @@ module Actions = struct
 			| _ -> raise @@ SafeError "too many arguments"
 		in
 		Lwt_main.run (
-			let sync = Sync.build env.config in
-			Ui.sync_ui sync
+			let state = Sync.build env.config in
+			Ui.sync_ui state
 		)
 end
 

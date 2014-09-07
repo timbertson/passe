@@ -65,17 +65,37 @@ let main ~domain ~length ~quiet ~use_clipboard () =
 	finally
 		LTerm.flush term
 
-let sync_ui sync =
+let sync_ui state =
 	lwt term = Lazy.force LTerm.stderr in
-	lwt user = (new plain_prompt term "Username: ")#run in
-	lwt password = (new password_prompt term "Password: ")#run in
-	lwt auth = Client_auth.login ~user ~password in
-	let open Either in
-	lwt () = match auth with
-		| Left err -> raise (AssertionError err)
-		| Right creds ->
-			lwt () = sync.Sync.run_sync creds in
-			log#info "Sync completed successfully";
-			return_unit
+	let open Sync in
+
+	let login_prompt user =
+		lwt user = match user with
+			| Some existing ->
+				lwt text = (new plain_prompt term ("Username ["^existing^"]: "))#run in
+				return (if text = "" then existing else text)
+			| None -> (new plain_prompt term "Username: ")#run
+		in
+		lwt password = (new password_prompt term "Password: ")#run in
+		lwt auth = Sync.login state ~user ~password in
+		return auth
 	in
-	Lwt.return ()
+
+	lwt credentials =
+		let rec loop auth_state =
+			let open Auth in
+			match auth_state with
+				| Active_user creds -> return creds
+				| Saved_user creds ->
+						validate_credentials state creds >>= loop
+				| Anonymous ->
+						login_prompt None >>= loop
+				| Failed_login username ->
+						login_prompt (Some username) >>= loop
+		in
+		loop (S.value state.auth_state)
+	in
+
+	lwt () = state.Sync.run_sync credentials in
+	log#info "Sync completed successfully";
+	return_unit

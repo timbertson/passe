@@ -233,7 +233,7 @@ module Format = struct
 
 
 	let parse_record : (string * J.json) -> record = fun (id, r) ->
-		log#info "Parsing: %s (%s)" id (J.to_string r);
+		log#debug "Parsing: %s (%s)" id (J.to_string r);
 		match r with
 			| `Assoc pairs -> begin
 				match parse_field record_type pairs with

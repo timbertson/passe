@@ -13,7 +13,9 @@ class child parent key =
 	let signal = lazy (s |> S.map (access key)) in
 	object (self)
 	method get = S.value s |> access key
-	method save ?(step:step option) newval = parent#save ?step (S.value s |> J.set_field key newval)
+	method save ?(step:step option) newval =
+		log#debug "saving key: %s" key;
+		parent#save ?step (S.value s |> J.set_field key newval)
 	method delete ?(step:step option) () : unit =
 		log#info "deleting config key %s from %a"
 			key
