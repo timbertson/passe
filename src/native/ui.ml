@@ -1,14 +1,3 @@
-(*
- * read_password.ml
- * ----------------
- * Copyright : (c) 2011, Jeremie Dimino <jeremie@dimino.org>
- * Licence	 : BSD3
- *
- * This file is a part of Lambda-Term.
- *)
-
-(* Read a password and display it. *)
-
 open Common
 open Lwt
 open Lwt_react
@@ -57,10 +46,8 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 	)
 
 let main ~domain ~length ~quiet ~use_clipboard () =
-
-	(* XXX make logging work with LTerm *)
-	Logging.current_level := (Logging.ord Logging.Warn);
 	lwt term = Lazy.force LTerm.stderr in
+	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str));
 	try_lwt
 		lwt domain = match domain with
 			| Some d -> return d

@@ -12,13 +12,15 @@ let print_minimal sub_printer chan opt v = match v with
 	| Some x -> sub_printer chan x
 	| None -> ()
 
-let print sub_printer chan v = match v with
+let print_chan sub_printer chan v = match v with
 	| Some x -> output_string chan "Some("; sub_printer chan x; output_char chan ')'
 	| None -> output_string chan "None()"
 
 let print_str sub_printer () v = match v with
 	| Some x -> "Some(" ^ (sub_printer () x) ^ ")"
 	| None -> "None()"
+
+let print = print_str
 
 let bind fn opt = match opt with
 	| Some v -> fn v

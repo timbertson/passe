@@ -1,6 +1,7 @@
 include Yojson.Safe
-let print = Yojson.Safe.pretty_to_channel ~std:false
+let print_chan = Yojson.Safe.pretty_to_channel ~std:false
 let print_str () = pretty_to_string ~std:false
+let print = print_str
 
 let as_string obj = match obj with
 	| `String s -> Some s | _ -> None

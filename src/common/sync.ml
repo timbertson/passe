@@ -155,7 +155,7 @@ let build config_provider =
 									db_storage#save (Store.to_json new_db);
 									set_last_sync_time (Date.time ());
 							| Server.Unauthorized msg ->
-								log#error "authentication failed: %a" (Option.print output_string) msg;
+								log#error "authentication failed: %a" (Option.print print_string) msg;
 								set_auth_state (Failed_login username)
 							| Server.Failed (msg, _) ->
 								log#error "sync failed: %s" msg;

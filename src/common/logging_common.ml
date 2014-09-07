@@ -28,13 +28,16 @@ let current_formatter = ref default_formatter
 
 let current_level = ref (ord Debug)
 
+let current_writer = ref (fun dest str -> output_string dest str; flush dest)
+
 let logf = fun name lvl ->
 	if (ord lvl) >= !current_level then (
 		let dest = IFDEF JS THEN if (ord lvl) > (ord Info) then stderr else stdout ELSE stderr END in
 		let (pre, post) = !current_formatter name lvl in
-		let print_post = fun _ -> output_string dest post; output_char dest '\n'; flush dest in
-		output_string dest pre;
-		Printf.kfprintf print_post dest
+		let write = !current_writer in
+		let print str = write dest (pre ^ str ^ post ^ "\n") in
+		Printf.ksprintf print
 	) else
-		Printf.ifprintf stderr
+		(* XXX can we prevent formatting from happening? *)
+		Printf.ksprintf ignore
 

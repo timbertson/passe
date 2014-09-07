@@ -182,7 +182,7 @@ let ui state =
 					match_lwt Server.post_json ~data:creds token_validate_url with
 					| OK _ -> set_auth_state (Active_user (username, creds)); return_unit
 					| Unauthorized msg ->
-						log#warn "failed auth: %a" (Option.print output_string) msg;
+						log#warn "failed auth: %a" (Option.print print_string) msg;
 						set_auth_state (Failed_login username);
 						return_unit
 					| Failed (msg, _) ->

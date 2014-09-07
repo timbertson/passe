@@ -17,3 +17,4 @@ let finally_do cleanup resource f =
 	let () = cleanup resource in
 	result
 
+let print_string () s = s
