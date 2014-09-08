@@ -78,22 +78,26 @@ let ui state =
 					let open Server in
 					let open Either in
 					set_error None;
-					lwt result = Client_auth.submit url data in
-					let () = match result with
-						| Left err -> set_error (Some err)
-						| Right creds -> set_auth_state (Active_user creds)
+					lwt response = Server.post_json ~data url in
+					let open Server in
+					let () = match response with
+						| OK response ->
+							set_auth_state (Auth.Active_user (Auth.get_response_credentials response))
+						| Failed (message, _) ->
+								set_error (Some message)
+						| Unauthorized _ -> assert false
 					in
 					return_unit
 				in
 
 				Lwt_js_events.clicks signup_button (fun event _ ->
 					stop event;
-					submit signup_url
+					submit Client_auth.signup_url
 				)
 				<&>
 				Lwt_js_events.submits elem (fun event _ ->
 					stop event;
-					submit login_url
+					submit Client_auth.login_url
 				)
 			) ()
 		] ()
@@ -140,9 +144,9 @@ let ui state =
 		~mechanism:(fun elem ->
 			Lwt_js_events.clicks elem (fun evt _ ->
 				let open Server in
-				match_lwt post_json ~data:creds logout_url with
+				match_lwt post_json ~data:creds Client_auth.logout_url with
 					| OK _ | Unauthorized _ ->
-						set_auth_state Anonymous;
+						set_auth_state Client_auth.Anonymous;
 						return_unit;
 					| Failed (msg,_) ->
 						log#error "Can't log out: %s" msg;
@@ -152,12 +156,12 @@ let ui state =
 	in
 
 	state.auth_state |> S.map (fun auth ->
-	log#info "Auth state: %s" (string_of_auth_state auth);
+	log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
 
 	match auth with
-	| Anonymous -> login_form None
-	| Failed_login username -> login_form (Some username)
-	| Saved_user (username, creds) -> (
+	| Client_auth.Anonymous -> login_form None
+	| Client_auth.Failed_login username -> login_form (Some username)
+	| Client_auth.Saved_user (username, creds) -> (
 		let busy, set_busy = S.create true in
 
 		let offline_message = span ~text:"offline " () in
@@ -179,11 +183,11 @@ let ui state =
 					set_busy true;
 					continue := false;
 					let open Server in
-					match_lwt Server.post_json ~data:creds token_validate_url with
-					| OK _ -> set_auth_state (Active_user (username, creds)); return_unit
+					match_lwt Server.post_json ~data:creds Client_auth.token_validate_url with
+					| OK _ -> set_auth_state (Client_auth.Active_user (username, creds)); return_unit
 					| Unauthorized msg ->
 						log#warn "failed auth: %a" (Option.print print_string) msg;
-						set_auth_state (Failed_login username);
+						set_auth_state (Client_auth.Failed_login username);
 						return_unit
 					| Failed (msg, _) ->
 						log#warn "unknown failure, assuming connectivity issue: %s" msg;
@@ -200,7 +204,7 @@ let ui state =
 			) ()
 		] ()
 	)
-	| Active_user ((username, creds) as auth) -> (
+	| Client_auth.Active_user ((username, creds) as auth) -> (
 		div ~cls:"account-status alert alert-success" ~children:[
 			child span ~cls:"user" ~text:username ();
 			logout_button "Log out" creds;

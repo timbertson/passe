@@ -15,28 +15,20 @@ type env = {
 
 module Actions = struct
 	open OptParse
-	let generate ~length ~use_clipboard ~quiet _env args =
+	let generate ~length ~use_clipboard ~quiet env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
 			| _ -> raise @@ SafeError "too many arguments"
 		in
-		Lwt_main.run (Ui.main
-			~domain
-			~length:(Opt.get length)
-			~quiet
-			~use_clipboard:(Opt.get use_clipboard)
-			())
+		Lwt_main.run (Ui.main ~domain ~length ~quiet ~use_clipboard ~config:(env.config) ())
 
 	let sync env args =
 		let () = match args with
 			| [] -> ()
 			| _ -> raise @@ SafeError "too many arguments"
 		in
-		Lwt_main.run (
-			let state = Sync.build env.config in
-			Ui.sync_ui state
-		)
+		Lwt_main.run (Ui.sync_ui (Sync.build env.config))
 end
 
 let apply_verbosity verbosity =
@@ -58,7 +50,8 @@ module Options =
 struct
 	open OptParse
 	(* let update = StdOpt.store_true () *)
-	let length = StdOpt.int_option ~default:10 ()
+	let length = ref None
+	let length_opt = StdOpt.int_callback (fun l -> length := Some l)
 	let use_clipboard = StdOpt.store_false ()
 	let sync = StdOpt.store_true ()
 	(* let trace = StdOpt.store_true () *)
@@ -75,13 +68,13 @@ struct
 			Actions.sync env posargs
 		else
 			(* XXX remove `quiet` argument *)
-			Actions.generate ~length ~use_clipboard ~quiet:(!verbosity <=0) env posargs
+			Actions.generate ~length:!length ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) env posargs
 
 	open OptParser
 
 	let main () =
 		let options = OptParser.make ~usage: ("Usage: ogp [OPTIONS] [domain]") () in
-		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length;
+		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length_opt;
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;

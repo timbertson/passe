@@ -1,4 +1,5 @@
 type log_level =
+	| Always
 	| Error
 	| Warn
 	| Info
@@ -7,6 +8,7 @@ type log_level =
 
 let ord lvl =
 	match lvl with
+	| Always -> 100
 	| Error -> 50
 	| Warn  -> 40
 	| Info  -> 30
@@ -15,6 +17,7 @@ let ord lvl =
 
 let string_of_level lvl =
 	match lvl with
+	| Always -> ""
 	| Error -> "ERROR"
 	| Warn  -> "WARNING"
 	| Info  -> "INFO"
@@ -22,7 +25,9 @@ let string_of_level lvl =
 	| Trace -> "TRACE"
 
 let default_formatter name lvl =
-	( "[" ^ (string_of_level lvl) ^ ":" ^ name ^ "] ", "")
+	if lvl = Always
+	then ("", "")
+	else ( "[" ^ (string_of_level lvl) ^ ":" ^ name ^ "] ", "")
 
 let current_formatter = ref default_formatter
 

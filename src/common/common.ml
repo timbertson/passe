@@ -1,5 +1,10 @@
 exception AssertionError of string
 type ('a, 'b) either = Left of 'a | Right of 'b
+module Either = struct
+	let to_option = function
+		| Left _ -> None
+		| Right x -> Some x
+end
 
 module StringMap = struct
 	include Map.Make(String)

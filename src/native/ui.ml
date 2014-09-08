@@ -45,17 +45,39 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 		LTerm.printl text
 	)
 
-let main ~domain ~length ~quiet ~use_clipboard () =
+let main ~domain ~length ~quiet ~use_clipboard ~config () =
+	let sync_state = Sync.build config in
+	let db : Store.t option = let open Client_auth in match (S.value sync_state.Sync.auth_state) with
+		| Active_user (user, _) | Saved_user (user, _) ->
+			let stored = Sync.local_db_for_user config user in
+			stored#get |> Option.map Store.parse_json
+		| _ -> None
+	in
 	lwt term = Lazy.force LTerm.stderr in
-	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str));
+	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
 	try_lwt
 		lwt domain = match domain with
 			| Some d -> return d
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
 		lwt domain_text = (Domain.guess domain) in
-		let domain = { Store.default domain_text with Store.length = length } in
-		lwt password = (new password_prompt term ("["^domain_text ^ "] password: "))#run in
+		let domain = db |> Option.bind (Store.lookup domain)
+		in
+
+		let open Store in
+		let domain = match domain with
+			| None -> Store.default domain_text
+			| Some domain ->
+					domain.suffix |> Option.may (log#log " - Suffix: %s");
+					log#debug "Digest: %s" (domain.digest |> string_of_digest);
+					domain.hint |> Option.may (log#log " - Hint: %s");
+					domain
+		in
+
+		let domain = match length with Some l -> {domain with length = l} | None -> domain in
+		log#debug "Length: %d" domain.length;
+
+		lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 		let generated = Password.generate ~domain password in
 		output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated
 
