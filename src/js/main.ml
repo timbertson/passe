@@ -1,3 +1,4 @@
+open Passe
 open Lwt
 open Js
 open Dom_html

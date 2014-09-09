@@ -2,7 +2,6 @@
 gup -u \
 	res/all \
 	index.html \
-	js/supergenpass.js \
-	native/supergenpass.byte \
-	native/service.byte \
+	js/all \
+	native/all \
 	;

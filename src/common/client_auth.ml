@@ -1,6 +1,4 @@
 open Lwt
-open Server
-(* open Sync *)
 open Common
 open Either
 module J = Json_ext

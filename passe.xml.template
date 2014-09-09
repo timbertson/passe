@@ -5,12 +5,12 @@
 	xmlns:compile="http://zero-install.sourceforge.net/2006/namespaces/0compile"
 	xmlns:release="http://zero-install.sourceforge.net/2007/namespaces/0release">
 
-	<name>passeur</name>
-	<summary>passeur</summary>
+	<name>passe</name>
+	<summary>passe</summary>
 	<publish mode="featured" xmlns="http://gfxmonk.net/dist/0install"/>
 	<description>
 	</description>
-	<feed-for interface="http://gfxmonk.net/dist/0install/passeur.xml"/>
+	<feed-for interface="http://gfxmonk.net/dist/0install/passe.xml"/>
 
 	<group>
 		<command name="run" path="_build/native/supergenpass.byte">

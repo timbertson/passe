@@ -2,4 +2,4 @@
 set -eu
 here="$(dirname "$0")"
 export OCAMLRUNPARAM=b
-"$here/../_build/native/service.byte" "$@"
+"$here/../_build/native/server.byte" "$@"

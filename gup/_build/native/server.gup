@@ -1,0 +1,5 @@
+#!bash -eu
+gup -u ../../src/native/{passe_server,passe}.mlpack
+gup -u server.byte
+
+

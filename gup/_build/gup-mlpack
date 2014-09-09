@@ -1,0 +1,15 @@
+#!bash -eu
+gup --always
+cd "$(dirname "$2")"
+dir="$(basename "$2" .mlpack | sed -e 's/^passe_//')"
+
+find -H "$dir" -type f -name '*.ml*' | sed -e 's/\.ml.*//' | sort > "$1"
+exclude="$dir.exclude"
+if [ -e "$exclude" ]; then
+	contents="$(cat "$1" | grep -E -v "$(cat "$exclude")")"
+	echo "$contents" > "$1"
+else
+	gup --ifcreate "$exclude"
+fi
+
+gup --contents "$1"

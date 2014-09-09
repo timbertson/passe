@@ -1,3 +1,4 @@
+open Passe
 open Common
 open Lwt
 module Header = Cohttp.Header
@@ -252,4 +253,3 @@ let main () =
 		~document_root
 	())
 
-let () = main ()

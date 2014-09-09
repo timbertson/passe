@@ -88,6 +88,7 @@ appCache.addEventListener('updateready', handleCacheEvent, false);
 *)
 
 open Js
+open Passe
 
 type cache_event = [
 	| `Updateready

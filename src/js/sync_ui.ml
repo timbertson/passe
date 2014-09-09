@@ -1,3 +1,4 @@
+open Passe
 open Common
 open React_ext
 open Ui

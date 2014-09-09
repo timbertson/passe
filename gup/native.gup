@@ -1,2 +1,2 @@
 #!bash -eu
-gup -u _build/native/all
+gup -u client server

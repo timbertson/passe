@@ -1,5 +1,7 @@
+open Passe
 open React_ext
 module Json = Json_ext
+
 let log = Logging.get_logger "local_storage"
 
 (* A file-backed config compatible with Local_storage *)

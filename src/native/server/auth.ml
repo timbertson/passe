@@ -1,3 +1,4 @@
+open Passe
 open Common
 module J = Json_ext
 open Lwt

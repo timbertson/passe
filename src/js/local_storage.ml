@@ -1,3 +1,4 @@
+open Passe
 open Js
 open React_ext
 open Common

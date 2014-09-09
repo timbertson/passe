@@ -3,7 +3,7 @@ from __future__ import print_function
 import sys
 
 sources = [
-	"js/supergenpass.js",
+	"js/main.js",
 	"res/css/style.css",
 	"res/incognito.png",
 	"res/fonts/glyphicons-halflings-regular.woff",

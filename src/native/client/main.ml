@@ -3,6 +3,7 @@ exception SafeError of string
 let print_exc dest exc =
 	output_string dest (Printexc.to_string exc)
 
+open Passe
 open Batteries
 open Extlib
 module Json = Yojson.Safe
@@ -85,7 +86,7 @@ end
 
 let getenv name = try Some (Unix.getenv name) with Not_found -> None
 
-let () =
+let main () =
 	let p = Options.main () in
 	let posargs = OptParse.OptParser.parse ~first:1 p Sys.argv in
 	let storage_provider =

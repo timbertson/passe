@@ -1,3 +1,4 @@
+open Passe
 open Common
 open Lwt
 open Lwt_react
