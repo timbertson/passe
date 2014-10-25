@@ -1,0 +1,4 @@
+#!/bin/bash
+set -eu
+gup -u native/client
+gup-and passe-local.xml -- 0install run '{}' "$@"

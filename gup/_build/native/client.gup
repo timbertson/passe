@@ -1,5 +1,0 @@
-#!bash -eu
-gup -u ../../src/native/{passe_client,passe}.mlpack
-gup -u client.byte
-
-

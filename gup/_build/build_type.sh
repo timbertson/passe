@@ -1,5 +1,5 @@
 # sets $build_type to prod|dev
-self="$(realpath --no-symlinks ${BASH_SOURCE[0]})"
+self="${BASH_SOURCE[0]}"
 gup -u "$self"
 build_dir="$(basename "$(dirname "$self")")"
 case $build_dir in

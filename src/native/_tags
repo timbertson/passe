@@ -1,1 +1,4 @@
 true: debug, package(batteries,yojson, cohttp,cohttp.lwt, lambda-term, react,camlp4.macro, uri, lwt, lwt.unix, lwt.syntax, sha, safepass), syntax(camlp4o)
+<passe/*.cmx>: for-pack(Passe)
+<server/*.cmx>: for-pack(Passe_server)
+<client/*.cmx>: for-pack(Passe_client)

@@ -2,19 +2,17 @@
 here="$(dirname "$0")"
 . "$here/env.sh"
 ocamlbuild_args="-quiet"
-if [ "${GUP_XTRACE:-}" -eq 1 ]; then
+if [ "${GUP_XTRACE:-}" = 1 ]; then
 	set -x
 	ocamlbuild_args=""
 fi
 # ocamlbuild_args="-verbose 1"
 BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
-# target="${target#*/}"
 
 pushd "../src/$compile_mode" >/dev/null
 gup --always
-# "$here/gup-autotrace" -- \
-	ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target" -I common
+ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target"
 popd >/dev/null
 
 touch "$2"

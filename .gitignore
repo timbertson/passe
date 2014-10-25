@@ -1,6 +1,7 @@
 /_build
 /_build.prod
 /share
+/data/
 /default
 /Gupfile
 /*-local.xml
