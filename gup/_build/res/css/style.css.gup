@@ -1,5 +1,5 @@
 #!bash -eu
-. "$(dirname "${BASH_SOURCE[0]}")"/../../build_type.sh
+. "$(dirname "$(dirname "$(dirname "${BASH_SOURCE[0]}")")")"/build_type.sh
 input="../../../src/css/style.less"
 gup -u ../bootstrap ../lessc
 gup -u ../bootstrap/package.json "$input"

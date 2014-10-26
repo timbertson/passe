@@ -2,5 +2,5 @@
 set -eu
 (gup -u www && echo -- "www built") &
 
-gup -u _build/native/bin/service.byte &&
-	exec ./_build/native/bin/service.byte
+gup -u _build/native/bin/server.byte &&
+	exec ./_build/native/bin/server.byte

@@ -1,3 +1,4 @@
+open Batteries
 open Passe
 open Common
 open Lwt
@@ -23,7 +24,8 @@ let normpath p =
 	);
 	List.rev !rv
 
-let content_type_header v = Header.init_with "Content-Type" v
+let content_type_key = "Content-Type"
+let content_type_header v = Header.init_with content_type_key v
 let json_content_type = content_type_header "application/json"
 let no_cache h = Header.add h "Cache-control" "no-cache"
 
@@ -35,46 +37,63 @@ let respond_json ~status ~body () =
 let respond_unauthorized () =
 	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
+let maybe_add_header k v headers =
+	match v with
+		| Some v -> Header.add headers k v
+		| None -> headers
+
 let handler ~document_root ~data_root ~user_db sock req body =
+	let _serve_file fullpath =
+		let file_ext = Some (snd (String.rsplit fullpath ".")) (* with String.Invalid_string -> None *) in
+		let content_type = file_ext |> Option.map (function
+			| ("html" | "css") as t -> "text/" ^ t
+			| ("png" | "ico") as t -> "image/" ^ t
+			| "js" -> "application/javascript"
+			| "appcache" -> "text/plain"
+			| "woff" -> "application/octet-stream"
+			| ext -> log#warn "Unknown static file type: %s" ext; "application/octet-stream"
+		) in
+		let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
+		lwt latest_etag =
+			try_lwt
+				Lwt_io.with_file ~mode:Lwt_io.input fullpath (fun f ->
+					let hash = Sha256.init () in
+					let chunks = Lwt_stream.from (fun () ->
+						lwt str = Lwt_io.read ~count:1024 f in
+						return (str |> Option.non_empty ~zero:"")
+					) in
+					lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
+					let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
+					return (Some ("\"" ^ (digest ) ^ "\""))
+				)
+			with Unix.Unix_error (Unix.ENOENT, _, _) -> return_none
+		in
+
+		let headers = Header.init ()
+			|> no_cache
+			|> maybe_add_header content_type_key content_type in
+
+		if match latest_etag, client_etag with
+			| Some a, Some b -> a = b
+			| _ -> false
+		then
+			Server.respond
+				~body:Cohttp_lwt_body.empty
+				~headers
+				~status:`Not_modified ()
+		else
+			let headers = headers |> maybe_add_header "etag" latest_etag in
+			Server.respond_file ~fname:fullpath ~headers () in
+
+	let serve_static url = _serve_file (Server.resolve_file ~docroot:document_root ~uri:url) in
+	let serve_file relpath = _serve_file (Filename.concat document_root relpath) in
+
 	try_lwt
 		let uri = Cohttp.Request.uri req in
 		let data_path = Filename.concat data_root in
-		let document_path = Filename.concat document_root in
 		let path = Uri.path uri in
 		(* log#info "HIT: %s" path; *)
 		let path = normpath path in
-		let serve_file relpath =
-			let path = document_path relpath in
-			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
-			lwt latest_etag =
-				try_lwt
-					Lwt_io.with_file ~mode:Lwt_io.input path (fun f ->
-						let hash = Sha256.init () in
-						let chunks = Lwt_stream.from (fun () ->
-							lwt str = Lwt_io.read ~count:1024 f in
-							return (str |> Option.non_empty ~zero:"")
-						) in
-						lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
-						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
-						return (Some ("\"" ^ (digest ) ^ "\""))
-					)
-				with Unix.Unix_error (Unix.ENOENT, _, _) -> return_none
-			in
-			
-			if match latest_etag, client_etag with
-				| Some a, Some b -> a = b
-				| _ -> false
-			then
-				Server.respond
-					~body:Cohttp_lwt_body.empty
-					~status:`Not_modified ()
-			else
-				let headers = Header.init () |> no_cache in
-				let headers = match latest_etag with
-					| None -> headers
-					| Some etag -> Header.add headers "etag" etag
-				in
-				Server.respond_file ~fname:path ~headers () in
 
 		let db_path_for user =
 			data_path (Filename.concat "user_db" (user ^ ".json")) in
@@ -112,7 +131,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 							end
 					| [] -> serve_file "index.html"
 					| ["hold"] -> Lwt.wait () |> Tuple.fst
-					| _ -> serve_file (String.concat "/" path)
+					| _ -> serve_static uri
 				)
 			| `POST -> (
 				lwt params = (
