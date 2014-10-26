@@ -7,6 +7,23 @@
 		<title>Passé</title>
 
 		<link href="res/css/style.css" rel="stylesheet">
+		<script>
+			window.onerror = function(e) {
+				var e = document.getElementById("main");
+				e.innerHTML = "";
+				
+				var tag = function(name, text) {
+					var node=dopcument.createElement(name);
+					node.appendContent(text);
+					e.appendNode(node);
+				}
+
+				tag("h1", "Uncaught Error");
+				tag("p", "Sorry, an uncaught error occurred:");
+				tag("p", String(e));
+				tag("p", "Pleare reload the page to try again");
+			}
+		</script>
 		<script src="js/main.js"></script>
 	</head>
 	<body>

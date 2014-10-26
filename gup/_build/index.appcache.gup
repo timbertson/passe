@@ -3,9 +3,10 @@ from __future__ import print_function
 import sys
 
 sources = [
+	"index.html",
 	"js/main.js",
 	"res/css/style.css",
-	"res/incognito.png",
+	# "res/incognito.png",
 	"res/fonts/glyphicons-halflings-regular.woff",
 ]
 

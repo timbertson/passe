@@ -1,4 +1,4 @@
 #!/bin/bash
 set -eux
-exec vim-watch --huppy bash "$(dirname "$0")/build-and-run.sh"
+exec vim-watch --huppy bash "$(dirname "$0")/build-and-run.sh" "$@"
 

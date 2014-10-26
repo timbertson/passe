@@ -46,23 +46,31 @@ let db_display () : #Dom_html.element Ui.widget =
 
 let footer () =
 	let open Ui in
+
+	let incognito_checkbox = Ui.checkbox_of_signal ~update:set_incognito incognito in
+	incognito_checkbox#attr "title" "Don't store anything on this browser";
+
+	let incognito_container = div ~cls:"incognito-checkbox" ~children:[
+		frag incognito_checkbox;
+		child span ~text:" Incognito mode" ();
+	] () in
+
+	incognito_container#class_s "selected" incognito;
+
 	div ~cls:"row" ~children:[
-		child div ~cls:"col col-xs-6" ~children:[
-			child ul ~children:[
-				child li ~text:"About this site" ();
-			] ()
-		] ();
-		child div ~cls:"col col-xs-6" ~children:[
-			child ul ~children:[
-				child li ~children:[
-					child a ~cls:"link"
-						~text:"Erase local data"
-						~mechanism:(fun elem ->
-							Lwt_js_events.clicks elem (fun event _ ->
-								storage_provider#erase_all;
-								return_unit
-							)
-						) ();
+		child div ~cls:"col col-sm-7 col-sm-offset-0" ~children:[
+			child div ~cls:"row" ~children:[
+				child div ~cls:"col col-xs-6" ~children:[
+					child ul ~cls:"list-unstyled" ~children:[
+						child li ~children:[
+							frag incognito_container;
+						] ();
+					] ()
+				] ();
+				child div ~cls:"col col-xs-6" ~children:[
+					child ul ~cls:"list-unstyled" ~children:[
+						child li ~text:"About this site" ();
+					] ()
 				] ();
 			] ()
 		] ()
@@ -368,28 +376,19 @@ let password_form () : #Dom_html.element Ui.widget =
 		];
 	in
 
-	let incognito_checkbox = Ui.checkbox_of_signal ~update:set_incognito incognito in
-	incognito_checkbox#attr "title" "Don't store anything on this browser";
-
-	let incognito_container = div ~cls:"incognito-checkbox" ~children:[
-		frag incognito_checkbox;
-	] () in
-	incognito_container#class_s "selected" incognito;
-
-
-	let form = Ui.form ~cls:"form-horizontal" ~attrs:(["role","form"]) ~children:[
-		child div ~cls:"row" ~children:[
-			child div ~cls:"col-sm-7" ~children:[
-				child div ~cls:"col-xs-offset-2" ~children:[
-					child h2 ~children:[
-						frag incognito_container;
-						frag (text "Passé");
-					] ();
-				] ();
-				child div ~cls:"col-xs-5" ~children:[
-				] ();
-			] ();
-		] ();
+	let form = Ui.form ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
+		(* child div ~cls:"row" ~children:[ *)
+		(* 	child div ~cls:"col-sm-7" ~children:[ *)
+		(* 		child div ~cls:"col-xs-offset-2" ~children:[ *)
+		(* 			child h3 ~children:[ *)
+		(* 				frag (text "Passé"); *)
+		(* 				frag (text ""); *)
+		(* 			] (); *)
+		(* 		] (); *)
+		(* 		child div ~cls:"col-xs-5" ~children:[ *)
+		(* 		] (); *)
+		(* 	] (); *)
+		(* ] (); *)
 
 		child div ~cls:"row" ~children:[
 			child div ~cls:"col-sm-7" ~children:[
