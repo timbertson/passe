@@ -383,7 +383,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				child div ~cls:"col-xs-offset-2" ~children:[
 					child h2 ~children:[
 						frag incognito_container;
-						frag (text "SuperGenPass");
+						frag (text "Passé");
 					] ();
 				] ();
 				child div ~cls:"col-xs-5" ~children:[
