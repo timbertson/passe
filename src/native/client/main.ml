@@ -8,7 +8,7 @@ open Batteries
 open Extlib
 module Json = Yojson.Safe
 
-let log = Logging.get_logger "ogp"
+let log = Logging.get_logger "passe"
 
 type env = {
 	config : Config.t;
@@ -74,7 +74,7 @@ struct
 	open OptParser
 
 	let main () =
-		let options = OptParser.make ~usage: ("Usage: ogp [OPTIONS] [domain]") () in
+		let options = OptParser.make ~usage: ("Usage: passe [OPTIONS] [domain]") () in
 		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length_opt;
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
@@ -96,7 +96,7 @@ let main () =
 				let conf = getenv "HOME" |> Option.map (fun home -> Filename.concat home ".config") in
 				Option.get_exn conf (SafeError "neither $XDG_CONFIG_HOME or $HOME are defined")
 		in
-		let path = Filename.concat config_dir "ogp/db.json" in
+		let path = Filename.concat config_dir "passe/db.json" in
 		new Config_storage.provider path
 	in
 	let env = {
