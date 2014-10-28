@@ -33,6 +33,7 @@ let generate ~domain:domain password =
 		let result = Digest.string input
 		|> Base64.encode ~tbl:sgp_alphabet ~pad:'A' in
 		(* log#info "result: %s" result; *)
+		log#debug "hashed -> %s" result;
 		result
 	) in
 
@@ -43,8 +44,9 @@ let generate ~domain:domain password =
 		| Some suff -> password^suff
 		| None -> password
 	in
-	(* log#debug "master password: %s" password; *)
-	let generated = (password^":"^domain.domain)
+	let input = (password^":"^domain.domain) in
+	log#debug "password input: %s" input;
+	let generated = input
 		|> foldi 10 iter
 		|> fold_until (valid_password % trim) iter
 		|> trim
