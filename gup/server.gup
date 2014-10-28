@@ -1,2 +1,2 @@
 #!bash -eu
-gup -u _build/native/server
+gup -u _build/native/bin/server

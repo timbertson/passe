@@ -1,2 +1,2 @@
 #!bash -eu
-gup -u _build/native/client
+gup -u _build/native/bin/client
