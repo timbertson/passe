@@ -179,7 +179,7 @@ let sync_ui state =
 		raise e
 	)
 
-let main ~domain ~quiet ~use_clipboard ~config () =
+let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 	let sync_state = Sync.build config in
 	let db = ref (get_db sync_state config) in
 	lwt term = Lazy.force LTerm.stderr in
@@ -195,7 +195,6 @@ let main ~domain ~quiet ~use_clipboard ~config () =
 			-> LTerm_edit.unbind b
 		| _ -> ()
 	);
-
 
 	let rec input_loop ~domain () =
 		let break = input_loop ~domain:None in
@@ -217,10 +216,6 @@ let main ~domain ~quiet ~use_clipboard ~config () =
 					domain.hint |> Option.may (log#log " - Hint: %s");
 					domain
 		in
-
-		lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
-		let generated = Password.generate ~domain password in
-		lwt () = output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated in
 
 		let rec post_generate_actions () =
 			let continue = post_generate_actions in
@@ -273,9 +268,20 @@ let main ~domain ~quiet ~use_clipboard ~config () =
 						(* XXX unclean, grows stack *)
 						return ()
 					in ask ()
-				in
-				post_generate_actions ()
+		in
+
+		if edit then
+			lwt edited = edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () in
+			if edited then return ()
+			else exit 1
+		else begin
+			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
+			let generated = Password.generate ~domain password in
+			lwt () = output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated in
+			post_generate_actions ()
+		end
 	in
+
 
 	try_lwt
 		input_loop ~domain ()

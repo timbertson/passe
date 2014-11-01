@@ -18,13 +18,13 @@ let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
 	open OptParse
-	let generate ~use_clipboard ~quiet env args =
+	let generate ~use_clipboard ~edit ~quiet env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.main ~domain ~quiet ~use_clipboard ~config:(env.config) ())
+		Lwt_main.run (Ui.main ~domain ~edit ~quiet ~use_clipboard ~config:(env.config) ())
 
 	let sync env args =
 		let () = match args with
@@ -69,6 +69,7 @@ struct
 	let quiet = StdOpt.decr_option   ~dest:verbosity ()
 	let verbose = StdOpt.incr_option ~dest:verbosity ()
 	let list_only = StdOpt.store_true ()
+	let edit = StdOpt.store_true ()
 	(* let interactive = StdOpt.store_true () *)
 	(* let dry_run = StdOpt.store_true () *)
 	(* let force = StdOpt.store_true () *)
@@ -81,7 +82,7 @@ struct
 			Actions.list_domains env posargs
 		else
 			(* XXX remove `quiet` argument *)
-			Actions.generate ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) env posargs
+			Actions.generate ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) ~edit:(Opt.get edit) env posargs
 
 	open OptParser
 
@@ -91,6 +92,7 @@ struct
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;
 		add options ~short_name:'l' ~long_name:"list" list_only;
+		add options ~short_name:'e' ~long_name:"edit" edit;
 		add options ~long_name:"sync" sync;
 		options
 	;;
