@@ -71,10 +71,16 @@ let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
 	in
 
 	let open Store in
+	let title_row = new LTerm_widget.hbox in
+	let verb = match existing with Some _ -> "Editing" | None -> "Creating new" in
+	let title = new LTerm_widget.label (verb ^ " domain " ^ domain.domain) in
+	title_row#add title;
+	frame#add (title_row);
+
 	let e_domain = add_field ~label:"Domain: " domain.domain in
+	let e_hint = add_field   ~label:"Hint:   " (domain.hint |> Option.default "") in
 	let e_length = add_field ~label:"Length: " (string_of_int domain.length) in
 	let e_suffix = add_field ~label:"Suffix: " (domain.suffix |> Option.default "") in
-	let e_hint = add_field   ~label:"Hint:   " (domain.hint |> Option.default "") in
 	frame#add (new LTerm_widget.hbox);
 
 	let edited = ref None in
