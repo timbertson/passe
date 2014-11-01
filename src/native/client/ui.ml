@@ -46,6 +46,14 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 		LTerm.printl text
 	)
 
+let get_db sync_state config = 
+	let open Client_auth in
+	match (S.value sync_state.Sync.auth_state) with
+		| Active_user (user, _) | Saved_user (user, _) ->
+			let stored = Sync.local_db_for_user config user in
+			stored#get |> Option.map Store.parse_json
+		| _ -> None
+
 module Input_map = Zed_input.Make(LTerm_key)
 
 let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
@@ -171,15 +179,9 @@ let sync_ui state =
 		raise e
 	)
 
-let main ~domain ~length ~quiet ~use_clipboard ~config () =
+let main ~domain ~quiet ~use_clipboard ~config () =
 	let sync_state = Sync.build config in
-	let db : Store.t option = let open Client_auth in match (S.value sync_state.Sync.auth_state) with
-		| Active_user (user, _) | Saved_user (user, _) ->
-			let stored = Sync.local_db_for_user config user in
-			stored#get |> Option.map Store.parse_json
-		| _ -> None
-	in
-	let db = ref db in
+	let db = ref (get_db sync_state config) in
 	lwt term = Lazy.force LTerm.stderr in
 	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
 
@@ -215,9 +217,6 @@ let main ~domain ~length ~quiet ~use_clipboard ~config () =
 					domain.hint |> Option.may (log#log " - Hint: %s");
 					domain
 		in
-
-		let domain = match length with Some l -> {domain with length = l} | None -> domain in
-		log#debug "Length: %d" domain.length;
 
 		lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 		let generated = Password.generate ~domain password in
@@ -285,4 +284,30 @@ let main ~domain ~length ~quiet ~use_clipboard ~config () =
 		| Sys.Break -> exit 1
 	finally
 		LTerm.flush term
+
+let list_domains config domain = 
+	let sync_state = Sync.build config in
+	let db = get_db sync_state config in
+	match db with
+		| None -> false
+		| Some db ->
+			begin match domain with
+				| Some domain -> (match Store.lookup domain db with
+					(* lookup specific domain *)
+					| Some domain ->
+							print_endline (domain |> Store.json_string_of_domain);
+							true
+					| None ->
+							prerr_endline "Domain not found";
+							false
+				)
+				| None ->
+					(* just dump all domains *)
+					Store.get_records db
+						|> Store.StringMap.keys
+						|> List.sort compare
+						|> List.iter print_endline
+					;
+					true
+			end
 

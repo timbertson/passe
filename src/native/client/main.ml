@@ -18,13 +18,13 @@ let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
 	open OptParse
-	let generate ~length ~use_clipboard ~quiet env args =
+	let generate ~use_clipboard ~quiet env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.main ~domain ~length ~quiet ~use_clipboard ~config:(env.config) ())
+		Lwt_main.run (Ui.main ~domain ~quiet ~use_clipboard ~config:(env.config) ())
 
 	let sync env args =
 		let () = match args with
@@ -32,6 +32,15 @@ module Actions = struct
 			| _ -> too_many_args ()
 		in
 		Lwt_main.run (Ui.sync_ui (Sync.build env.config))
+
+	let list_domains env args =
+		let domain = match args with
+			| [] -> None
+			| [domain] -> Some domain
+			| _ -> too_many_args ()
+		in
+		let ok = Ui.list_domains env.config domain in
+		exit (if ok then 0 else 1)
 end
 
 let apply_verbosity verbosity =
@@ -53,14 +62,13 @@ module Options =
 struct
 	open OptParse
 	(* let update = StdOpt.store_true () *)
-	let length = ref None
-	let length_opt = StdOpt.int_callback (fun l -> length := Some l)
 	let use_clipboard = StdOpt.store_false ()
 	let sync = StdOpt.store_true ()
 	(* let trace = StdOpt.store_true () *)
 	let verbosity = ref default_verbosity
 	let quiet = StdOpt.decr_option   ~dest:verbosity ()
 	let verbose = StdOpt.incr_option ~dest:verbosity ()
+	let list_only = StdOpt.store_true ()
 	(* let interactive = StdOpt.store_true () *)
 	(* let dry_run = StdOpt.store_true () *)
 	(* let force = StdOpt.store_true () *)
@@ -69,18 +77,20 @@ struct
 		apply_verbosity !verbosity;
 		if Opt.get sync then
 			Actions.sync env posargs
+		else if Opt.get list_only then
+			Actions.list_domains env posargs
 		else
 			(* XXX remove `quiet` argument *)
-			Actions.generate ~length:!length ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) env posargs
+			Actions.generate ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) env posargs
 
 	open OptParser
 
 	let main () =
 		let options = OptParser.make ~usage: ("Usage: passe [OPTIONS] [domain]") () in
-		add options ~short_name:'l' ~long_name:"length" ~help:"length of generated password" length_opt;
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;
+		add options ~short_name:'l' ~long_name:"list" list_only;
 		add options ~long_name:"sync" sync;
 		options
 	;;
