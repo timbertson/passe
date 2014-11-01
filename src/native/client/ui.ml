@@ -83,6 +83,17 @@ let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
 	let e_suffix = add_field ~label:"Suffix: " (domain.suffix |> Option.default "") in
 	frame#add (new LTerm_widget.hbox);
 
+
+	let error_row = new LTerm_widget.hbox in
+	let error_message = new LTerm_widget.label "" in
+	error_row#add error_message;
+	frame#add (error_row);
+
+	let action_row = new LTerm_widget.hbox in
+	let instructions = new LTerm_widget.label "<return> to save, <esc> to cancel" in
+	action_row#add instructions;
+	frame#add (action_row);
+
 	let edited = ref None in
 
 	(* Exit when the user presses Ctrl+X *)
@@ -92,26 +103,25 @@ let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Escape } -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = true; meta = false; shift = false; code = LTerm_key.Char ch } when ch = UChar.of_char 'c' -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Enter } ->
+			begin
 			log#debug "Saving changes";
-			begin try
+			try
 				edited := Some (Store.({
 					domain = e_domain#text;
 					hint = Option.non_empty ~zero:"" e_hint#text;
 					suffix = Option.non_empty ~zero:"" e_suffix#text;
 					length = int_of_string e_length#text;
 				}));
-			with e -> Lwt_main.run (LTerm.printl "Error!")
-			end;
-			wakeup wakener ();
-			true
+				wakeup wakener ();
+				true
+			with e -> (
+				error_message#set_text ("Error: " ^ (Printexc.to_string e));
+				false
+			)
+			end
 		| _ -> false
 	);
 
-
-	let action_row = new LTerm_widget.hbox in
-	let instructions = new LTerm_widget.label "<return> to save, <esc> to cancel" in
-	action_row#add instructions;
-	frame#add (action_row);
 
 	lwt () = LTerm_widget.run term frame waiter in
 	
@@ -214,17 +224,8 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 		in
 
 		let open Store in
-		let domain = match stored_domain with
-			| None -> Store.default domain_text
-			| Some domain ->
-					log#log " - Length: %d" domain.length;
-					domain.suffix |> Option.may (log#log " - Suffix: %s");
-					domain.hint |> Option.may (log#log " - Hint: %s");
-					domain
-		in
-
-		let rec post_generate_actions () =
-			let continue = post_generate_actions in
+		let rec post_generate_actions domain () =
+			let continue = post_generate_actions domain in
 			let next is_done = if is_done then break () else continue () in
 			let edit_and_save () =
 				edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () >>= next
@@ -277,14 +278,24 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 		in
 
 		if edit then
+			let domain = stored_domain |> Option.default (Store.default domain_text) in
 			lwt edited = edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
 		else begin
+			let domain = match stored_domain with
+				| None -> Store.default domain_text
+				| Some domain ->
+						log#log " - Length: %d" domain.length;
+						domain.suffix |> Option.may (log#log " - Suffix: %s");
+						domain.hint |> Option.may (log#log " - Hint: %s");
+						domain
+			in
+
 			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 			let generated = Password.generate ~domain password in
 			lwt () = output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated in
-			post_generate_actions ()
+			post_generate_actions domain ()
 		end
 	in
 
