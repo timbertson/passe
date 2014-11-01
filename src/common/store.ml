@@ -21,9 +21,9 @@ module StringMap = struct
 	let find_opt key map = try Some (find key map) with Not_found -> None
 end
 
-type digest =
-	| MD5
-	| SHA1
+(* type digest = *)
+(* 	| MD5 *)
+(* 	| SHA1 *)
 
 type record_type = [
 	| `Alias
@@ -40,14 +40,14 @@ let record_type_of_string s = match s with
 	| _ -> raise_invalid_format "Expected alias or domain, got %s" s
 
 let default_length = 10 (* TODO: put in DB *)
-let default_digest = MD5 (* TODO: put in DB *)
+(* let default_digest = MD5 (* TODO: put in DB *) *)
 
 type domain = {
 	domain: string;
 	hint: string option;
 	suffix: string option;
 	length: int;
-	digest: digest;
+	(* digest: digest; *)
 }
 
 let default domain = {
@@ -55,7 +55,7 @@ let default domain = {
 	hint = None;
 	suffix = None;
 	length = default_length;
-	digest = default_digest;
+	(* digest = default_digest; *)
 }
 
 type alias = {
@@ -76,7 +76,7 @@ type domain_field_change = [
 	| `Hint of string option
 	| `Suffix of string option
 	| `Length of int
-	| `Digest of digest
+	(* | `Digest of digest *)
 	]
 
 type field_change = [domain_field_change | alias_field_change]
@@ -135,14 +135,14 @@ let get domain db : record option =
 		Some (db |> List.find (record_for domain))
 	with Not_found -> None
 
-let string_of_digest = function
-	| MD5 -> "md5"
-	| SHA1 -> "sha1"
-
-let digest_of_string = function
-	| "md5" -> MD5
-	| "sha1" -> SHA1
-	| s -> raise_invalid_format "unsupported digest type: %s" s
+(* let string_of_digest = function *)
+(* 	| MD5 -> "md5" *)
+(* 	| SHA1 -> "sha1" *)
+(*  *)
+(* let digest_of_string = function *)
+(* 	| "md5" -> MD5 *)
+(* 	| "sha1" -> SHA1 *)
+(* 	| s -> raise_invalid_format "unsupported digest type: %s" s *)
 
 let string_of_change_type = function
 	| `Edit -> "edit"
@@ -206,10 +206,10 @@ module Format = struct
 	let hint = {key="hint"; getter=optional get_string; setter=optional json_string}
 	let suffix = {key="suffix"; getter=optional get_string; setter=optional json_string}
 	let length = {key="length"; getter=mandatory get_int; setter=set_int }
-	let digest = { key="digest";
-		getter = mandatory (fun d -> get_string d |> digest_of_string);
-		setter = (fun d -> string_of_digest d |> set_string)
-	}
+	(* let digest = { key="digest"; *)
+	(* 	getter = mandatory (fun d -> get_string d |> digest_of_string); *)
+	(* 	setter = (fun d -> string_of_digest d |> set_string) *)
+	(* } *)
 	let destination = string_key "destination"
 	let record_type = {key="type";
 		getter = mandatory (fun t -> get_string t |> record_type_of_string);
@@ -243,7 +243,7 @@ module Format = struct
 						hint = parse_field hint pairs;
 						suffix = parse_field suffix pairs;
 						length = parse_field length pairs;
-						digest = parse_field digest pairs
+						(* digest = parse_field digest pairs *)
 					}
 				end
 			| _ ->
@@ -261,7 +261,7 @@ module Format = struct
 			store_field hint d.hint;
 			store_field suffix d.suffix;
 			store_field length d.length;
-			store_field digest d.digest
+			(* store_field digest d.digest *)
 		])
 	let json_of_record r = `Assoc [json_pair_of_record r]
 
@@ -323,7 +323,7 @@ module Format = struct
 		attempt hint (fun x -> `Hint x);
 		attempt suffix (fun x -> `Suffix x);
 		attempt length (fun x -> `Length x);
-		attempt digest (fun x -> `Digest x);
+		(* attempt digest (fun x -> `Digest x); *)
 	]) json
 
 	let alias_field_change_of_json json :alias_field_change = (unioned_getter [
@@ -338,7 +338,7 @@ module Format = struct
 		| `Hint x        -> tag hint x
 		| `Suffix x      -> tag suffix x
 		| `Length x      -> tag length x
-		| `Digest x      -> tag digest x
+		(* | `Digest x      -> tag digest x *)
 	)
 
 	let edit : edit field = {key="edit";
@@ -427,7 +427,7 @@ let apply_changes core changes : record StringMap.t =
 		| `Hint   x -> {domain with hint=x}
 		| `Suffix x -> {domain with suffix=x}
 		| `Length x -> {domain with length=x}
-		| `Digest x -> {domain with digest=x}
+		(* | `Digest x -> {domain with digest=x} *)
 	in
 
 	let apply_alias_edit edit alias =
@@ -524,7 +524,7 @@ let keys_like (db:t) query =
 		|> List.filter (Str.contains q_re)
 		|> List.sort (compare) |> take 5
 
-let update ~(db:t) ~original updated =
+let update ~(db:t) ~(original:record option) (updated:record option) =
 	log#info "modifying %a -> %a"
 		(Option.print J.print) (Option.map Format.json_of_record original)
 		(Option.print J.print) (Option.map Format.json_of_record updated);
@@ -541,7 +541,7 @@ let update ~(db:t) ~original updated =
 					Option.cond (orig.hint <> u.hint) (`Hint u.hint);
 					Option.cond (orig.suffix <> u.suffix) (`Suffix u.suffix);
 					Option.cond (orig.length <> u.length) (`Length u.length);
-					Option.cond (orig.digest <> u.digest) (`Digest u.digest);
+					(* Option.cond (orig.digest <> u.digest) (`Digest u.digest); *)
 				])
 			)]
 		| Some (Alias orig), Some (Alias u) -> [Edit (

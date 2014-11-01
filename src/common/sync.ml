@@ -185,3 +185,15 @@ let validate_credentials t creds =
 	in
 	t.set_auth_state new_state;
 	return new_state
+
+
+let save_change ~(db:Store.t option ref) ~state ~original updated =
+	match !db with
+		| None -> false
+		| Some current_db ->
+			let new_db = Store.update ~db:current_db ~original updated in
+			db := Some new_db;
+			log#info "Saving new DB: %s" (Store.to_json_string new_db);
+			match S.value state.current_user_db with
+				| None -> log#error "Can't save DB - no current user"; false
+				| Some db -> db#save (Store.to_json new_db); true

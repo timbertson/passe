@@ -14,20 +14,22 @@ type env = {
 	config : Config.t;
 }
 
+let too_many_args () = raise @@ SafeError "too many arguments"
+
 module Actions = struct
 	open OptParse
 	let generate ~length ~use_clipboard ~quiet env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
-			| _ -> raise @@ SafeError "too many arguments"
+			| _ -> too_many_args ()
 		in
 		Lwt_main.run (Ui.main ~domain ~length ~quiet ~use_clipboard ~config:(env.config) ())
 
 	let sync env args =
 		let () = match args with
 			| [] -> ()
-			| _ -> raise @@ SafeError "too many arguments"
+			| _ -> too_many_args ()
 		in
 		Lwt_main.run (Ui.sync_ui (Sync.build env.config))
 end
