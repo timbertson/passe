@@ -529,12 +529,18 @@ let update ~(db:t) ~(original:record option) (updated:record option) =
 		(Option.print J.print) (Option.map Format.json_of_record original)
 		(Option.print J.print) (Option.map Format.json_of_record updated);
 
+	let edit_change = function
+		| (_, `Domain []) -> []
+		| (_, `Alias []) -> []
+		| edit -> [Edit edit]
+	in
+
 	let changes = match original, updated with
 		| None, None -> []
 		| None, Some updated -> [Create updated]
 		| Some orig, None -> [Delete (id_of orig)]
 
-		| Some (Domain orig), Some (Domain u) -> [Edit (
+		| Some (Domain orig), Some (Domain u) -> edit_change (
 				orig.domain,
 				`Domain (filter_some [
 					Option.cond (orig.domain <> u.domain) (`Domain u.domain);
@@ -543,14 +549,14 @@ let update ~(db:t) ~(original:record option) (updated:record option) =
 					Option.cond (orig.length <> u.length) (`Length u.length);
 					(* Option.cond (orig.digest <> u.digest) (`Digest u.digest); *)
 				])
-			)]
-		| Some (Alias orig), Some (Alias u) -> [Edit (
+			)
+		| Some (Alias orig), Some (Alias u) -> edit_change (
 				orig.alias,
 				`Alias (filter_some [
 					Option.cond (orig.alias <> u.alias) (`Alias u.alias);
 					Option.cond (orig.destination <> u.destination) (`Destination u.destination);
 				])
-			)]
+			)
 		(* type change is handled by just deleting / creating *)
 		| Some (Domain _ as orig), Some (Alias _ as updated)
 		| Some (Alias _ as orig), Some (Domain _ as updated) ->

@@ -46,7 +46,7 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 		LTerm.printl text
 	)
 
-let get_db sync_state config = 
+let get_db sync_state config =
 	let open Client_auth in
 	match (S.value sync_state.Sync.auth_state) with
 		| Active_user (user, _) | Saved_user (user, _) ->
@@ -188,10 +188,10 @@ let sync_ui state =
 		in
 
 		lwt () = state.Sync.run_sync credentials in
-		log#info "Sync completed successfully";
+		log#log "Sync completed successfully";
 		return_unit
 	with e -> (
-		log#error "Sync failed: %s" (Printexc.to_string e);
+		log#log "Sync failed: %s" (Printexc.to_string e);
 		raise e
 	)
 
@@ -226,21 +226,27 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 		let open Store in
 		let rec post_generate_actions domain () =
 			let continue = post_generate_actions domain in
-			let next is_done = if is_done then break () else continue () in
+			let next (_:bool) = continue () in
 			let edit_and_save () =
 				edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () >>= next
 			in
 			let delete existing () =
 				delete ~sync_state ~db ~existing ~term () >>= next
 			in
+			let try_sync () =
+				(* NOTE: we ignore sync errors, they'll already be printed *)
+				lwt () = try_lwt sync_ui sync_state with e -> return_unit in
+				continue ()
+			in
 
 			match !db with
 				| None -> Lwt.return_unit
 				| Some current_db ->
 					let actions = [
-						("",  "c: Continue", break);
+						("c", "c: Continue", break);
 						("q", "q: Quit", fun () -> Lwt.return ());
-						("r", "r: Sync", fun () -> sync_ui sync_state >>= continue);
+						("a", "a: Again", input_loop ~domain:(Some domain_text));
+						("r", "r: Sync", try_sync);
 					] @ (match stored_domain with
 						| Some existing ->
 								[
@@ -284,7 +290,9 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			else exit 1
 		else begin
 			let domain = match stored_domain with
-				| None -> Store.default domain_text
+				| None ->
+						log#log "Note: this is a new domain.";
+						Store.default domain_text
 				| Some domain ->
 						log#log " - Length: %d" domain.length;
 						domain.suffix |> Option.may (log#log " - Suffix: %s");
@@ -308,7 +316,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 	finally
 		LTerm.flush term
 
-let list_domains config domain = 
+let list_domains config domain =
 	let sync_state = Sync.build config in
 	let db = get_db sync_state config in
 	match db with
