@@ -29,7 +29,7 @@ let ui state =
 				if len = 0 then
 					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
 				else Local_changes len
-			) state.db_signal last_sync_time
+			) state.db_fallback last_sync_time
 		)) in
 
 

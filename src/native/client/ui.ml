@@ -46,17 +46,9 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 		LTerm.printl text
 	)
 
-let get_db sync_state config =
-	let open Client_auth in
-	match (S.value sync_state.Sync.auth_state) with
-		| Active_user (user, _) | Saved_user (user, _) ->
-			let stored = Sync.local_db_for_user config user in
-			stored#get |> Option.map Store.parse_json
-		| _ -> None
-
 module Input_map = Zed_input.Make(LTerm_key)
 
-let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
+let edit_and_save ~sync_state ~domain ~existing ~term () =
 	let open CamomileLibraryDyn.Camomile in (* ??? *)
 	let frame = new LTerm_widget.vbox in
 
@@ -128,7 +120,7 @@ let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
 	match !edited with
 		| Some edited ->
 			if Sync.save_change
-				~db ~state:sync_state
+				~state:sync_state
 				~original:(existing |> Option.map (fun d -> Domain d))
 				(Some (Domain edited))
 			then
@@ -140,12 +132,12 @@ let edit_and_save ~sync_state ~db ~domain ~existing ~term () =
 			lwt () = LTerm.fprintlf term "Cancelled." in
 			return false
 
-let delete ~sync_state ~db ~(existing:Store.domain) ~term () =
+let delete ~sync_state ~(existing:Store.domain) ~term () =
 	let open Store in
 	lwt text = (new plain_prompt term ("Really delete "^(existing.domain)^"? (Y/n) "))#run in
 	match text with
 		| "" | "y" | "Y" ->
-			if Sync.save_change ~db ~state:sync_state ~original:(Some (Domain existing)) None
+			if Sync.save_change ~state:sync_state ~original:(Some (Domain existing)) None
 			then
 				lwt () = LTerm.fprintlf term "Deleted %s" existing.domain in
 				return true
@@ -197,9 +189,9 @@ let sync_ui state =
 
 let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 	let sync_state = Sync.build config in
-	let db = ref (get_db sync_state config) in
 	lwt term = Lazy.force LTerm.stderr in
 	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
+	let user_db () = S.value (sync_state.Sync.db_signal) in
 
 	(* unbind default actions we don't want *)
 	Input_map.bindings !LTerm_edit.bindings |> List.iter (let open LTerm_key in function
@@ -220,18 +212,17 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
 		lwt domain_text = (Domain.guess domain) in
-		let stored_domain = !db |> Option.bind (Store.lookup domain)
-		in
+		let stored_domain = user_db () |> Option.bind (Store.lookup domain) in
 
 		let open Store in
 		let rec post_generate_actions domain () =
 			let continue = post_generate_actions domain in
 			let next (_:bool) = continue () in
 			let edit_and_save () =
-				edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () >>= next
+				edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () >>= next
 			in
 			let delete existing () =
-				delete ~sync_state ~db ~existing ~term () >>= next
+				delete ~sync_state ~existing ~term () >>= next
 			in
 			let try_sync () =
 				(* NOTE: we ignore sync errors, they'll already be printed *)
@@ -239,53 +230,53 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 				continue ()
 			in
 
-			match !db with
-				| None -> Lwt.return_unit
-				| Some current_db ->
-					let actions = [
-						("c", "c: Continue", break);
-						("q", "q: Quit", fun () -> Lwt.return ());
-						("a", "a: Again", input_loop ~domain:(Some domain_text));
-						("r", "r: Sync", try_sync);
-					] @ (match stored_domain with
-						| Some existing ->
-								[
-									("e", "e: Edit " ^ domain_text, edit_and_save);
-									("d", "d: Delete " ^ domain_text, delete existing);
-								]
-						| None ->
-								[
-									("s", "s: Save " ^ domain_text, edit_and_save);
-								]
+			let common_actions = [
+				("c", "c: Continue", break);
+				("q", "q: Quit", fun () -> Lwt.return ());
+				("a", "a: Again", input_loop ~domain:(Some domain_text));
+				("r", "r: Sync", try_sync);
+			] in
+			let actions = match S.value (sync_state.Sync.current_user_db) with
+				| None -> common_actions
+				| Some _ -> common_actions @ (match stored_domain with
+					| Some existing ->
+						[
+							("e", "e: Edit " ^ domain_text, edit_and_save);
+							("d", "d: Delete " ^ domain_text, delete existing);
+						]
+					| None ->
+						[
+							("s", "s: Save " ^ domain_text, edit_and_save);
+						]
+				)
+			in
+			let rec ask () =
+				lwt response = (new plain_prompt term (
+						"\n" ^ (
+							actions
+							|> List.map (fun (_, text, _) -> " " ^ text)
+							|> String.concat "\n")
+						^ "\n -- What next? [c] "))#run in
+				let response = if response = "" then "c" else response in
+				log#debug "response: [%s]" response;
+				lwt () = LTerm.fprintlf term "" in
+				let action =
+					try actions
+						|> List.find (fun (key, _, _) -> key = response)
+						|> fun (_,_,action) -> action
+					with Not_found -> (fun () ->
+						lwt () = LTerm.fprintlf term "Huh?" in
+						ask ()
 					) in
-
-					let rec ask () =
-						lwt response = (new plain_prompt term (
-								"\n" ^ (
-									actions
-									|> List.map (fun (_, text, _) -> " " ^ text)
-									|> String.concat "\n")
-								^ "\n -- What next? [c] "))#run in
-						let response = if response = "" then "c" else response in
-						log#debug "response: [%s]" response;
-						lwt () = LTerm.fprintlf term "" in
-						let action =
-							try actions
-								|> List.find (fun (key, _, _) -> key = response)
-								|> fun (_,_,action) -> action
-							with Not_found -> (fun () ->
-								lwt () = LTerm.fprintlf term "Huh?" in
-								ask ()
-							) in
-						lwt () = action () in
-						(* XXX unclean, grows stack *)
-						return ()
-					in ask ()
+				lwt () = action () in
+				(* XXX unclean, grows stack *)
+				return ()
+			in ask ()
 		in
 
 		if edit then
 			let domain = stored_domain |> Option.default (Store.default domain_text) in
-			lwt edited = edit_and_save ~sync_state ~db ~domain ~existing:stored_domain ~term () in
+			lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
 		else begin
@@ -318,27 +309,24 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 
 let list_domains config domain =
 	let sync_state = Sync.build config in
-	let db = get_db sync_state config in
-	match db with
-		| None -> false
-		| Some db ->
-			begin match domain with
-				| Some domain -> (match Store.lookup domain db with
-					(* lookup specific domain *)
-					| Some domain ->
-							print_endline (domain |> Store.json_string_of_domain);
-							true
-					| None ->
-							prerr_endline "Domain not found";
-							false
-				)
-				| None ->
-					(* just dump all domains *)
-					Store.get_records db
-						|> Store.StringMap.keys
-						|> List.sort compare
-						|> List.iter print_endline
-					;
+	let db = S.value (sync_state.Sync.db_fallback) in
+	begin match domain with
+		| Some domain -> (match Store.lookup domain db with
+			(* lookup specific domain *)
+			| Some domain ->
+					print_endline (domain |> Store.json_string_of_domain);
 					true
-			end
+			| None ->
+					prerr_endline "Domain not found";
+					false
+		)
+		| None ->
+			(* just dump all domains *)
+			Store.get_records db
+				|> Store.StringMap.keys
+				|> List.sort compare
+				|> List.iter print_endline
+			;
+			true
+	end
 

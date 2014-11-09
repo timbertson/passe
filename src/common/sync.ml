@@ -24,7 +24,8 @@ type state = {
 	current_user_db: Config.child option signal;
 	last_sync: Config.child;
 	stored_json: J.json option signal;
-	db_signal: Store.t signal;
+	db_fallback: Store.t signal;
+	db_signal: Store.t option signal;
 	stored_credentials: Config.child;
 	stored_credentials_signal: J.json option signal;
 	auth_state: Auth.auth_state signal;
@@ -78,12 +79,13 @@ let build config_provider =
 			|> Option.default (S.const None)
 	) in
 
-	let db_signal :Store.t signal =
-		stored_json |> S.map ~eq:Store.eq (fun json ->
-			json
-			|> Option.map Store.parse_json
-			|> Option.default Store.empty
-	) in
+	let db_signal :Store.t option signal =
+		stored_json |> S.map ~eq:(Option.eq Store.eq) (Option.map Store.parse_json)
+	in
+
+	let db_fallback :Store.t signal =
+		db_signal |> S.map ~eq:Store.eq (Option.default Store.empty)
+	in
 
 	let set_last_sync_time t = last_sync#save (`Float t) in
 
@@ -147,6 +149,7 @@ let build config_provider =
 		current_user_db=current_user_db;
 		stored_json=stored_json;
 		db_signal=db_signal;
+		db_fallback=db_fallback;
 		last_sync=last_sync;
 		stored_credentials=stored_credentials;
 		stored_credentials_signal=stored_credentials_signal;
@@ -187,13 +190,11 @@ let validate_credentials t creds =
 	return new_state
 
 
-let save_change ~(db:Store.t option ref) ~state ~original updated =
-	match !db with
-		| None -> false
-		| Some current_db ->
-			let new_db = Store.update ~db:current_db ~original updated in
-			db := Some new_db;
-			log#info "Saving new DB: %s" (Store.to_json_string new_db);
-			match S.value state.current_user_db with
-				| None -> log#error "Can't save DB - no current user"; false
-				| Some db -> db#save (Store.to_json new_db); true
+let save_change ~state ~original updated =
+	match S.value state.current_user_db with
+		| None -> log#error "Can't save DB - no current user"; false
+		| Some user_db ->
+				let current_db = S.value state.db_fallback in
+				let new_db = Store.update ~db:current_db ~original updated in
+				log#info "Saving new DB: %s" (Store.to_json_string new_db);
+				user_db#save (Store.to_json new_db); true

@@ -27,7 +27,7 @@ let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v))
 
 let sync = Sync.build config_provider
 
-let db_signal = sync.Sync.db_signal
+let db_fallback = sync.Sync.db_fallback
 let db_display () : #Dom_html.element Ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
@@ -98,7 +98,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
 	let empty_domain = domain |> S.map (fun d -> d = "") in
-	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_signal domain in
+	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
 	let saved_domain_info = S.l2 (fun domain text ->
 		match domain with
 			| Some d -> d
@@ -112,7 +112,7 @@ let password_form () : #Dom_html.element Ui.widget =
 			|> List.filter ((<>) query)
 			|> Option.non_empty ~zero:[]
 		)
-	) db_signal domain in
+	) db_fallback domain in
 	let domain_suggestions = S.l2 (fun active suggestions ->
 		if active
 		then suggestions
@@ -287,22 +287,11 @@ let password_form () : #Dom_html.element Ui.widget =
 			| None -> false
 	) domain_record domain_info in
 
-	let save_db new_db =
-		log#info "Saving new DB: %s" (Store.to_json_string new_db);
-		(match S.value sync.Sync.current_user_db with
-			| None -> log#warn "no db to save to!"
-			| Some db -> db#save (Store.to_json new_db)
-		);
-		Lwt.return_unit
-	in
-
 	let save_current_domain () =
-		let current_db = S.value db_signal in
-		save_db (Store.update
-			~db:current_db
+		let (_saved:bool) = Sync.save_change ~state:sync
 			~original:(S.value domain_record |> Option.map (fun d -> Domain d))
-			(Some (Domain (S.value domain_info)))
-		)
+			(Some (Domain (S.value domain_info))) in
+		()
 	in
 
 	let domain_panel = Ui.div ~cls:"domain-info panel" () in
@@ -320,6 +309,7 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt_js_events.clicks elem (fun event _ ->
 				Ui.stop event;
 				save_current_domain ();
+				return_unit
 			)
 		);
 
@@ -328,11 +318,10 @@ let password_form () : #Dom_html.element Ui.widget =
 		delete_button#mechanism (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
 				stop event;
-				let current_db = S.value db_signal in
-				save_db (Store.update ~db:current_db
+				let (_saved:bool) = Sync.save_change ~state:sync
 					~original:(S.value domain_record |> Option.map (fun d -> Domain d))
-					None
-				)
+					None in
+				return_unit
 			)
 		);
 
@@ -431,7 +420,8 @@ let password_form () : #Dom_html.element Ui.widget =
 			Console.console##log(event);
 			if (to_bool event##ctrlKey && event##keyCode = 83) then (
 				stop event;
-				save_current_domain ()
+				save_current_domain ();
+				return_unit
 			) else return_unit
 		)
 		<&>
