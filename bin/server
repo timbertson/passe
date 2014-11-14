@@ -1,5 +1,0 @@
-#!/bin/bash
-set -eu
-here="$(dirname "$0")"
-export OCAMLRUNPARAM=b
-"$here/../_build/native/bin/server.byte" "$@"

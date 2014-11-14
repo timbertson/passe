@@ -6,6 +6,8 @@ type log_level =
 	| Debug
 	| Trace
 
+let all_levels = [ Error;Warn;Info;Debug;Trace]
+
 let ord lvl =
 	match lvl with
 	| Always -> 100
@@ -14,6 +16,8 @@ let ord lvl =
 	| Info  -> 30
 	| Debug -> 20
 	| Trace -> 10
+
+let lvl_scale = 10
 
 let string_of_level lvl =
 	match lvl with

@@ -13,8 +13,9 @@
 	<feed-for interface="http://gfxmonk.net/dist/0install/passe.xml"/>
 
 	<group>
-		<command name="run" path="_build/native/bin/client.native">
+		<command name="run" path="bin/passe">
 		</command>
+
 		<environment name="SUPERGENPASS_DOMAINS" insert="src/data/domains.txt" mode="replace"/>
 		<implementation version="{version}">
 			<manifest-digest/>

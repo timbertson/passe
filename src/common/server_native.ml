@@ -15,9 +15,9 @@ type response =
 
 let root_url =
 	(* XXX *)
-	Uri.of_string "http://localhost:8080/"
+	ref (Uri.of_string "http://localhost:8080/")
 
-let path p = Uri.with_path root_url ("/" ^ String.concat "/" p)
+let path p = Uri.with_path !root_url ("/" ^ String.concat "/" p)
 
 
 let json_content_type = "application/json"

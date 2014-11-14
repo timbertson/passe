@@ -9,6 +9,7 @@ module J = Json_ext
 
 let log = Logging.get_logger "service"
 let slash = Str.regexp "/"
+let make_db data_root = new Auth.storage (Filename.concat data_root "users.db.json")
 
 let normpath p =
 	let parts = Str.split_delim slash p in
@@ -29,6 +30,8 @@ let content_type_header v = Header.init_with content_type_key v
 let json_content_type = content_type_header "application/json"
 let no_cache h = Header.add h "Cache-control" "no-cache"
 
+let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false
+
 let respond_json ~status ~body () =
 	Server.respond_string
 		~headers:(json_content_type |> no_cache)
@@ -37,12 +40,22 @@ let respond_json ~status ~body () =
 let respond_unauthorized () =
 	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
+let empty_db_json = (Store.empty |> Store.to_json |> J.to_string ~std:true)
+
 let maybe_add_header k v headers =
 	match v with
 		| Some v -> Header.add headers k v
 		| None -> headers
 
 let handler ~document_root ~data_root ~user_db sock req body =
+	(* hooks for unit test controlling *)
+	let override_data_root = (fun newroot ->
+		log#warn "setting data_root = %s" newroot;
+		data_root := newroot;
+		user_db := make_db newroot;
+	) in
+	let data_root = !data_root and user_db = !user_db in
+
 	let _serve_file fullpath =
 		let file_ext = Some (snd (String.rsplit fullpath ".")) (* with String.Invalid_string -> None *) in
 		let content_type = file_ext |> Option.map (function
@@ -87,12 +100,20 @@ let handler ~document_root ~data_root ~user_db sock req body =
 
 	let serve_static url = _serve_file (Server.resolve_file ~docroot:document_root ~uri:url) in
 	let serve_file relpath = _serve_file (Filename.concat document_root relpath) in
+	let maybe_read_file path  = try_lwt
+			(* XXX streaming? *)
+			lwt contents = Lwt_io.with_file ~mode:Lwt_io.input path (fun f ->
+				Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
+			) in
+			return (Some contents)
+			with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
+		in
 
 	try_lwt
 		let uri = Cohttp.Request.uri req in
 		let data_path = Filename.concat data_root in
 		let path = Uri.path uri in
-		(* log#info "HIT: %s" path; *)
+		log#debug "HIT: %s" path;
 		let path = normpath path in
 
 		let db_path_for user =
@@ -126,7 +147,13 @@ let handler ~document_root ~data_root ~user_db sock req body =
 								| Some user ->
 									let username = user.Auth.User.name in
 									log#debug "serving db for user: %s" username;
-									Server.respond_file ~headers:json_content_type ~fname:(db_path_for username) ()
+
+									lwt body = maybe_read_file (db_path_for username) in
+									let body = body |> Option.default empty_db_json in
+
+									Server.respond_string
+										~headers:(json_content_type |> no_cache)
+										~status:`OK ~body ()
 								| None -> respond_unauthorized ()
 							end
 					| [] -> serve_file "index.html"
@@ -149,6 +176,13 @@ let handler ~document_root ~data_root ~user_db sock req body =
 				let mandatory = J.mandatory in
 
 				match path with
+					| "ctl" :: path when enable_rc -> begin
+						match path with
+						| ["init"] ->
+								params |> mandatory J.string_field "data" |> override_data_root;
+								respond_json ~status:`OK ~body:(`Assoc []) ()
+						| _ -> Server.respond_not_found ~uri ()
+					end
 					| ["auth"; "signup"] -> (
 							let user = params |> mandatory J.string_field "user" in
 							let password = params |> mandatory J.string_field "password" in
@@ -181,13 +215,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									let db_path = db_path_for username in
 									log#debug "saving db for user: %s" username;
 									(* XXX locking *)
-									lwt db_file_contents = (try_lwt
-										lwt contents = Lwt_io.with_file ~mode:Lwt_io.input db_path (fun f ->
-											Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
-										) in
-										return (Some contents)
-										with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
-									) in
+									lwt db_file_contents = maybe_read_file db_path in
 
 									let existing_core = db_file_contents |> Option.map J.from_string in
 									let open Store in
@@ -232,10 +260,11 @@ let start_server ~host ~port ~document_root ~data_root () =
 	and data_root = abs data_root in
 	log#info "Document root: %s" document_root;
 	log#info "Data root: %s" data_root;
-	let user_db = new Auth.storage (Filename.concat data_root "users.db.json") in
+	if enable_rc then log#warn "Remote control enabled (for test use only)";
+	let user_db = make_db data_root in
 	let conn_closed id () = log#info "connection %s closed"
 			(Connection.to_string id) in
-	let callback = handler ~document_root ~data_root ~user_db in
+	let callback = handler ~document_root ~data_root:(ref data_root) ~user_db:(ref user_db) in
 	let config = { Server.callback; conn_closed } in
 	Server.create ~address:host ~port:port config
 
@@ -248,17 +277,30 @@ let main () =
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
 	let document_root = StdOpt.str_option ~default:"_build" () in
 	let data_root = StdOpt.str_option ~default:"data" () in
+	let default_verbosity = Logging.ord Logging.Info in
+	let verbosity = ref 0 in
+	let louder = StdOpt.decr_option ~dest:verbosity () in
+	let quieter = StdOpt.incr_option ~dest:verbosity () in
 
 	let options = OptParser.make ~usage: ("Usage: service [OPTIONS]") () in
 	add options ~short_name:'p' ~long_name:"port" port;
 	add options ~long_name:"host" host;
 	add options ~long_name:"root" document_root;
 	add options ~long_name:"data" data_root;
+	add options ~short_name:'v' ~long_name:"verbose" louder;
+	add options ~short_name:'q' ~long_name:"quiet" quieter;
 	let posargs = OptParse.OptParser.parse ~first:1 options Sys.argv in
 	if List.length posargs <> 0 then (
 		prerr_endline "Too many arguments";
 		exit 1
 	);
+	Logging.current_level := default_verbosity + (!verbosity * Logging.lvl_scale);
+	let verbosity_desc = try Logging.all_levels
+		|> List.find (fun l -> Logging.ord l = !Logging.current_level)
+		|> Logging.string_of_level
+		with Not_found -> string_of_int !Logging.current_level
+	in
+	log#log " ( Log level: %s )" verbosity_desc;
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
 	let host = match (Opt.get host) with

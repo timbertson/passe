@@ -1,0 +1,6 @@
+#!/bin/bash
+set -eu
+t="_build/native/test/main.byte"
+gup -u "$t"
+# sequential is to workaround https://forge.ocamlcore.org/tracker/index.php?func=detail&aid=1363&group_id=162&atid=730
+exec "$t" -runner sequential "$@"

@@ -1,0 +1,4 @@
+#!/bin/bash
+set -eu
+export PASSE_TEST_CTL=1
+eval "$(dirname "$0")"/passe-server --port 8119 "$@"

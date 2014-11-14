@@ -1,4 +1,1 @@
-#!/bin/bash
-set -eu
-gup -u client passe-local.xml
-0install run passe-local.xml "$@"
+../_build/native/bin/client.native
