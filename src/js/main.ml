@@ -31,7 +31,7 @@ let db_fallback = sync.Sync.db_fallback
 let db_display () : #Dom_html.element Ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
-			|> Option.map (J.to_string ~std:true)
+			|> Option.map (J.to_string)
 			|> Option.default "<no DB>"
 	) in
 

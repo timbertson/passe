@@ -21,6 +21,7 @@ let print_str sub_printer () v = match v with
 	| None -> "None()"
 
 let print = print_str
+let to_string sub = print_str (fun () -> sub) ()
 
 let bind fn opt = match opt with
 	| Some v -> fn v

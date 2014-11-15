@@ -4,6 +4,7 @@ module Client = Cohttp_lwt_unix.Client
 module Response = Cohttp_lwt_unix.Client.Response
 module Header = Cohttp.Header
 module Body = Cohttp_lwt_body
+include Server_common
 
 let log = Logging.get_logger "sync"
 exception Unsupported_protocol
@@ -14,11 +15,8 @@ type response =
 	| Failed of string * (J.json option)
 
 let root_url =
-	(* XXX *)
+	(* XXX take from config *)
 	ref (Uri.of_string "http://localhost:8080/")
-
-let path p = Uri.with_path !root_url ("/" ^ String.concat "/" p)
-
 
 let json_content_type = "application/json"
 
@@ -50,12 +48,13 @@ let request ?content_type ?token ~meth ?data url =
 	);
 
 	token |> Option.may (fun token ->
-		headers := Header.add !headers "Authorization" ("api-token t=" ^ (J.to_string ~std:true token |> Uri.pct_encode))
+		headers := Header.add !headers "Authorization" ("api-token t=" ^ (J.to_string token |> Uri.pct_encode))
 	);
 
 	let body = Option.map Body.of_string data in
 	let headers = !headers in
 
+	let url = canonicalize ~root:!root_url url in
 	log#info "Requesting: %s" (Uri.to_string url);
 	Client.call ~headers ?body meth url
 
@@ -93,7 +92,7 @@ let post_json ?token ~(data:J.json) url =
 		?token
 		~content_type:json_content_type
 		~meth:`POST
-		~data:(J.to_string ~std:true data)
+		~data:(J.to_string data)
 		url in
 	(* lwt frame = Xhr.perform ~post_args:data url in *)
 	handle_json_response frame

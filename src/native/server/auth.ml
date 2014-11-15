@@ -247,7 +247,7 @@ class storage filename =
 							(fun tok -> tok.stored_metadata.Token.expires > now)
 					} in
 					let json = User.to_json user in
-					let line = J.to_single_line_string ~std:true json in
+					let line = J.to_single_line_string json in
 					Lwt_io.write_line output_file line
 				in
 				lwt _mod =

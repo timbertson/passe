@@ -1,6 +1,7 @@
 open Lwt
 module Xhr = XmlHttpRequest
 module J = Json_ext
+include Server_common
 
 let log = Logging.get_logger "sync"
 exception Unsupported_protocol
@@ -16,9 +17,6 @@ let root_url =
 	| Some (Http _ as u)
 	| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
 	| None | Some (File _) -> raise Unsupported_protocol
-
-let path p = Uri.with_path root_url ("/" ^ String.concat "/" p)
-
 
 let json_content_type = "application/json"
 
@@ -46,7 +44,7 @@ let json_payload frame =
 let request ?content_type ?token ~meth ?data url =
 	let (res, w) = Lwt.task () in
 	let req = Xhr.create () in
-	let url = Uri.to_string url in
+	let url = Uri.to_string (canonicalize ~root:root_url url) in
 	req##_open (Js.string meth, Js.string url, Js._true);
 	content_type |> Option.may (fun content_type ->
 		req##setRequestHeader (Js.string "Content-type", Js.string content_type)
@@ -54,7 +52,7 @@ let request ?content_type ?token ~meth ?data url =
 
 	token |> Option.may (fun token ->
 		req##setRequestHeader (Js.string "Authorization",
-			Js.string ("api-token t=" ^ (J.to_string ~std:true token |> Uri.pct_encode)))
+			Js.string ("api-token t=" ^ (J.to_string token |> Uri.pct_encode)))
 	);
 
 	let headers s =
@@ -129,7 +127,7 @@ let post_json ?token ~(data:J.json) url =
 		?token
 		~content_type:json_content_type
 		~meth:"POST"
-		~data:(J.to_string ~std:true data)
+		~data:(J.to_string data)
 		url in
 	(* lwt frame = Xhr.perform ~post_args:data url in *)
 	handle_json_response frame

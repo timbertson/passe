@@ -35,12 +35,12 @@ let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false
 let respond_json ~status ~body () =
 	Server.respond_string
 		~headers:(json_content_type |> no_cache)
-		~status ~body:(J.to_string ~std:true body) ()
+		~status ~body:(J.to_string body) ()
 
 let respond_unauthorized () =
 	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
-let empty_db_json = (Store.empty |> Store.to_json |> J.to_string ~std:true)
+let empty_db_json = (Store.empty |> Store.to_json |> J.to_string)
 
 let maybe_add_header k v headers =
 	match v with
@@ -53,6 +53,8 @@ let handler ~document_root ~data_root ~user_db sock req body =
 		log#warn "setting data_root = %s" newroot;
 		data_root := newroot;
 		user_db := make_db newroot;
+		let dbdir = Filename.concat newroot "user_db" in
+		if not (try Sys.is_directory dbdir with Sys_error _ -> false) then Unix.mkdir dbdir 0o700;
 	) in
 	let data_root = !data_root and user_db = !user_db in
 
@@ -231,7 +233,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									let tmp = (db_path ^ ".tmp") in
 									lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
 										(fun f ->
-											Lwt_io.write f (J.to_string ~std:true updated_core)
+											Lwt_io.write f (J.to_string updated_core)
 										)
 									in
 									lwt () = Lwt_unix.rename tmp db_path in

@@ -55,7 +55,7 @@ class browser_provider =
 
   method get key = self#_get (Js.string key)
 
-  method set key value = local_storage##setItem(Js.string key, Js.string (Json.to_string ~std:true value))
+  method set key value = local_storage##setItem(Js.string key, Js.string (Json.to_string value))
   method delete key = local_storage##removeItem(Js.string key)
   method iter (fn : string -> Json.json -> unit) =
     let len = local_storage##length in

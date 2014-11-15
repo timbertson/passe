@@ -54,7 +54,7 @@ class provider path =
 		);
 		let tmp_path = (path ^ ".tmp") in
 		with_open_out tmp_path (fun f ->
-			Json.pretty_to_channel ~std:true f json_contents
+			Json.pretty_to_channel f json_contents
 		);
 		Unix.rename tmp_path path;
 		current_contents := lazy contents

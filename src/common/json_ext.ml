@@ -1,6 +1,7 @@
 include Yojson.Safe
-let print_chan = Yojson.Safe.pretty_to_channel ~std:false
-let print_str () = pretty_to_string ~std:false
+let to_string = pretty_to_string ~std:true
+let print_chan = Yojson.Safe.pretty_to_channel ~std:true
+let print_str () = to_string
 let print = print_str
 
 let as_string obj = match obj with
@@ -43,7 +44,7 @@ type obj = [
 
 let as_object = function
 	| `Assoc _ as obj -> obj
-	| j -> raise @@ Common.AssertionError ("Expected JSON object, got " ^ (pretty_to_string ~std:true j))
+	| j -> raise @@ Common.AssertionError ("Expected JSON object, got " ^ (to_string j))
 
 let without_field key (obj:obj option) = match obj with
 	| Some (`Assoc pairs) -> (
@@ -58,8 +59,54 @@ let set_field key value (obj:obj option) = match (without_field key obj) with
 	| Some (`Assoc pairs) -> `Assoc ((key, value) :: pairs)
 	| None -> `Assoc [(key, value)]
 
-let to_single_line_string ~std j =
-	let rv = Yojson.Safe.to_string ~std j in
+let to_single_line_string j =
+	let rv = Yojson.Safe.to_string j in
 	if String.contains rv '\n' then failwith "to_json result contains a newline";
 	rv
 
+let rec eq a b = match a, b with
+	| `Assoc aprops, `Assoc bprops -> a = b
+	| `Assoc _, _ -> false
+
+	| `Bool a, `Bool b -> a = b
+	| `Bool _, _ -> false
+
+	| `Float a, `Float b -> a = b
+	| `Float _, _ -> false
+
+	| `Int a, `Int b -> a = b
+	| `Int _, _ -> false
+
+	| `Intlit a, `Intlit b -> a = b
+	| `Intlit _, _ -> false
+
+	| `List a, `List b ->
+			let rec list_eq a b = match (a, b) with
+				| [], [] -> true
+				| a::aa, b::bb -> eq a b && list_eq aa bb
+				| [], _ -> false
+				| _, [] -> false
+			in
+			list_eq a b
+	| `List a, _ -> false
+
+	| `Null, `Null -> true
+	| `Null, _ -> false
+
+	| `String a, `String b -> a = b
+	| `String a, _ -> false
+
+	| `Tuple _, _ -> failwith "tuples not yet supported"
+	| `Variant _, _ -> failwith "variants not yet supported"
+
+let typeof = function
+	| `Assoc _ -> "Object"
+	| `Bool _ -> "Boolean"
+	| `Float _ -> "Float"
+	| `Int _ -> "Int"
+	| `Intlit _ -> "Intlit"
+	| `List _ -> "List"
+	| `Null -> "Null"
+	| `String _ -> "String"
+	| `Tuple _ -> "Tuple"
+	| `Variant _ -> "Variant"
