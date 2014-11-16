@@ -34,6 +34,34 @@ type state = {
 	run_sync: Auth.credentials -> unit Lwt.t;
 }
 
+let sync_db ~token db =
+	let send_db ~full db =
+		let payload = if full then Store.to_json db else `Assoc [
+			("changes", Store.Format.json_of_changes db.Store.changes);
+			("version", `Int Store.(db.core.version));
+		] in
+		Server.post_json ~data:payload ~token db_url
+	in
+
+	lwt response = send_db ~full:false db in
+	match response with
+		| Server.Failed (409, _, json) ->
+			(* server may fail with { conflict:true, stored_version: int, <core: {...}> } *)
+			let server_version = json |> Option.force |> J.mandatory J.int_field "stored_version" in
+			let local_version = Store.(db.core.version) in
+			log#warn "Version conflict: local_version=%d, server_version=%d" local_version server_version;
+			if local_version > server_version then (
+				(* we have a newer version; just re-send the upload with the entire DB and let the server update itself *)
+				send_db ~full:true db
+			) else (
+				(* if versions are equal we shouldn't have got a conflict. If
+				* the server has a newer version than us, the server should have
+				* resolved that internally *)
+				failwith "version conflict reported, but I can't resolve it";
+			)
+		| response -> return response
+
+
 let build config_provider =
 	let field key:Config.child = config_provider.Config.field key in
 	let stored_credentials = field "credentials" in
@@ -115,26 +143,20 @@ let build config_provider =
 						let get_latest_db () =
 							db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
 
-						let sent_changes = (get_latest_db ()).Store.changes in
-
-						lwt response = (match sent_changes with
-							| [] -> Server.get_json ~token db_url
-							| sent_changes ->
-									let data = Store.Format.json_of_changes sent_changes in
-									Server.post_json ~data ~token (db_url)
-						) in
+						let sent_db = get_latest_db () in
+						lwt response = sync_db ~token sent_db in
 						(match response with
 							| Server.OK json ->
 									let new_core = Store.Format.core_of_json json in
 									let new_db = Store.drop_applied_changes
 										~from:(get_latest_db ())
-										~new_core sent_changes in
+										~new_core sent_db.Store.changes in
 									db_storage#save (Store.to_json new_db);
 									set_last_sync_time (Date.time ());
 							| Server.Unauthorized msg ->
 								log#error "authentication failed: %a" (Option.print print_string) msg;
 								set_auth_state (Auth.Failed_login username)
-							| Server.Failed (msg, _) ->
+							| Server.Failed (_, msg, _) ->
 								log#error "sync failed: %s" msg;
 								set_auth_state (Auth.Saved_user credentials)
 						);
@@ -160,14 +182,13 @@ let build config_provider =
 		run_sync=run_sync;
 	}
 
-
 let login ~user ~password t =
 	lwt response = Server.post_json ~data:(Auth.payload ~user ~password) Auth.login_url in
 	let open Server in
 	let result = begin match response with
 		| OK response ->
 			(Auth.Active_user (Auth.get_response_credentials response))
-		| Failed (message, _) ->
+		| Failed (_, message, _) ->
 				log#warn "Failed login: %s" message;
 				Auth.Failed_login user
 		| Unauthorized _ -> assert false
@@ -183,7 +204,7 @@ let validate_credentials t creds =
 				if (response |> J.(mandatory bool_field "valid"))
 				then (Auth.Active_user creds)
 				else (Auth.Failed_login username)
-		| Server.Failed (msg, _) -> failwith msg
+		| Server.Failed (_, msg, _) -> failwith msg
 		| Server.Unauthorized _ -> assert false
 	in
 	t.set_auth_state new_state;

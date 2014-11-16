@@ -8,9 +8,6 @@ let default_fn f opt = match opt with
 	| None -> (f ())
 
 let default (d:'a) (opt:'a option) : 'a = match opt with Some x -> x | None -> d
-let print_minimal sub_printer chan opt v = match v with
-	| Some x -> sub_printer chan x
-	| None -> ()
 
 let print_chan sub_printer chan v = match v with
 	| Some x -> output_string chan "Some("; sub_printer chan x; output_char chan ')'
@@ -40,6 +37,6 @@ let cond test value = if test then Some value else None
 
 let eq eq a b = match (a,b) with
 	| Some a, Some b -> eq a b
-	| Some a, None -> false
-	| None, Some b -> false
+	| Some _, None -> false
+	| None, Some _ -> false
 	| None, None -> true

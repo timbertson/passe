@@ -2,5 +2,7 @@
 set -eu
 t="_build/native/test/main.byte"
 gup -u "$t"
-# sequential is to workaround https://forge.ocamlcore.org/tracker/index.php?func=detail&aid=1363&group_id=162&atid=730
+# we poke the server on test boundaries,
+# which requires the sequential runner
+# to make sure tests don't overlap
 exec "$t" -runner sequential "$@"

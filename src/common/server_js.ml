@@ -6,11 +6,6 @@ include Server_common
 let log = Logging.get_logger "sync"
 exception Unsupported_protocol
 
-type response =
-	| OK of J.json
-	| Unauthorized of string option
-	| Failed of string * (J.json option)
-
 let root_url =
 	let open Url in
 	match Url.Current.get () with
@@ -109,7 +104,7 @@ let handle_json_response frame =
 			)
 		| 200, (Some json as response) -> (
 			match error with
-				| Some error -> Failed (error, response)
+				| Some error -> Failed (200, error, response)
 				| None -> OK json
 			)
 		| code, response -> (
@@ -118,7 +113,7 @@ let handle_json_response frame =
 				| contents -> contents
 			in
 
-			Failed (error |> Option.default contents, response)
+			Failed (code, error |> Option.default contents, response)
 		)
 	)
 

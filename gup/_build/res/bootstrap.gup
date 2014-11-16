@@ -1,5 +1,4 @@
 #!bash -eu
-../../gup/share/install-npm bootstrap@3.2.0
 dest="../../share/node_modules/bootstrap"
-[ -e "$dest" ]
+gup -u "$dest"
 ln -s "$dest" "$1"

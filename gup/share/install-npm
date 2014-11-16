@@ -1,7 +1,0 @@
-#!/usr/bin/bash
-set -eu
-gup -u "${BASH_SOURCE[0]}"
-cd "$(dirname ${BASH_SOURCE[0]})/../../"
-mkdir -p share/node_modules
-cd share
-npm install --production "$@"

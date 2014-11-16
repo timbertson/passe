@@ -78,8 +78,11 @@ let () =
 		in
 		!server |> Option.may kill;
 		server := None;
-		let (_, status) = create_process "rm" [| "rm"; "-rf"; temp_root; |] stdin stdout stderr |> waitpid [] in
-		if status <> (WEXITED 0) then failwith "rm -rf failed"
+
+		if try Unix.getenv "PASSE_TEST_LEAVE_TMP" = "1" with Not_found -> false then (
+			let (_, status) = create_process "rm" [| "rm"; "-rf"; temp_root; |] stdin stdout stderr |> waitpid [] in
+			if status <> (WEXITED 0) then failwith "rm -rf failed"
+		)
 	in
 
 	(* can't use try/catch, because ounit probably calls exit() directly *)

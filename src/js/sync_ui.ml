@@ -84,7 +84,7 @@ let ui state =
 					let () = match response with
 						| OK response ->
 							set_auth_state (Auth.Active_user (Auth.get_response_credentials response))
-						| Failed (message, _) ->
+						| Failed (_, message, _) ->
 								set_error (Some message)
 						| Unauthorized _ -> assert false
 					in
@@ -149,7 +149,7 @@ let ui state =
 					| OK _ | Unauthorized _ ->
 						set_auth_state Client_auth.Anonymous;
 						return_unit;
-					| Failed (msg,_) ->
+					| Failed (_, msg,_) ->
 						log#error "Can't log out: %s" msg;
 						return_unit
 			)
@@ -190,7 +190,7 @@ let ui state =
 						log#warn "failed auth: %a" (Option.print print_string) msg;
 						set_auth_state (Client_auth.Failed_login username);
 						return_unit
-					| Failed (msg, _) ->
+					| Failed (_, msg, _) ->
 						log#warn "unknown failure, assuming connectivity issue: %s" msg;
 						continue := true;
 						set_busy false;

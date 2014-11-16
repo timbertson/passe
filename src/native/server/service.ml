@@ -40,7 +40,9 @@ let respond_json ~status ~body () =
 let respond_unauthorized () =
 	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
-let empty_db_json = (Store.empty |> Store.to_json |> J.to_string)
+let empty_user_db = (Store.empty_core |> Store.Format.json_of_core |> J.to_string)
+
+let string_of_method = function `GET -> "GET" | `POST -> "POST" | _ -> "[UNKNOWN METHOD]"
 
 let maybe_add_header k v headers =
 	match v with
@@ -48,15 +50,28 @@ let maybe_add_header k v headers =
 		| None -> headers
 
 let handler ~document_root ~data_root ~user_db sock req body =
+	let db_path_for data_path user =
+		Filename.concat data_path (Filename.concat "user_db" (user ^ ".json")) in
+
 	(* hooks for unit test controlling *)
 	let override_data_root = (fun newroot ->
 		log#warn "setting data_root = %s" newroot;
 		data_root := newroot;
 		user_db := make_db newroot;
-		let dbdir = Filename.concat newroot "user_db" in
+		let dbdir = Filename.dirname (db_path_for newroot "null") in
 		if not (try Sys.is_directory dbdir with Sys_error _ -> false) then Unix.mkdir dbdir 0o700;
 	) in
+
 	let data_root = !data_root and user_db = !user_db in
+	let db_path_for = db_path_for data_root in
+
+	let wipe_user_db = (fun username ->
+		log#warn "wiping user DB for %s" username;
+		let path = db_path_for username in
+		try
+			Unix.unlink path
+		with Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+	) in
 
 	let _serve_file fullpath =
 		let file_ext = Some (snd (String.rsplit fullpath ".")) (* with String.Invalid_string -> None *) in
@@ -102,10 +117,10 @@ let handler ~document_root ~data_root ~user_db sock req body =
 
 	let serve_static url = _serve_file (Server.resolve_file ~docroot:document_root ~uri:url) in
 	let serve_file relpath = _serve_file (Filename.concat document_root relpath) in
-	let maybe_read_file path  = try_lwt
+	let maybe_read_file path = try_lwt
 			(* XXX streaming? *)
 			lwt contents = Lwt_io.with_file ~mode:Lwt_io.input path (fun f ->
-				Lwt_stream.fold (^) (Lwt_io.read_lines f) ""
+				Lwt_stream.fold (fun chunk acc -> acc ^ "\n" ^ chunk) (Lwt_io.read_lines f) ""
 			) in
 			return (Some contents)
 			with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
@@ -113,14 +128,10 @@ let handler ~document_root ~data_root ~user_db sock req body =
 
 	try_lwt
 		let uri = Cohttp.Request.uri req in
-		let data_path = Filename.concat data_root in
 		let path = Uri.path uri in
-		log#debug "HIT: %s" path;
+		log#debug "%s: %s" (string_of_method (Cohttp.Request.meth req)) path;
 		let path = normpath path in
 
-		let db_path_for user =
-			data_path (Filename.concat "user_db" (user ^ ".json")) in
-	
 		let validate_token token = match token with
 			| Some token ->
 					let token = Auth.Token.of_json token in
@@ -151,7 +162,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									log#debug "serving db for user: %s" username;
 
 									lwt body = maybe_read_file (db_path_for username) in
-									let body = body |> Option.default empty_db_json in
+									let body = body |> Option.default empty_user_db in
 
 									Server.respond_string
 										~headers:(json_content_type |> no_cache)
@@ -179,10 +190,14 @@ let handler ~document_root ~data_root ~user_db sock req body =
 
 				match path with
 					| "ctl" :: path when enable_rc -> begin
+						let ok = respond_json ~status:`OK ~body:(`Assoc []) in
 						match path with
 						| ["init"] ->
 								params |> mandatory J.string_field "data" |> override_data_root;
-								respond_json ~status:`OK ~body:(`Assoc []) ()
+								ok ()
+						| ["reset_db"] ->
+								params |> mandatory J.string_field "user" |> wipe_user_db;
+								ok ()
 						| _ -> Server.respond_not_found ~uri ()
 					end
 					| ["auth"; "signup"] -> (
@@ -213,31 +228,59 @@ let handler ~document_root ~data_root ~user_db sock req body =
 								| None -> respond_unauthorized ()
 								| Some user -> (
 									let username = user.Auth.User.name in
-									let db = params in
 									let db_path = db_path_for username in
 									log#debug "saving db for user: %s" username;
 									(* XXX locking *)
+									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									lwt db_file_contents = maybe_read_file db_path in
 
-									let existing_core = db_file_contents |> Option.map J.from_string in
 									let open Store in
 									let open Store.Format in
-									let existing_core = existing_core
-										|> Option.map (fun json -> Store.Format.core.getter (Some json))
+									let stored_core = db_file_contents |> Option.map J.from_string
+										|> Option.map core_of_json
 										|> Option.default empty_core in
-									let changes = Some (db) |> Store.Format.changes.getter in
-									let updated_core = {
-										version = succ existing_core.version;
-										records = Store.apply_changes existing_core changes;
-									} |> Store.Format.core.setter |> Option.force in
-									let tmp = (db_path ^ ".tmp") in
-									lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
-										(fun f ->
-											Lwt_io.write f (J.to_string updated_core)
-										)
+
+									let process core =
+										let changes = submitted_changes |> changes_of_json in
+										(* version doesn't increment when change list is empty *)
+										let new_version = if changes = [] then core.version else succ core.version in
+										lwt response = if new_version = stored_core.version then (
+											log#debug "not updating db; already at latest version";
+											return (json_of_core core)
+										) else (
+											let updated_core = {
+												version = new_version;
+												records = Store.apply_changes core changes;
+											} |> json_of_core in
+											let tmp = (db_path ^ ".tmp") in
+											lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
+												(fun f ->
+													log#debug "Writing JSON: %s" (J.to_string updated_core);
+													Lwt_io.write f (J.to_string updated_core)
+												)
+											in
+											lwt () = Lwt_unix.rename tmp db_path in
+											return updated_core
+										) in
+										respond_json ~status:`OK ~body:response ()
 									in
-									lwt () = Lwt_unix.rename tmp db_path in
-									respond_json ~status:`OK ~body:updated_core ()
+
+									(* either the client sends {changes, version} or {changes, core={version}} *)
+									let submitted_core = params |> J.get_field "core" in
+									let client_version = submitted_core |> Option.default params |> J.mandatory J.int_field "version" in
+									let existing_version = stored_core.version in
+
+									if existing_version < client_version then (
+										match submitted_core with
+											| None ->
+												(* Uh oh! the client has a newer version than us. Request a full update *)
+												respond_json ~status:`Conflict ~body:(`Assoc ["stored_version", `Int existing_version]) ()
+											| Some core ->
+												(* client sent us the full DB, so just use it *)
+												core |> Store.Format.core_of_json |> process
+									) else (
+										process stored_core
+									)
 								)
 							end
 					| _ -> Server.respond_not_found ~uri ()

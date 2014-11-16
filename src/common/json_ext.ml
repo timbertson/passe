@@ -4,6 +4,13 @@ let print_chan = Yojson.Safe.pretty_to_channel ~std:true
 let print_str () = to_string
 let print = print_str
 
+let to_single_line_string j =
+	let rv = Yojson.Safe.to_string j in
+	if String.contains rv '\n' then failwith "to_json result contains a newline";
+	rv
+
+let print_oneline () = to_single_line_string
+
 let as_string obj = match obj with
 	| `String s -> Some s | _ -> None
 
@@ -21,7 +28,7 @@ let as_bool obj = match obj with
 
 let get_field key obj = match obj with
 	| `Assoc pairs -> (
-			match Common.find_safe (fun (k,v) -> k = key) pairs with
+			match Common.find_safe (fun (k,_v) -> k = key) pairs with
 				| Some (_key, v) -> Some v
 				| _ -> None
 		)
@@ -48,7 +55,7 @@ let as_object = function
 
 let without_field key (obj:obj option) = match obj with
 	| Some (`Assoc pairs) -> (
-			let pairs = (List.filter (fun (k,v) -> k <> key) pairs) in
+			let pairs = (List.filter (fun (k,_v) -> k <> key) pairs) in
 			match pairs with
 				| [] -> None
 				| _ -> Some (`Assoc pairs)
@@ -59,13 +66,19 @@ let set_field key value (obj:obj option) = match (without_field key obj) with
 	| Some (`Assoc pairs) -> `Assoc ((key, value) :: pairs)
 	| None -> `Assoc [(key, value)]
 
-let to_single_line_string j =
-	let rv = Yojson.Safe.to_string j in
-	if String.contains rv '\n' then failwith "to_json result contains a newline";
-	rv
-
-let rec eq a b = match a, b with
-	| `Assoc aprops, `Assoc bprops -> a = b
+let rec eq a b =
+	let rec list_eq eq a b = match (a, b) with
+		| [], [] -> true
+		| a::aa, b::bb -> eq a b && list_eq eq aa bb
+		| [], _ -> false
+		| _, [] -> false
+	in
+	match a, b with
+	| `Assoc a, `Assoc b ->
+			let cmp = (fun (key_a, _) (key_b, _) -> compare key_a key_b) in
+			let a = List.sort cmp a
+			and b = List.sort cmp b in
+			list_eq (fun (key_a, val_a) (key_b, val_b) -> key_a = key_b && eq val_a val_b) a b
 	| `Assoc _, _ -> false
 
 	| `Bool a, `Bool b -> a = b
@@ -88,13 +101,13 @@ let rec eq a b = match a, b with
 				| _, [] -> false
 			in
 			list_eq a b
-	| `List a, _ -> false
+	| `List _, _ -> false
 
 	| `Null, `Null -> true
 	| `Null, _ -> false
 
 	| `String a, `String b -> a = b
-	| `String a, _ -> false
+	| `String _, _ -> false
 
 	| `Tuple _, _ -> failwith "tuples not yet supported"
 	| `Variant _, _ -> failwith "variants not yet supported"

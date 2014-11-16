@@ -118,6 +118,14 @@ module Token = struct
 end
 
 
+exception Conflict
+exception Invalid_username
+
+let valid_username_pattern = Str.regexp "^[a-zA-Z][-_a-zA-Z0-9]+$"
+let validate_username name =
+	if not (Str.string_match valid_username_pattern name 0)
+	then raise Invalid_username
+
 module User = struct
 	let max_tokens = 10
 	type password_info = {
@@ -180,6 +188,7 @@ module User = struct
 		]
 	
 	let create ~username password =
+		validate_username username;
 		lwt salt = random_bytes Password.salt_length in
 		let iterations = Password.iterations in
 		let crypt = fun seed -> Bcrypt.hash ~count:iterations ~seed password
@@ -205,11 +214,12 @@ module User = struct
 
 
 	let _find_token user (token:Token.sensitive_token) : Token.stored_token option =
-		assert (token.sensitive_metadata.Token.user = user.name);
-		let hashed = Token.hash token in
-		try
-			Some (user.active_tokens |> List.find (fun tok -> tok = hashed))
-		with Not_found -> None
+		if (token.sensitive_metadata.Token.user = user.name) then begin
+			let hashed = Token.hash token in
+			try
+				Some (user.active_tokens |> List.find (fun tok -> tok = hashed))
+			with Not_found -> None
+		end else None
 
 	let validate user (token:Token.sensitive_token) : bool =
 		match _find_token user token with
@@ -276,11 +286,15 @@ class storage filename =
 		)
 end
 
-exception Conflict
+type signup_result = [
+	| `Conflict
+	| `Invalid_username
+	| `Created of J.json
+	]
 
 let signup ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
-	let created = ref None in
-	lwt success = storage#modify (fun users write_user ->
+	let result = ref None in
+	lwt created = storage#modify (fun users write_user ->
 		try_lwt
 			lwt () = users |> Lwt_stream.iter_s (fun user ->
 				if user.User.name = username then
@@ -290,13 +304,22 @@ let signup ~(storage:storage) username password : Token.sensitive_token either L
 			) in
 			lwt (new_user, token) = User.create ~username password in
 			lwt () = write_user new_user in
-			created := Some token;
+			result := Some (`Created token);
 			return_true
-		with Conflict -> return_false
+		with e -> begin
+			result := (match e with
+				| Conflict -> Some `Conflict
+				| Invalid_username -> Some `Invalid_username
+				| _ -> None
+			);
+			return_false
+		end
 	) in
-	return (match !created with
-		| Some rv -> `Success rv
-		| None -> `Failed "Account creation failed")
+	return (match !result with
+		| Some (`Created rv) -> `Success rv
+		| Some `Invalid_username -> `Failed "Username must start with a letter and contain only letters, numbers dashes and underscores"
+		| None | Some `Conflict -> `Failed "Account creation failed"
+	)
 
 
 let get_user ~(storage:storage) username : User.t option Lwt.t =

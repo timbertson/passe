@@ -1,5 +1,3 @@
 #!bash -eu
-../../gup/share/install-npm less
-dest="../../share/node_modules/.bin/lessc"
-[ -e "$dest" ]
-ln -s "$dest" "$1"
+gup -u ../../share/node_modules/less
+ln -s "../../share/node_modules/.bin/lessc" "$1"

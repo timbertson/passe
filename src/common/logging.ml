@@ -50,7 +50,7 @@ let logf = fun name lvl ->
 		(* XXX can we prevent formatting from happening? *)
 		Printf.ksprintf ignore
 
-class logger name = object (self)
+class logger name = object (_self)
 	method log   : 'a. ('a, unit, string, unit) format4 -> 'a = logf name Always
 	method error : 'a. ('a, unit, string, unit) format4 -> 'a = logf name Error
 	method warn  : 'a. ('a, unit, string, unit) format4 -> 'a = logf name Warn

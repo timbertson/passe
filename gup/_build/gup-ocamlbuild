@@ -12,7 +12,9 @@ target="${2#*/}"
 
 pushd "../src/$compile_mode" >/dev/null
 gup --always
-ocamlbuild $ocamlbuild_args -build-dir "$BUILDDIR" -use-ocamlfind "$target"
+ocamlbuild $ocamlbuild_args \
+	-cflag -warn-error -cflag +a \
+	-build-dir "$BUILDDIR" -use-ocamlfind "$target"
 popd >/dev/null
 
 touch "$2"

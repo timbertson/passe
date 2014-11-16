@@ -177,16 +177,16 @@ module Format = struct
 	
 	(* internal helpers / combinators *)
 	let flatten_opt v = match v with Some v -> v | None -> `Null
-	let fail expected_type j =
+	let fail_expecting expected_type j =
 		raise_invalid_format "Expected %s, got %a"
 			expected_type
-			J.print_str j
+			J.print_oneline j
 
-	let get_string j = match j with `String s -> s | j -> fail "string" j
+	let get_string j = match j with `String s -> s | j -> fail_expecting "string" j
 	let set_string s = Some (`String s)
 	let json_string s : J.json = `String s
 
-	let get_int j = match j with `Int i -> i | j -> fail "number" j
+	let get_int j = match j with `Int i -> i | j -> fail_expecting "Int" j
 	let set_int i = Some (`Int i)
 
 	let optional fn v = match v with
@@ -272,7 +272,7 @@ module Format = struct
 					pairs
 					|> List.map(parse_record)
 					|> StringMap.from_values ~key:id_of
-			| j -> raise_invalid_format "Expected Object, got %s" (J.typeof j));
+			| j -> fail_expecting "Object" j);
 		setter=(fun r ->
 			let pairs = StringMap.bindings r
 				|> List.map (json_pair_of_record % Tuple.snd)
@@ -282,17 +282,18 @@ module Format = struct
 
 	let core_of_json = (function
 			| (`Assoc fields) -> {
-					version=parse_field version fields;
+					version = parse_field version fields;
 					records = parse_field records fields;
 				}
-			| j -> raise_invalid_format "expected Object, got %s" (J.typeof j)
+			| j -> fail_expecting "Object" j
 	)
+	let json_of_core core = build_assoc [
+		store_field version core.version;
+		store_field records core.records;
+	]
 
 	let core = {key="core";
-		setter = (fun db -> Some (build_assoc [
-			store_field version db.version;
-			store_field records db.records;
-		]));
+		setter = (fun core -> Some (json_of_core core));
 		getter = (function
 			| Some json -> core_of_json json
 			| None -> empty_core
@@ -348,7 +349,7 @@ module Format = struct
 					| `Domain -> `Domain (List.map domain_field_change_of_json changes)
 					| `Alias -> `Alias (List.map alias_field_change_of_json changes)
 			)
-			| _ -> raise_invalid_format "Expected a pair"
+			| j -> fail_expecting "a pair" j
 		);
 		setter = (fun v ->
 			let typ, (changes:field_change list) = match v with
@@ -371,7 +372,7 @@ module Format = struct
 				| `Create -> Create (parse_field create_value pairs)
 				| `Delete -> Delete (parse_field id pairs)
 			)
-		| _ -> raise_invalid_format "Expected list of pairs"
+		| j -> fail_expecting "List of pairs" j
 
 	let json_of_change change =
 		match change with
@@ -394,10 +395,11 @@ module Format = struct
 		setter=(fun changes -> Some (json_of_changes changes));
 		getter=(function
 			| Some (`List l) -> List.map change_of_json l
-			| Some x -> raise_invalid_format "Expected List, got %s" (J.typeof x)
+			| Some j -> fail_expecting "List" j
 			| None -> []
 		)
 	}
+	let changes_of_json c = changes.getter (Some c)
 end
 
 

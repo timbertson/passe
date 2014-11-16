@@ -9,11 +9,6 @@ include Server_common
 let log = Logging.get_logger "sync"
 exception Unsupported_protocol
 
-type response =
-	| OK of J.json
-	| Unauthorized of string option
-	| Failed of string * (J.json option)
-
 let root_url =
 	(* XXX take from config *)
 	ref (Uri.of_string "http://localhost:8080/")
@@ -63,6 +58,7 @@ let handle_json_response (response, body) =
 	log#info "got http response %d" code ;
 
 	lwt content = Body.to_string body in
+	(* log#debug "got http body %s" content; *)
 	lwt payload = json_payload (response, content) in
 	let error = payload |> Option.bind (J.string_field "error") in
 	return (match (code, payload) with
@@ -74,7 +70,7 @@ let handle_json_response (response, body) =
 			)
 		| 200, (Some json as response) -> (
 			match error with
-				| Some error -> Failed (error, response)
+				| Some error -> Failed (200, error, response)
 				| None -> OK json
 			)
 		| code, response -> (
@@ -83,7 +79,7 @@ let handle_json_response (response, body) =
 				| contents -> contents
 			in
 
-			Failed (error |> Option.default contents, response)
+			Failed (code, error |> Option.default contents, response)
 		)
 	)
 

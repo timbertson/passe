@@ -1,3 +1,9 @@
+type response =
+	| OK of Yojson.Safe.json
+	| Unauthorized of string option
+	| Failed of int * string * (Yojson.Safe.json option)
+
+
 type url = [
 	| `Absolute of Uri.t
 	| `Path of string list
