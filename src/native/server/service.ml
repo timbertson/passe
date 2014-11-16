@@ -162,7 +162,10 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									log#debug "serving db for user: %s" username;
 
 									lwt body = maybe_read_file (db_path_for username) in
-									let body = body |> Option.default empty_user_db in
+									let body = body |> Option.default_fn (fun () ->
+										log#warn "no stored db found for %s" username;
+										empty_user_db
+									) in
 
 									Server.respond_string
 										~headers:(json_content_type |> no_cache)

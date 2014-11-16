@@ -1,5 +1,5 @@
 #!/bin/bash
 set -eu
-cd ..
-gup -u client passe-local.xml
-exec 0install run passe-local.xml "$@"
+here="$(dirname "$0")"
+gup -u "$here/../client"
+exec 0install run "$here/../passe-local.xml" "$@"
