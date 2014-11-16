@@ -13,7 +13,7 @@ target="${2#*/}"
 pushd "../src/$compile_mode" >/dev/null
 gup --always
 ocamlbuild $ocamlbuild_args \
-	-cflag -warn-error -cflag +a \
+	-cflag -warn-error -cflag +a-3 \
 	-build-dir "$BUILDDIR" -use-ocamlfind "$target"
 popd >/dev/null
 
