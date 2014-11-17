@@ -26,17 +26,18 @@ let convert_exception : unit Lwt.t -> mechanism_result Lwt.t =
 	fun thread ->
 		try_lwt
 			thread >> return Complete
-		with e -> return (Error e)
+		with
+			| Lwt.Canceled as e -> return (Error e)
+			| e -> (
+				log#error "error in mechanism: %s" (Printexc.to_string e);
+				return (Error e)
+			)
 
 let run_mechanisms : ('a -> unit Lwt.t) list -> 'a -> mechanism_result Lwt.t =
 	fun mechanisms arg -> Lwt.pick (
 		mechanisms |> List.map (fun mech ->
 			try_lwt
-				log#debug "mech start...";
 				lwt () = mech arg in
-				log#debug "mech complete; pausing...";
-				lwt () = pause () in
-				log#debug "WHAT ? pause ended!";
 				pause ()
 			with e -> return (Error e)
 		)
@@ -252,6 +253,11 @@ let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js
 			let widget = ((S.value s):>Dom.node widget_t) in
 			withContent p ~before:placeholder widget (fun new_elem ->
 				elem := new_elem;
+				(* Console.console##log_2( *)
+				(* 	Js.string"got new element: ", *)
+				(* 	elem *)
+				(* ); *)
+
 				(* wait until next update *)
 				Lwt_condition.wait new_widget
 			)

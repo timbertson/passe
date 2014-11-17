@@ -150,7 +150,8 @@ let build config_provider =
 						(match response with
 							| Server.OK json ->
 									let open Store in
-									let version = Store.Format.(version.getter) (Some json) in
+									let version = J.(mandatory int_field "version" json) in
+									log#info "server returned version %d" version;
 									(* if the returned `version` is equal to the db we sent, then
 									 * the server won't bother sending a payload, and we shouldn't bother
 									 * trying to process it *)
