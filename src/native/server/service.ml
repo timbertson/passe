@@ -49,10 +49,10 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-let handler ~document_root ~data_root ~user_db sock req body =
-	let db_path_for data_path user =
-		Filename.concat data_path (Filename.concat "user_db" (user ^ ".json")) in
+let user_db_dir data_root = Filename.concat data_root "user_db"
+let db_path_for data_root user = Filename.concat (user_db_dir data_root) (user ^ ".json")
 
+let handler ~document_root ~data_root ~user_db sock req body =
 	(* hooks for unit test controlling *)
 	let override_data_root = (fun newroot ->
 		log#warn "setting data_root = %s" newroot;
@@ -351,6 +351,9 @@ let main () =
 	log#log " ( Log level: %s )" verbosity_desc;
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
+	let dbdir = user_db_dir data_root in
+	try Unix.mkdir dbdir 0o700
+	with Unix.Unix_error (Unix.EEXIST, _, _) -> ();
 	let host = match (Opt.get host) with
 		| "any" -> "0.0.0.0"
 		| h -> h

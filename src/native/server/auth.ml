@@ -260,12 +260,7 @@ class storage filename =
 					let line = J.to_single_line_string json in
 					Lwt_io.write_line output_file line
 				in
-				lwt _mod =
-					try_lwt
-						self#_read (fun users -> fn users write_user)
-					with Unix.Unix_error (Unix.ENOENT, "open", filename) ->
-						fn (Lwt_stream.of_list []) write_user
-				in
+				lwt _mod = self#_read (fun users -> fn users write_user) in
 				modified := _mod;
 				return_unit
 			) in
@@ -279,11 +274,16 @@ class storage filename =
 
 	(* NOTE: must only be called while holding `lock` *)
 	method private _read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
-		Lwt_io.with_file ~mode:Lwt_io.input filename (fun f ->
-			let lines = Lwt_io.read_lines f in
-			let users = Lwt_stream.map (fun line -> J.from_string line |> User.of_json) lines in
-			fn users
-		)
+		let opened = ref false in
+		try_lwt
+			Lwt_io.with_file ~mode:Lwt_io.input filename (fun f ->
+				opened := true;
+				let lines = Lwt_io.read_lines f in
+				let users = Lwt_stream.map (fun line -> J.from_string line |> User.of_json) lines in
+				fn users
+			)
+		with Unix.Unix_error (Unix.ENOENT, "open", filename) when not !opened ->
+			fn (Lwt_stream.of_list [])
 end
 
 type signup_result = [
