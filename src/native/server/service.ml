@@ -237,6 +237,10 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									lwt db_file_contents = maybe_read_file db_path in
 
+									(* either the client sends {changes, version} or {changes, core={version}} *)
+									let submitted_core = params |> J.get_field "core" in
+									let client_version = submitted_core |> Option.default params |> J.mandatory J.int_field "version" in
+
 									let open Store in
 									let open Store.Format in
 									let stored_core = db_file_contents |> Option.map J.from_string
@@ -247,32 +251,38 @@ let handler ~document_root ~data_root ~user_db sock req body =
 										let changes = submitted_changes |> changes_of_json in
 										(* version doesn't increment when change list is empty *)
 										let new_version = if changes = [] then core.version else succ core.version in
-										lwt response = if new_version = stored_core.version then (
+										(* note that stored_core.version may be < core.version even when there are no changes,
+										 * if the client submitted a core db that's newer than ours *)
+										lwt updated_core = if new_version = stored_core.version then (
 											log#debug "not updating db; already at latest version";
-											return (json_of_core core)
+											return core
 										) else (
 											let updated_core = {
 												version = new_version;
 												records = Store.apply_changes core changes;
-											} |> json_of_core in
+											} in
 											let tmp = (db_path ^ ".tmp") in
 											lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
 												(fun f ->
-													log#debug "Writing JSON: %s" (J.to_string updated_core);
-													Lwt_io.write f (J.to_string updated_core)
+													(* log#debug "Writing JSON: %s" (updated_core |> json_of_core |> J.to_string); *)
+													Lwt_io.write f (updated_core |> json_of_core |> J.to_string)
 												)
 											in
 											lwt () = Lwt_unix.rename tmp db_path in
 											return updated_core
 										) in
-										respond_json ~status:`OK ~body:response ()
+										respond_json ~status:`OK ~body:(
+											if client_version = core.version
+											then
+												(* client has the latest DB, and no changes were made.
+												 * Just respond with the version. *)
+												build_assoc [ store_field version core.version ]
+											else
+												json_of_core core
+										) ()
 									in
 
-									(* either the client sends {changes, version} or {changes, core={version}} *)
-									let submitted_core = params |> J.get_field "core" in
-									let client_version = submitted_core |> Option.default params |> J.mandatory J.int_field "version" in
 									let existing_version = stored_core.version in
-
 									if existing_version < client_version then (
 										match submitted_core with
 											| None ->

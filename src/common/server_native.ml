@@ -9,9 +9,10 @@ include Server_common
 let log = Logging.get_logger "sync"
 exception Unsupported_protocol
 
+let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-gfxmonk.rhcloud.com/"
 let root_url =
 	(* XXX take from config *)
-	ref (Uri.of_string "http://localhost:8080/")
+	ref (Uri.of_string default_root)
 
 let json_content_type = "application/json"
 

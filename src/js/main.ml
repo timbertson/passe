@@ -129,7 +129,6 @@ let password_form () : #Dom_html.element Ui.widget =
 			| Some i -> (max (-1) i) + d
 		in
 		set_suggestion_idx (Some (min desired max_len));
-		log#info "new: %d" (S.value suggestion_idx |> Option.default 9999);
 	in
 	
 	domain_input#class_s "suggestions" (S.map Option.is_some domain_suggestions);
@@ -141,7 +140,6 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt_js_events.blurs   elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
 			Lwt_js_events.keydowns elem (fun e _ ->
-				log#info "keydowns!";
 				Optdef.iter (e##keyIdentifier) (fun ident ->
 					match Js.to_string ident with
 					| "Up" -> select_diff (-1); stop e
@@ -152,7 +150,6 @@ let password_form () : #Dom_html.element Ui.widget =
 				let select_current () =
 					let selected = ref false in
 					S.value suggestion_idx |> Option.may (fun idx ->
-						log#info "%d" idx;
 						S.value _domain_suggestions |> Option.may (fun l ->
 							try (
 								set_domain @@ (List.nth l idx);
@@ -438,9 +435,7 @@ let password_form () : #Dom_html.element Ui.widget =
 			let domain = S.value domain_info in
 			let password = S.value master_password in
 			let password = Password.generate ~domain password in
-			log#warn "generated: %s" password;
 			set_current_password (Some password);
-			(* TODO: highlight generated password *)
 			Lwt.return_unit
 		)
 	);
@@ -449,7 +444,6 @@ let password_form () : #Dom_html.element Ui.widget =
 let show_form (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
-	log#info "Hello container!";
 	let all_content = Ui.div
 		~children:[
 			Ui.child Ui.div ~cls:"container" ~children:[
@@ -463,7 +457,6 @@ let show_form (container:Dom_html.element Js.t) =
 	(* all_content#append @@ db_display (); *)
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
-		log#info "ALL DONE";
 		Lwt.return_unit
 	)
 
@@ -509,14 +502,12 @@ let main () = Lwt.async (fun () ->
 )
 
 let () =
-	log#info "main";
 	let listener = ref null in
 	listener := Opt.return @@ Dom_events.listen
 		window
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->
 			Opt.iter !listener Dom_events.stop_listen;
-			log#info "main";
 			main ();
 			false
 		)

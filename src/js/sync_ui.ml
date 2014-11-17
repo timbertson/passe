@@ -219,8 +219,9 @@ let ui state =
 			while_lwt true do
 				log#info "sync loop running..";
 				Lwt.pick [
-					(* every 2 minutes, attempt a sync *)
-					(Lwt_js.sleep 120.0 >>= run_sync);
+					(* every 30 minutes, attempt a sync *)
+					(Lwt_js.sleep 18000.0 >>= run_sync);
+					(* also sync shortly after making a change to the DB *)
 					(effectful_stream_mechanism (sync_state |> S.map (function
 						| Local_changes _ -> Lwt_js.sleep 2.0 >>= run_sync
 						| _ -> return_unit

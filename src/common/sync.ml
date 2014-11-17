@@ -68,6 +68,8 @@ let build config_provider =
 	let stored_credentials_signal = stored_credentials#signal in
 	let last_sync = field "last_sync" in
 
+	log#debug "using server root: %s" (!Server.root_url |> Uri.to_string);
+
 	let auth_state, set_auth_state =
 		let open Auth in
 		let source = stored_credentials_signal |> S.map ~eq:never_eq
@@ -147,11 +149,19 @@ let build config_provider =
 						lwt response = sync_db ~token sent_db in
 						(match response with
 							| Server.OK json ->
-									let new_core = Store.Format.core_of_json json in
-									let new_db = Store.drop_applied_changes
-										~from:(get_latest_db ())
-										~new_core sent_db.Store.changes in
-									db_storage#save (Store.to_json new_db);
+									let open Store in
+									let version = Store.Format.(version.getter) (Some json) in
+									(* if the returned `version` is equal to the db we sent, then
+									 * the server won't bother sending a payload, and we shouldn't bother
+									 * trying to process it *)
+									if version <> sent_db.core.version then begin
+										assert (version > sent_db.core.version);
+										let new_core = Store.Format.core_of_json json in
+										let new_db = Store.drop_applied_changes
+											~from:(get_latest_db ())
+											~new_core sent_db.Store.changes in
+										db_storage#save (Store.to_json new_db);
+									end;
 									set_last_sync_time (Date.time ());
 							| Server.Unauthorized msg ->
 								log#error "authentication failed: %a" (Option.print print_string) msg;
