@@ -122,6 +122,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 			lwt contents = Lwt_io.with_file ~mode:Lwt_io.input path (fun f ->
 				Lwt_stream.fold (fun chunk acc -> acc ^ "\n" ^ chunk) (Lwt_io.read_lines f) ""
 			) in
+			(* log#trace "read file contents: %s" contents; *)
 			return (Some contents)
 			with Unix.Unix_error (Unix.ENOENT, _, _) -> return None
 		in
@@ -179,7 +180,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 			| `POST -> (
 				lwt params = (
 					lwt json = (Cohttp_lwt_body.to_string body) in
-					log#debug "got body: %s" json;
+					(* log#trace "got body: %s" json; *)
 					return (J.from_string json)
 				) in
 
@@ -253,7 +254,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 										let new_version = if changes = [] then core.version else succ core.version in
 										(* note that stored_core.version may be < core.version even when there are no changes,
 										 * if the client submitted a core db that's newer than ours *)
-										lwt updated_core = if new_version = stored_core.version then (
+										lwt core = if new_version = stored_core.version then (
 											log#debug "not updating db; already at latest version";
 											return core
 										) else (
@@ -264,7 +265,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 											let tmp = (db_path ^ ".tmp") in
 											lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
 												(fun f ->
-													(* log#debug "Writing JSON: %s" (updated_core |> json_of_core |> J.to_string); *)
+													(* log#trace "Writing JSON: %s" (updated_core |> json_of_core |> J.to_string); *)
 													Lwt_io.write f (updated_core |> json_of_core |> J.to_string)
 												)
 											in

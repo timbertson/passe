@@ -56,10 +56,10 @@ let request ?content_type ?token ~meth ?data url =
 
 let handle_json_response (response, body) =
 	let code = Response.status response |> Cohttp.Code.code_of_status in
-	log#info "got http response %d" code ;
+	log#trace "got http response %d" code;
 
 	lwt content = Body.to_string body in
-	(* log#debug "got http body %s" content; *)
+	log#trace "got http body %s" content;
 	lwt payload = json_payload (response, content) in
 	let error = payload |> Option.bind (J.string_field "error") in
 	return (match (code, payload) with

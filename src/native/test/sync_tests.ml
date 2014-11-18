@@ -83,7 +83,9 @@ let (>::) desc test =
 let suite = "sync" >:::
 	let db_path = (Server.path ["db"]) in
 	let save_db db =
-		Sync.sync_db ~token:(Lazy.force user_token) db |> Lwt_main.run |> Response.assert_ok;
+		let response = Sync.sync_db ~token:(Lazy.force user_token) db |> Lwt_main.run in
+		response |> Response.assert_ok;
+		log#debug "got sync response: %a" J.print (response |> Response.ok);
 		get_server_db () |> Store.assert_equal db
 	in
 
@@ -92,11 +94,19 @@ let suite = "sync" >:::
 		Sync.sync_db ~token:(Lazy.force user_token) db
 			|> Lwt_main.run
 			|> Response.ok
-			|> Store.Format.core_of_json
-			|> core_to_db
-			|> Store.assert_equal expected_result;
+			|> (fun json ->
+				let version = json |> J.int_field "version" in
+				match version with
+				| Some v when v = Store.(db.core.version) ->
+					(* version is the same, expected should == db *)
+					db |> Store.assert_equal expected_result;
+				| _ -> json
+					|> Store.Format.core_of_json
+					|> core_to_db
+					|> Store.assert_equal expected_result
+			);
 
-		(* for paranoioa, fetch a fresh version from the server and check that, too *)
+		(* fetch a fresh version from the server and check that, too *)
 		get_server_db () |> Store.assert_equal expected_result
 	in
 
