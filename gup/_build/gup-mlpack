@@ -3,7 +3,7 @@ gup --always
 cd "$(dirname "$2")"
 dir="$(basename "$2" .mlpack | sed -e 's/^passe_//')"
 
-find -H "$dir" -type f -name '*.ml*' | sed -e 's/\.ml.*//' | sort > "$1"
+find -H "$dir" -maxdepth 1 -type f -name '*.ml*' | sed -e 's/\.ml.*//' | sort -u > "$1"
 exclude="$dir.exclude"
 if [ -e "$exclude" ]; then
 	contents="$(cat "$1" | grep -E -v "$(cat "$exclude")")"

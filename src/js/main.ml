@@ -502,6 +502,7 @@ let main () = Lwt.async (fun () ->
 )
 
 let () =
+	log#info "passe %s" (Version.pretty ());
 	let listener = ref null in
 	listener := Opt.return @@ Dom_events.listen
 		window

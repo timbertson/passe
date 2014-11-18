@@ -1,0 +1,18 @@
+#!bash -eu
+set -o pipefail
+commit="$(git rev-parse HEAD 2>/dev/null | cut -c -10 || true)"
+if [ -n "$commit" ]; then
+	commit="Some \"$commit\""
+else
+	commit="None"
+fi
+
+cat >"$1" <<EOF
+let version="$(cat ../../VERSION)"
+let commit = $commit
+let pretty () = match commit with
+	| Some c -> version ^ "-" ^ c
+	| None -> version
+EOF
+
+gup --contents "$1"

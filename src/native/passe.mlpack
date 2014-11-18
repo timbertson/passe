@@ -13,7 +13,9 @@ passe/password
 passe/react_ext
 passe/re_compat
 passe/server
+passe/server_common
 passe/server_native
 passe/store
 passe/sync
 passe/tuple
+passe/version

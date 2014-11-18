@@ -335,6 +335,7 @@ let main () =
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
 	let document_root = StdOpt.str_option ~default:"_build" () in
 	let data_root = StdOpt.str_option ~default:"data" () in
+	let show_version = StdOpt.store_true () in
 	let default_verbosity = Logging.ord Logging.Info in
 	let verbosity = ref 0 in
 	let louder = StdOpt.decr_option ~dest:verbosity () in
@@ -345,6 +346,7 @@ let main () =
 	add options ~long_name:"host" host;
 	add options ~long_name:"root" document_root;
 	add options ~long_name:"data" data_root;
+	add options ~long_name:"version" show_version;
 	add options ~short_name:'v' ~long_name:"verbose" louder;
 	add options ~short_name:'q' ~long_name:"quiet" quieter;
 	let posargs = OptParse.OptParser.parse ~first:1 options Sys.argv in
@@ -352,6 +354,12 @@ let main () =
 		prerr_endline "Too many arguments";
 		exit 1
 	);
+	let log_version (meth:('a, unit, string, unit) format4 -> 'a) =
+		meth "passe version: %s" (Version.pretty ()) in
+	if Opt.get show_version then begin
+		log_version log#log;
+		exit 0
+	end;
 	Logging.current_level := default_verbosity + (!verbosity * Logging.lvl_scale);
 	let verbosity_desc = try Logging.all_levels
 		|> List.find (fun l -> Logging.ord l = !Logging.current_level)
@@ -359,6 +367,7 @@ let main () =
 		with Not_found -> string_of_int !Logging.current_level
 	in
 	log#log " ( Log level: %s )" verbosity_desc;
+	log_version log#debug;
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
 	let dbdir = user_db_dir data_root in

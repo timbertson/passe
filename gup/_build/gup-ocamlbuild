@@ -10,7 +10,10 @@ fi
 BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
 
+gup -u "$here/../../src/common/version.ml"
+
 pushd "../src/$compile_mode" >/dev/null
+gup -u $(cat prebuild.targets)
 gup --always
 ocamlbuild $ocamlbuild_args \
 	-cflag -warn-error -cflag +a-3 \
