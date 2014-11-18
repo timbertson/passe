@@ -66,15 +66,17 @@ end
 
 (* module-wide setup *)
 let (>::) desc test =
+	let initial_writer = !Logging.current_writer in
 	let setup ctx =
-		logf ctx `Info "Wiping user db: %s" test_username;
+		Logging.current_writer := (fun _dest str -> logf ctx `Info "%s" str);
+		log#info "Wiping user db: %s" test_username;
 		post_json
 		~data:(`Assoc ["user", `String test_username])
 		(Server.path ["ctl"; "reset_db"])
 		|> Response.assert_ok;
 		()
 	in
-	let teardown () _ = () in
+	let teardown () _ = Logging.current_writer := initial_writer in
 	desc >:: (fun ctx ->
 		bracket setup teardown ctx;
 		test ctx
