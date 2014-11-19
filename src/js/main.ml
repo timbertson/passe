@@ -96,6 +96,10 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
+	let disable_autocomplete input = input#attr "autocomplete" "off" in
+	disable_autocomplete domain_input;
+	disable_autocomplete password_input;
+
 	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
 	let empty_domain = domain |> S.map (fun d -> d = "") in
 	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
