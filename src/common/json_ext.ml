@@ -123,3 +123,5 @@ let typeof = function
 	| `String _ -> "String"
 	| `Tuple _ -> "Tuple"
 	| `Variant _ -> "Variant"
+
+let empty = `Assoc []

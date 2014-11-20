@@ -156,6 +156,155 @@ let ui state =
 		) ()
 	in
 
+	let account_settings_button username creds = child a
+		~cls:"hover-reveal link settings-button"
+		~attrs:["title", "Settings"]
+		~children:[icon "cog"]
+		~mechanism:(fun elem ->
+			Lwt_js_events.clicks elem (fun evt _ ->
+				Ui.overlay (fun close ->
+					let dialog = div ~cls:"panel panel-default" ~children:[
+						child div ~cls:"panel-heading" ~text:"Account settings" ~children:[
+							child ~cls:"link pull-right" span ~children:[icon "remove"] ~mechanism:(fun elem ->
+								lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+								close ();
+								return_unit
+							) ()
+						] ();
+						child div ~cls:"panel-body" ~children:[
+							child div ~children:[
+								(
+									let error, set_error = S.create None in
+									let error_widget = error
+										|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+											child i ~cls:"glyphicon glyphicon-remove" ();
+										] ())
+										|> Ui.stream in
+									child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+
+										error_widget;
+
+										child div ~cls:"form-group" ~children:[
+											child label ~cls:"col-xs-4 control-label" ~text:"Old password" ();
+											child div ~cls:"col-xs-8" ~children:[
+												child input ~cls:"form-control" ~attrs:["name","old"; "type","password"] ();
+											] ();
+										] ();
+
+										child div ~cls:"form-group" ~children:[
+											child label ~cls:"col-xs-4 control-label" ~text:"New password" ();
+											child div ~cls:"col-xs-8" ~children:[
+												child input ~cls:"form-control" ~attrs:["name","new"; "type","password"] ();
+											] ();
+										] ();
+
+										child div ~cls:"form-group" ~children:[
+											child label ~cls:"col-xs-4 control-label" ~text:"New password (again)" ();
+											child div ~cls:"col-xs-8" ~children:[
+												child input ~cls:"form-control" ~attrs:["name","new2"; "type","password"] ();
+											] ();
+										] ();
+
+										child div ~cls:"row" ~children:[
+											child div ~cls:"col-xs-8 col-sm-offset-4" ~children:[
+												child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Change password")] ();
+											] ();
+										] ();
+									] ~mechanism:(fun form ->
+										Lwt_js_events.submits form (fun event _ ->
+											stop event;
+											let pairs = Form.get_form_contents form in
+											let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
+											let new1 = data |> J.mandatory J.string_field "new"
+											and new2 = data |> J.mandatory J.string_field "new2" in
+											if new1 <> new2 then (
+												set_error (Some "Passwords don't match");
+												return_unit
+											) else (
+												let open Server in
+												match_lwt post_json ~token:creds ~data Client_auth.change_password_url with
+													| OK creds ->
+														Dom_html.window##alert (Js.string "Password changed.");
+														set_auth_state (Auth.Active_user (username, creds));
+														close ();
+														return_unit
+													| Unauthorized msg ->
+														set_error (Some (msg |> Option.default "Unauthorized"));
+														return_unit;
+													| Failed (_, msg,_) ->
+														set_error (Some msg);
+														return_unit
+											)
+										)
+									) ()
+								);
+
+								child hr ();
+
+								let error, set_error = S.create None in
+								let error_widget = error
+									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+										child i ~cls:"glyphicon glyphicon-remove" ();
+									] ())
+									|> Ui.stream in
+								let password, set_password = S.create "" in
+								let password_field = input_of_signal ~update:set_password password in
+								let () = (
+									password_field#attr "type" "password";
+									password_field#attr "class" "form-control";
+								) in
+
+								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+
+									error_widget;
+
+									child div ~cls:"form-group" ~children:[
+										child label ~cls:"col-xs-4 control-label" ~text:"Password" ();
+										child div ~cls:"col-xs-8" ~children:[
+											frag password_field;
+										] ();
+									] ();
+
+									child div ~cls:"row" ~children:[
+										child div ~cls:"col-xs-8 col-sm-offset-4" ~attrs:["style","text-align:right;"] ~children:[
+											child span ~cls:"text-muted" ~text:"Careful now... " ();
+											child input ~cls:"btn btn-danger" ~attrs:[("type","submit"); ("value","Delete account")] ();
+										] ();
+									] ();
+								] ~mechanism:(fun form ->
+									Lwt_js_events.submits form (fun event _ ->
+										stop event;
+										if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
+											set_error None;
+											let open Server in
+											match_lwt post_json
+												~token:creds
+												~data:(`Assoc ["password", `String (S.value password)])
+												Client_auth.delete_user_url
+											with
+												| OK _ ->
+													set_auth_state Auth.Anonymous;
+													close ();
+													return_unit;
+												| Unauthorized msg ->
+													set_error (Some (msg |> Option.default "Unauthorized"));
+													return_unit;
+												| Failed (_, msg,_) ->
+													set_error (Some msg);
+													return_unit
+										end else return_unit
+									)
+								) ();
+							] ()
+						] ();
+					] () in
+					dialog
+				)
+			)
+		) ()
+	in
+
+
 	state.auth_state |> S.map (fun auth ->
 	log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
 
@@ -210,6 +359,7 @@ let ui state =
 			child span ~cls:"user" ~text:username ();
 			logout_button "Log out" creds;
 			child span ~cls:"online" ~children:[
+				account_settings_button username creds;
 				sync_state_widget auth;
 			] ()
 		]

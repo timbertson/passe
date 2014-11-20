@@ -37,6 +37,11 @@ let respond_json ~status ~body () =
 		~headers:(json_content_type |> no_cache)
 		~status ~body:(J.to_string body) ()
 
+let respond_error msg =
+	respond_json ~status:`OK ~body:(`Assoc ["error",`String msg]) ()
+
+let respond_ok () = respond_json ~status:`OK ~body:(J.empty) ()
+
 let respond_unauthorized () =
 	respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
@@ -152,27 +157,30 @@ let handler ~document_root ~data_root ~user_db sock req body =
 			validate_token tok
 		in
 
+		let authorized fn =
+			match_lwt validate_user () with
+				| None -> respond_unauthorized ()
+				| Some u -> fn u
+		in
+
 		match Cohttp.Request.meth req with
 			| `GET -> (
 				match path with
 					| ["db"] ->
-							lwt user = validate_user () in
-							begin match user with
-								| Some user ->
-									let username = user.Auth.User.name in
-									log#debug "serving db for user: %s" username;
+							authorized (fun user ->
+								let username = user.Auth.User.name in
+								log#debug "serving db for user: %s" username;
 
-									lwt body = maybe_read_file (db_path_for username) in
-									let body = body |> Option.default_fn (fun () ->
-										log#warn "no stored db found for %s" username;
-										empty_user_db
-									) in
+								lwt body = maybe_read_file (db_path_for username) in
+								let body = body |> Option.default_fn (fun () ->
+									log#warn "no stored db found for %s" username;
+									empty_user_db
+								) in
 
-									Server.respond_string
-										~headers:(json_content_type |> no_cache)
-										~status:`OK ~body ()
-								| None -> respond_unauthorized ()
-							end
+								Server.respond_string
+									~headers:(json_content_type |> no_cache)
+									~status:`OK ~body ()
+							)
 					| [] -> serve_file "index.html"
 					| ["hold"] -> Lwt.wait () |> Tuple.fst
 					| _ -> serve_static uri
@@ -194,14 +202,13 @@ let handler ~document_root ~data_root ~user_db sock req body =
 
 				match path with
 					| "ctl" :: path when enable_rc -> begin
-						let ok = respond_json ~status:`OK ~body:(`Assoc []) in
 						match path with
 						| ["init"] ->
 								params |> mandatory J.string_field "data" |> override_data_root;
-								ok ()
+								respond_ok ()
 						| ["reset_db"] ->
 								params |> mandatory J.string_field "user" |> wipe_user_db;
-								ok ()
+								respond_ok ()
 						| _ -> Server.respond_not_found ~uri ()
 					end
 					| ["auth"; "signup"] -> (
@@ -226,77 +233,99 @@ let handler ~document_root ~data_root ~user_db sock req body =
 						lwt user = Auth.validate ~storage:user_db token in
 						respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 					)
+					| ["auth"; "change-password"] -> (
+							authorized (fun user ->
+								let old = params |> J.mandatory J.string_field "old" in
+								let new_password = params |> J.mandatory J.string_field "new" in
+								lwt new_token = Auth.change_password ~storage:user_db user old new_password in
+								match new_token with
+									| Some tok ->
+										respond_json ~status:`OK ~body:(tok|> Auth.Token.to_json) ()
+									| None ->
+										respond_error "Failed to update password"
+							)
+						)
+					| ["auth"; "delete"] -> (
+							authorized (fun user ->
+								let username = user.Auth.User.name in
+								let password = params |> J.mandatory J.string_field "password" in
+								(* delete user from DB, and also delete their DB *)
+								lwt deleted = Auth.delete_user ~storage:user_db user password in
+								if deleted then (
+									log#warn "deleted user %s" username;
+									let () = try Unix.unlink (db_path_for username) with Unix.Unix_error(Unix.ENOENT, _, _) -> () in
+									respond_json ~status:`OK ~body:(J.empty) ()
+								) else
+									respond_error "Couldn't delete user (wrong password?)"
+							)
+						)
 					| ["db"] ->
-							lwt user = validate_user () in
-							begin match user with
-								| None -> respond_unauthorized ()
-								| Some user -> (
-									let username = user.Auth.User.name in
-									let db_path = db_path_for username in
-									log#debug "saving db for user: %s" username;
-									(* XXX locking *)
-									let submitted_changes = params |> J.mandatory J.get_field "changes" in
-									lwt db_file_contents = maybe_read_file db_path in
+							authorized (fun user ->
+								let username = user.Auth.User.name in
+								let db_path = db_path_for username in
+								log#debug "saving db for user: %s" username;
+								(* XXX locking *)
+								let submitted_changes = params |> J.mandatory J.get_field "changes" in
+								lwt db_file_contents = maybe_read_file db_path in
 
-									(* either the client sends {changes, version} or {changes, core={version}} *)
-									let submitted_core = params |> J.get_field "core" in
-									let client_version = submitted_core |> Option.default params |> J.mandatory J.int_field "version" in
+								(* either the client sends {changes, version} or {changes, core={version}} *)
+								let submitted_core = params |> J.get_field "core" in
+								let client_version = submitted_core |> Option.default params |> J.mandatory J.int_field "version" in
 
-									let open Store in
-									let open Store.Format in
-									let stored_core = db_file_contents |> Option.map J.from_string
-										|> Option.map core_of_json
-										|> Option.default empty_core in
+								let open Store in
+								let open Store.Format in
+								let stored_core = db_file_contents |> Option.map J.from_string
+									|> Option.map core_of_json
+									|> Option.default empty_core in
 
-									let process core =
-										let changes = submitted_changes |> changes_of_json in
-										(* version doesn't increment when change list is empty *)
-										let new_version = if changes = [] then core.version else succ core.version in
-										(* note that stored_core.version may be < core.version even when there are no changes,
-										 * if the client submitted a core db that's newer than ours *)
-										lwt core = if new_version = stored_core.version then (
-											log#debug "not updating db; already at latest version";
-											return core
-										) else (
-											let updated_core = {
-												version = new_version;
-												records = Store.apply_changes core changes;
-											} in
-											let tmp = (db_path ^ ".tmp") in
-											lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
-												(fun f ->
-													(* log#trace "Writing JSON: %s" (updated_core |> json_of_core |> J.to_string); *)
-													Lwt_io.write f (updated_core |> json_of_core |> J.to_string)
-												)
-											in
-											lwt () = Lwt_unix.rename tmp db_path in
-											return updated_core
-										) in
-										respond_json ~status:`OK ~body:(
-											if client_version = core.version
-											then
-												(* client has the latest DB, and no changes were made.
-												 * Just respond with the version. *)
-												build_assoc [ store_field version core.version ]
-											else
-												json_of_core core
-										) ()
-									in
-
-									let existing_version = stored_core.version in
-									if existing_version < client_version then (
-										match submitted_core with
-											| None ->
-												(* Uh oh! the client has a newer version than us. Request a full update *)
-												respond_json ~status:`Conflict ~body:(`Assoc ["stored_version", `Int existing_version]) ()
-											| Some core ->
-												(* client sent us the full DB, so just use it *)
-												core |> Store.Format.core_of_json |> process
+								let process core =
+									let changes = submitted_changes |> changes_of_json in
+									(* version doesn't increment when change list is empty *)
+									let new_version = if changes = [] then core.version else succ core.version in
+									(* note that stored_core.version may be < core.version even when there are no changes,
+										* if the client submitted a core db that's newer than ours *)
+									lwt core = if new_version = stored_core.version then (
+										log#debug "not updating db; already at latest version";
+										return core
 									) else (
-										process stored_core
-									)
+										let updated_core = {
+											version = new_version;
+											records = Store.apply_changes core changes;
+										} in
+										let tmp = (db_path ^ ".tmp") in
+										lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp
+											(fun f ->
+												(* log#trace "Writing JSON: %s" (updated_core |> json_of_core |> J.to_string); *)
+												Lwt_io.write f (updated_core |> json_of_core |> J.to_string)
+											)
+										in
+										lwt () = Lwt_unix.rename tmp db_path in
+										return updated_core
+									) in
+									respond_json ~status:`OK ~body:(
+										if client_version = core.version
+										then
+											(* client has the latest DB, and no changes were made.
+												* Just respond with the version. *)
+											build_assoc [ store_field version core.version ]
+										else
+											json_of_core core
+									) ()
+								in
+
+								let existing_version = stored_core.version in
+								if existing_version < client_version then (
+									match submitted_core with
+										| None ->
+											(* Uh oh! the client has a newer version than us. Request a full update *)
+											respond_json ~status:`Conflict ~body:(`Assoc ["stored_version", `Int existing_version]) ()
+										| Some core ->
+											(* client sent us the full DB, so just use it *)
+											core |> Store.Format.core_of_json |> process
+								) else (
+									process stored_core
 								)
-							end
+							)
 					| _ -> Server.respond_not_found ~uri ()
 				)
 			| _ ->

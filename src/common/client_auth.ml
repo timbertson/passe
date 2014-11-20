@@ -29,6 +29,9 @@ let login_url = Server.path ["auth"; "login"]
 let signup_url = Server.path ["auth"; "signup"]
 let logout_url = Server.path ["auth"; "logout"]
 let token_validate_url = Server.path ["auth"; "validate"]
+let logout_url = Server.path ["auth"; "logout"]
+let change_password_url = Server.path ["auth"; "change-password"]
+let delete_user_url = Server.path ["auth"; "delete"]
 
 let parse_credentials (token:J.json) : credentials =
 	let user = token

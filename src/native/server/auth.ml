@@ -212,7 +212,6 @@ module User = struct
 		in
 		return (user, token)
 
-
 	let _find_token user (token:Token.sensitive_token) : Token.stored_token option =
 		if (token.sensitive_metadata.Token.user = user.name) then begin
 			let hashed = Token.hash token in
@@ -387,4 +386,48 @@ let logout ~(storage:storage) token : unit Lwt.t =
 			with Invalid_credentials -> return_false
 		)
 	)
+
+let change_password ~(storage:storage) user old new_password : Token.sensitive_token option Lwt.t =
+	match_lwt User.gen_token user old with
+		| None -> return None
+		| Some _ ->
+			let ret = ref None in
+			lwt () = storage#modify (fun users write_user ->
+				lwt () = users |> Lwt_stream.iter_s (fun db_user ->
+					lwt db_user = if db_user.User.name = user.User.name then (
+						lwt new_user,token = User.create ~username:db_user.User.name new_password in
+						ret := Some token;
+						let open User in
+
+						(* fields explicitly copied because we need to not overwrite any
+						* future properties we add *)
+						return {
+							name=db_user.name;
+							password=new_user.password;
+							active_tokens=new_user.active_tokens;
+						}
+					) else return db_user in
+					write_user db_user
+				) in
+				return (!ret |> Option.is_some)
+			) in
+			return !ret
+
+let delete_user ~(storage:storage) user password : bool Lwt.t =
+	match_lwt User.gen_token user password with
+		| None -> return false
+		| Some _ ->
+			let ret = ref false in
+			lwt () = storage#modify (fun users write_user ->
+				lwt () = users |> Lwt_stream.iter_s (fun db_user ->
+					if db_user.User.name = user.User.name then (
+						ret := true;
+						return_unit
+					) else
+						write_user db_user
+				) in
+				return !ret
+			) in
+			return !ret
+
 

@@ -208,6 +208,7 @@ let a = wrap Dom_html.createA
 let p = wrap Dom_html.createP
 let strong = wrap Dom_html.createStrong
 let h1 = wrap Dom_html.createH1
+let hr = wrap Dom_html.createHr
 let h2 = wrap Dom_html.createH2
 let h3 = wrap Dom_html.createH3
 let ul = wrap Dom_html.createUl
@@ -390,3 +391,15 @@ let optional_signal_content : ('a -> #Dom.node #widget_t) -> 'a option React.sig
 		)
 
 let icon name = child i ~cls:("glyphicon glyphicon-"^name) ()
+
+let overlay content =
+	let hold, wake = Lwt.wait () in
+	let wake = Lwt.wakeup wake in
+	let main = content wake in
+	let overlay = div ~cls:"overlay" ~children:[
+		frag main
+	] () in
+	withContent Dom_html.document##documentElement overlay (fun _ ->
+		(* todo: listen for `esc` *)
+		hold
+	)
