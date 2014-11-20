@@ -69,7 +69,76 @@ let footer () =
 				] ();
 				child div ~cls:"col col-xs-6" ~children:[
 					child ul ~cls:"list-unstyled" ~children:[
-						child li ~text:"About this site" ();
+						child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
+							Lwt_js_events.clicks elem (fun e _ ->
+								Ui.stop e;
+								Ui.overlay (fun close ->
+									div ~cls:"panel panel-default" ~children:[
+										child div ~cls:"panel-heading" ~children:[
+											child button ~cls:"link pull-right close" ~children:[icon "remove"] ~mechanism:(fun elem ->
+												lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+												close ();
+												return_unit
+											) ();
+											child h3 ~cls:"panel-title" ~text:"About Passé" ();
+										] ();
+										child div ~cls:"panel-body" ~children:[
+											child p ~children:[
+												frag @@ text "Passé is a ";
+												child a ~attrs:["href","http://www.supergenpass.com/"] ~text:"supergenpass" ();
+												frag @@ text " compatible password tool."
+											] ();
+											child p ~text:"
+												It allows you to store a central, non-sensitive database of the domains you visit
+												and the particular settings associated with each one.
+											" ();
+
+											child p ~text:"
+												If your database were to be hacked, the attacker would have access to:
+											" ();
+
+											child ul ~children:[
+												child li ~text:"the list of your saved domains" ();
+												child li ~text:"the length, suffix and hints associated with each domain" ();
+											]();
+
+											child p ~children:[
+												frag @@ text "That would be bad, but ";
+												child strong ~text:"your master password" ();
+												frag @@ text " and ";
+												child strong ~text:"any individual site's generated password" ();
+												frag @@ text " are never sent to the server, and are never stored anywhere."
+											] ();
+
+											child h3 ~text:"Is my Passé database encrypted?" ();
+											child p ~text:"
+												Nope. If you use the command-line tool, it'll be stored as a plain file.
+												If you use your browser, it's saved in local storage (unless you use the \"incognito\" checkbox).
+												You should make your hints as obtuse as possible; assume they could someday be read by someone else.
+											" ();
+
+											child h3 ~text:"What's the suffix for?" ();
+											child p ~text:"
+												Sites get hacked with alarming frequency. If your generated password is compromised you may want to add (or change) a suffix for the affected domain.
+												Passé will append the stored suffix to your master password when generating the site-specific password, giving you a completely
+												new site password without having to change your master password.
+											" ();
+
+											child p ~text:"
+												Of course, if you suspect your master password could have been compromised (e.g your site-specific password
+												was divulged, and an attacker tries to brute-force your master passsword with the knowledge that you
+												might be using SuperGenPass), you should definitely change your master password rather than simply changing the suffix.
+											" ();
+
+											child h3 ~text:"I don't trust you!" ();
+											child p ~text:"
+												Good! Code will be publically available soon...
+											" ();
+										] ();
+									] ()
+								)
+							)
+						) ();
 					] ()
 				] ();
 			] ()

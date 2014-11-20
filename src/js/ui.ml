@@ -211,6 +211,7 @@ let h1 = wrap Dom_html.createH1
 let hr = wrap Dom_html.createHr
 let h2 = wrap Dom_html.createH2
 let h3 = wrap Dom_html.createH3
+let h4 = wrap Dom_html.createH4
 let ul = wrap Dom_html.createUl
 let li = wrap Dom_html.createLi
 let input = wrap Dom_html.createInput
