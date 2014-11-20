@@ -165,6 +165,25 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
+	let clear_btn () =
+		child span ~cls:"link text-muted"
+			~attrs:["style","position:absolute;right:20px;top:8px;opacity:0.3;"]
+			~children:[icon "remove"]
+			~mechanism:(fun elem ->
+				Lwt_js_events.clicks elem (fun event _ ->
+					let input = elem##nextSibling in
+					let input = Opt.bind input Dom.CoerceTo.element in
+					let input = Opt.map input Dom_html.element in
+					let input = Opt.bind input Dom_html.CoerceTo.input in
+					let input = Opt.get input (fun () -> failwith "can't find input to clear") in
+					set_current_password None;
+					input##value <- Js.string"";
+					input##focus ();
+					return_unit
+				)
+			) ();
+	in
+
 	let disable_autocomplete input = input#attr "autocomplete" "off" in
 	disable_autocomplete domain_input;
 	disable_autocomplete password_input;
@@ -454,6 +473,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				child div ~cls:"form-group" ~children:[
 					child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
 					child div ~cls:"col-xs-10" ~children:[
+						clear_btn ();
 						frag domain_input;
 						Ui.stream (
 							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
@@ -464,6 +484,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				child div ~cls:"form-group" ~children:[
 					child label ~cls:"col-xs-2 control-label" ~text:"Password" ();
 					child div ~cls:"col-xs-10" ~children:[
+						clear_btn ();
 						frag password_input;
 					] ();
 				] ();

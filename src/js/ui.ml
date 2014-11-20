@@ -206,6 +206,7 @@ let form = wrap Dom_html.createForm
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
 let p = wrap Dom_html.createP
+let em = wrap Dom_html.createEm
 let strong = wrap Dom_html.createStrong
 let h1 = wrap Dom_html.createH1
 let hr = wrap Dom_html.createHr
