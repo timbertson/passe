@@ -85,16 +85,46 @@ let footer () =
 										child div ~cls:"panel-body" ~children:[
 											child p ~children:[
 												frag @@ text "Passé is a ";
-												child a ~attrs:["href","http://www.supergenpass.com/"] ~text:"supergenpass" ();
-												frag @@ text " compatible password tool."
+												child a ~attrs:["href","http://www.supergenpass.com/"] ~text:"SuperGenPass" ();
+												frag @@ text " compatible password tool.
+												It uses one-way cryptographic hashing to generate a unique (but repeatable)
+												password for every site you visit online,
+												while you only need to remember one \"master\" password.
+											";
 											] ();
+
+											child p ~children:[
+												frag @@ text "Unlike most other password solutions, SuperGenPass is ";
+												child em ~text:"completely stateless" ();
+												frag @@ text ". That means:"
+											] ();
+
+											child ul ~children:[
+												child li ~text:"Your passwords are never stored anywhere - there is no secret database to steal!" ();
+												child li ~text:"It's 100% portable - you can use SuperGenPass anywhere, you don't need to bring anything with you." ();
+											]();
+
+											child h3 ~text:"So why not just use SuperGenPass?" ();
 											child p ~text:"
-												It allows you to store a central, non-sensitive database of the domains you visit
-												and the particular settings associated with each one.
+												In addition to the core SuperGenPass functionality, Passé allows you to
+												store a central, non-sensitive database of the domains you visit
+												and the particular settings associated with each one. This is strictly a
+												convenience; you can still use any other SuperGenPass implementation in
+												a pinch to generate a compatible password.
 											" ();
 
+											child p ~children:[
+												frag @@ text "Having said that, it's a very ";
+												child em ~text:"nice" ();
+												frag @@ text " convenience. It means you can change certain settings and store hints per-domain.
+													Like perhaps which master password a given site uses, if you have multiple or are in the process of changing your master password.
+													It also helps you out when a site gets hacked - you can store a non-sensitive \"suffix\" which alters your
+													generated password without having to chang your master password."
+											] ();
+
+											child h3 ~text:"But you're storing my data online! Is that safe?" ();
 											child p ~text:"
-												If your database were to be hacked, the attacker would have access to:
+												If your stored data were to be hacked, the attacker would have access to:
 											" ();
 
 											child ul ~children:[
@@ -107,7 +137,10 @@ let footer () =
 												child strong ~text:"your master password" ();
 												frag @@ text " and ";
 												child strong ~text:"any individual site's generated password" ();
-												frag @@ text " are never sent to the server, and are never stored anywhere."
+												frag @@ text " are never sent to the server, and are never stored anywhere.
+												If you're not happy with that, you should just use SuperGenPass. Personally, I'm willing
+												to trade that minor risk for the convenience offered by Passé.
+												"
 											] ();
 
 											child h3 ~text:"Is my Passé database encrypted?" ();
@@ -128,6 +161,24 @@ let footer () =
 												Of course, if you suspect your master password could have been compromised (e.g your site-specific password
 												was divulged, and an attacker tries to brute-force your master passsword with the knowledge that you
 												might be using SuperGenPass), you should definitely change your master password rather than simply changing the suffix.
+											" ();
+
+											child h3 ~text:"Why is it called Passé?" ();
+											child p ~text:"
+												Well, the idea of using the same password (or a few passwords) for
+												everything online is pretty much broken and outdated.
+											" ();
+
+											child p ~text:"
+												And yet there doesn't seem to be a clear way out of this mess.
+												Passé doesn't try to change the internet, it just acts as a
+												smart layer between you and your passwords.
+											" ();
+
+											child p ~text:"
+												Also, Passé shares a lot of letters with \"pass\" / \"password\".
+												It turns out a lot of these sorts of names are already taken, but nobody
+												else is scrambling for the self-deprecating ones :-)
 											" ();
 
 											child h3 ~text:"I don't trust you!" ();
