@@ -7,4 +7,4 @@ args=""
 if [ "$build_type" != "dev" ]; then
 	args="$args --clean-css"
 fi
-../lessc "$args" "$input" "$1"
+../lessc $args "$input" "$1"

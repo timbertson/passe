@@ -28,30 +28,31 @@ def volume(path, dest=None):
 def ro(path, dest=None):
 	return volume(path, dest) + ':ro'
 
-dirs = os.listdir(root)
 cmd = ['docker', 'run', '--user', 'app']
-for dir in dirs:
+
+for dir in os.listdir(root):
 	path=os.path.join(root, dir)
 	if not os.path.isdir(path): continue
 	if dir.startswith('_'): continue
 	cmd.append(volume(path))
 
-if not os.path.exists(os.path.join(here, '_build')):
-	os.makedirs(os.path.join(here, '_build'))
-cmd.append(volume(
-	os.path.join(here, '_build'),
-	os.path.join(root, '_build')))
+cmd.append(volume(os.path.join(root, 'VERSION')))
+
+builddir = os.path.join(here, 'build')
+container_builddir = os.path.join(root, '_build.prod')
+if not os.path.exists(builddir):
+	os.makedirs(builddir)
+cmd.append(volume(builddir, container_builddir))
+
+# HACK: shouldn't be required (weird edge case in `gup`)
+cmd.append(volume(builddir, os.path.join(root, '_build')))
 
 if IS_GUP:
 	cmd.extend([
 		tagname,
 		'opam', 'config', 'exec', '--',
-		# 'bash',
-		# '-euxc',
-		# 'eval `opam config env`; cd "' + root + '"; tools/gup _build/native/bin/server.native' +
-		# ' '.join(
 		os.path.join(root, 'tools/bin/gup'),
-		os.path.join(root, '_build/native/bin/server.native'),
+		os.path.join(container_builddir, 'native/bin/server.native'),
 	])
 else:
 	cmd.extend([

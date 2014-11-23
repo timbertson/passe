@@ -1,3 +1,2 @@
 #!bash -eu
-gup -u res \
-	_build/{index.html,js/main.js,index.appcache}
+gup -u _build/www

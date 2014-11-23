@@ -1,7 +1,8 @@
 #!bash -eu
 gup --always
+gup -u ../_build.prod/www
 rsync -r --copy-links --delete --delete-excluded --prune-empty-dirs \
-	../_build/ "$2" \
+	../_build.prod/ "$2" \
 	--exclude='native/' \
 	--exclude='res/lessc' \
 	--exclude='*/docs/' \
