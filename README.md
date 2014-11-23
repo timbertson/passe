@@ -1,7 +1,7 @@
 # Passé
 
-There is a public instance running at [http://passe-gfxmonk.rhcloud.com/]()).
-I make no guarantees about its uptime / stability though.
+There is a public instance running at [http://passe-gfxmonk.rhcloud.com/](),
+but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
 
 ----
