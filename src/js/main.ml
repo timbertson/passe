@@ -58,44 +58,42 @@ let footer () =
 	incognito_container#class_s "selected" incognito;
 
 	div ~cls:"row" ~children:[
-		child div ~cls:"col col-sm-7 col-sm-offset-0" ~children:[
-			child div ~cls:"row" ~children:[
-				child div ~cls:"col col-xs-6" ~children:[
-					child ul ~cls:"list-unstyled" ~children:[
-						child li ~children:[
-							frag incognito_container;
-						] ();
-					] ()
+		child div ~cls:"col col-xs-6" ~children:[
+			child ul ~cls:"list-unstyled" ~children:[
+				child li ~children:[
+					frag incognito_container;
 				] ();
-				child div ~cls:"col col-xs-6" ~children:[
-					child ul ~cls:"list-unstyled" ~children:[
-						child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
-							Lwt_js_events.clicks elem (fun e _ ->
-								Ui.stop e;
-								Ui.overlay (fun close ->
-									div ~cls:"panel panel-default" ~children:[
-										child div ~cls:"panel-heading" ~children:[
-											child button ~cls:"link pull-right close" ~children:[icon "remove"] ~mechanism:(fun elem ->
-												lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
-												close ();
-												return_unit
-											) ();
-											child h3 ~cls:"panel-title" ~text:"About Passé" ();
-										] ();
-										child div ~cls:"panel-body" ~children:[
-											child div ~mechanism:(fun elem ->
-												elem##innerHTML <- Js.string About.aboutHtml;
-												return_unit
-											) ();
-										] ();
-									] ()
-								)
-							)
-						) ();
-					] ()
-				] ();
+			] ();
+		] ();
+		child div ~cls:"col col-xs-6 text-right" ~children:[
+			child ul ~cls:"list-unstyled" ~children:[
+				child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
+					Lwt_js_events.clicks elem (fun e _ ->
+						Ui.stop e;
+						Ui.overlay (fun close ->
+							div ~cls:"panel panel-default" ~children:[
+								child div ~cls:"panel-heading" ~children:[
+									child button ~cls:"link pull-right close" ~children:[icon "remove"] ~mechanism:(fun elem ->
+										lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+										close ();
+										return_unit
+									) ();
+									child h3 ~cls:"panel-title" ~text:"About Passé" ();
+								] ();
+								child div ~cls:"panel-body" ~children:[
+									child div ~mechanism:(fun elem ->
+										elem##innerHTML <- Js.string (
+											About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
+										);
+										return_unit
+									) ();
+								] ();
+							] ()
+						)
+					)
+				) ();
 			] ()
-		] ()
+		] ();
 	] ()
 
 let password_form () : #Dom_html.element Ui.widget =
