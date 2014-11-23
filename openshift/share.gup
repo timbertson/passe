@@ -1,0 +1,14 @@
+#!bash -eu
+gup --always
+rsync -r --copy-links --delete --delete-excluded --prune-empty-dirs \
+	../_build/ "$2" \
+	--exclude='native/' \
+	--exclude='res/lessc' \
+	--exclude='*/docs/' \
+	--exclude='*/bin/client.*' \
+	--exclude='*/.gup' \
+	--exclude='*/bootstrap/' \
+	--exclude='oUnit-*' \
+	--exclude='*/test*' \
+	;
+touch "$2"

@@ -1,0 +1,9 @@
+*.ml*
+*.byte
+*.o
+*.where
+myocamlbuild
+*.cm*
+_log
+_digests
+/image

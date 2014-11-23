@@ -1,0 +1,67 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import os,sys,subprocess
+
+IS_GUP = 'GUP_TARGET' in os.environ
+
+def run(*a, **k):
+	try:
+		subprocess.check_call(*a, **k)
+	except subprocess.CalledProcessError as e:
+		print(e, file=sys.stderr)
+		sys.exit(1)
+
+if IS_GUP:
+	run(['gup', '--always'])
+	run(['gup', '-u', 'image'])
+tagname = 'passe-centos'
+# run(['docker','build', '-t', tagname, 'docker/'])
+here = os.path.abspath(os.path.dirname(__file__))
+root = os.path.dirname(here)
+
+# mount my _build alongside root sources, so we don't get any intermediate
+# results from working _build dir
+
+def volume(path, dest=None):
+	return '--volume=%s:%s' % (path,dest or path)
+
+def ro(path, dest=None):
+	return volume(path, dest) + ':ro'
+
+dirs = os.listdir(root)
+cmd = ['docker', 'run', '--user', 'app']
+for dir in dirs:
+	path=os.path.join(root, dir)
+	if not os.path.isdir(path): continue
+	if dir.startswith('_'): continue
+	cmd.append(volume(path))
+
+if not os.path.exists(os.path.join(here, '_build')):
+	os.makedirs(os.path.join(here, '_build'))
+cmd.append(volume(
+	os.path.join(here, '_build'),
+	os.path.join(root, '_build')))
+
+if IS_GUP:
+	cmd.extend([
+		tagname,
+		'opam', 'config', 'exec', '--',
+		# 'bash',
+		# '-euxc',
+		# 'eval `opam config env`; cd "' + root + '"; tools/gup _build/native/bin/server.native' +
+		# ' '.join(
+		os.path.join(root, 'tools/bin/gup'),
+		os.path.join(root, '_build/native/bin/server.native'),
+	])
+else:
+	cmd.extend([
+		'-it',
+		tagname,
+		'bash', '-il'
+	])
+print("Running: " + ' '.join(cmd) + '\n\n')
+run(cmd)
+
+if IS_GUP:
+	_,target = sys.argv[1:]
+	os.utime(target, None)

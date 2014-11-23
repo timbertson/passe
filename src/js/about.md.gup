@@ -1,0 +1,6 @@
+#!bash -eu
+
+gup -u ../../README.md
+sed -e '0,/<!-- about/d' ../../README.md | \
+	sed -e '/<!-- \/about.*/,$d' > "$1"
+gup --contents "$1"

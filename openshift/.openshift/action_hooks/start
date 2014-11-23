@@ -1,0 +1,25 @@
+#!/bin/bash
+set -eu
+source "$(dirname "$0")/base.sh"
+
+# run the latest stop script (it's idempotent, and openshift runs the _old_ version on deploy):
+echo " *** Ensuring app is stopped..."
+"$(dirname "$0")/stop"
+
+echo "*** Starting app ..."
+{ nohup setsid bash -eu <<'EOF'
+	echo -e "\n---------------------------------\n*** Start: $(date) - PID $$"
+	echo $$ > $PID_PATH
+	set -x
+	exec $OPENSHIFT_REPO_DIR/bin/server --port $SERVER_PORT --host $OPENSHIFT_DIY_IP --root $OPENSHIFT_REPO_DIR/share --data $OPENSHIFT_DATA_DIR
+EOF
+} |& /usr/bin/logshifter -tag sgp &
+
+echo "*** Waiting for app startup ..."
+sleep 2
+pid="$(get_pid)"
+if ! is_running "$pid"; then
+	echo -e "*** Process failed! Recent logs:\n\n"
+	tail -n20 "$LOG_FILE" | sed -e 's/^/  # /'
+	exit 1
+fi

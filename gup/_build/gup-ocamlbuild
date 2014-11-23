@@ -10,7 +10,9 @@ fi
 BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
 
-gup -u "$here/../../src/common/version.ml"
+pushd "$here/../../src/common/" > /dev/null
+gup -u $(cat prebuild.targets)
+popd > /dev/null
 
 pushd "../src/$compile_mode" >/dev/null
 gup -u $(cat prebuild.targets)

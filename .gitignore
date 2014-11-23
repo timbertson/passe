@@ -6,3 +6,8 @@
 /Gupfile
 /*-local.xml
 /src/common/version.ml
+/src/common/domain_list.ml
+/src/js/about.md
+/src/js/about.ml
+/openshift/_build
+/openshift/share
