@@ -1,6 +1,6 @@
 # Passé
 
-There is a public instance running at [http://passe-gfxmonk.rhcloud.com/](),
+There is a public instance running at [https://passe-gfxmonk.rhcloud.com/](https://passe-gfxmonk.rhcloud.com/),
 but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
 
@@ -68,14 +68,15 @@ might be using SuperGenPass), you should definitely change your master password 
 
 Well, the idea of using the same password (or a few passwords) for
 everything online is pretty much broken and outdated.
-
 And yet there doesn't seem to be a clear way out of this mess.
 Passé doesn't try to change the internet, it just acts as a
 smart layer between you and your passwords.
 
+<small>
 Also, Passé shares a lot of letters with "pass" / "password".
 It turns out a lot of these sorts of names are already taken, but nobody
 else is scrambling for the self-deprecating ones :-)
+</small>
 
 ### I don't trust you!
 
