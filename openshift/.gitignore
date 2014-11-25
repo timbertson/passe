@@ -7,3 +7,5 @@ myocamlbuild
 _log
 _digests
 /image
+/build
+!/build/native/bin/server.native

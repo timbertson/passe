@@ -1,4 +1,4 @@
 #!bash -eu
-dest="../../share/node_modules/bootstrap"
+dest="../../node_modules/bootstrap"
 gup -u "$dest"
 ln -s "$dest" "$1"
