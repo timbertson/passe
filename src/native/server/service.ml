@@ -181,7 +181,16 @@ let handler ~document_root ~data_root ~user_db sock req body =
 									~headers:(json_content_type |> no_cache)
 									~status:`OK ~body ()
 							)
-					| [] -> serve_file "index.html"
+					| [] ->
+						let h = (Cohttp.Request.headers req) in
+						(* redirect http -> https on openshift *)
+						begin match (Header.get h "host", Header.get h "x-forwarded-proto") with
+							| (Some host, Some "http") when String.ends_with host ".rhcloud.com" ->
+								let dest = Uri.with_scheme uri (Some "https") in
+								Server.respond_redirect dest ()
+							| _ ->
+								serve_file "index.html"
+						end
 					| ["hold"] -> Lwt.wait () |> Tuple.fst
 					| _ -> serve_static uri
 				)
