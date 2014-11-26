@@ -70,7 +70,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () =
 	frame#add (title_row);
 
 	let e_domain = add_field ~label:"Domain: " domain.domain in
-	let e_hint = add_field   ~label:"Hint:   " (domain.hint |> Option.default "") in
+	let e_note = add_field   ~label:"Note:   " (domain.note |> Option.default "") in
 	let e_length = add_field ~label:"Length: " (string_of_int domain.length) in
 	let e_suffix = add_field ~label:"Suffix: " (domain.suffix |> Option.default "") in
 	frame#add (new LTerm_widget.hbox);
@@ -100,7 +100,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () =
 			try
 				edited := Some (Store.({
 					domain = e_domain#text;
-					hint = Option.non_empty ~zero:"" e_hint#text;
+					note = Option.non_empty ~zero:"" e_note#text;
 					suffix = Option.non_empty ~zero:"" e_suffix#text;
 					length = int_of_string e_length#text;
 				}));
@@ -287,7 +287,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 				| Some domain ->
 						log#log " - Length: %d" domain.length;
 						domain.suffix |> Option.may (log#log " - Suffix: %s");
-						domain.hint |> Option.may (log#log " - Hint: %s");
+						domain.note |> Option.may (log#log " - Note: %s");
 						domain
 			in
 

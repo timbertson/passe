@@ -26,7 +26,7 @@ and the particular settings associated with each one. This is strictly a
 convenience; you can still use any other SuperGenPass implementation in
 a pinch to generate a compatible password (since they all use the same algorithm).
 
-Having said that, it's a very _nice_ convenience. It means you can change certain settings and store hints per-domain.
+Having said that, it's a very _nice_ convenience. It means you can change certain settings and store notes per-domain.
 Like perhaps which master password a given site uses, if you have multiple or are in the process of changing your master password.
 It also helps you out when a site gets hacked - you can store a non-sensitive "suffix" which alters your
 generated password without having to chang your master password."
@@ -36,7 +36,7 @@ generated password without having to chang your master password."
 If your stored data were to be hacked, the attacker would have access to:
 
  - the list of your saved domains
- - the length, suffix and hints associated with each domain
+ - the length, suffix and note associated with each domain
 
 That would be bad, but _your master password_ and
 _any individual site's generated password_ are never sent to the server, and are never stored anywhere.
@@ -47,7 +47,7 @@ to trade that minor risk for the convenience offered by Passé.
 
 Nope. If you use the command-line tool, it'll be stored as a plain file.
 If you use your browser, it's saved in local storage (unless you use the "incognito" checkbox).
-You should make your hints as obtuse as possible; assume they could someday be read by someone else.
+If you use notes to remind you _which_ master password you've used for a given site, you should make these as obtuse as possible; assume they could someday be read by someone else.
 
 ### Do I need to be online?
 

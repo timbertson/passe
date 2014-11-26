@@ -131,7 +131,7 @@ let suite = "sync" >:::
 		let open Store in
 		let entry = (Domain {
 			domain="example.com";
-			hint = Some "it's a secret!";
+			note = Some "it's a secret!";
 			suffix = Some "1";
 			length = 23;
 		}) in
@@ -160,14 +160,14 @@ let suite = "sync" >:::
 		let old_core = Store.({
 			version = 5;
 			records = apply_changes empty_core
-				[Create (Domain {default "old.example.com" with hint = Some "old hint"})]
+				[Create (Domain {default "old.example.com" with note = Some "old note"})]
 		}) in
 		let old_db = Store.(build_t old_core []) in
 
 		let new_core = Store.({
 			version = 50;
 			records = apply_changes empty_core
-				[Create (Domain {default "new.example.com" with hint = Some "new hint"})]
+				[Create (Domain {default "new.example.com" with note = Some "new note"})]
 		}) in
 		let new_db = Store.(build_t new_core []) in
 

@@ -44,7 +44,7 @@ let default_length = 10 (* TODO: put in DB *)
 
 type domain = {
 	domain: string;
-	hint: string option;
+	note: string option;
 	suffix: string option;
 	length: int;
 	(* digest: digest; *)
@@ -52,7 +52,7 @@ type domain = {
 
 let default domain = {
 	domain = domain;
-	hint = None;
+	note = None;
 	suffix = None;
 	length = default_length;
 	(* digest = default_digest; *)
@@ -73,7 +73,7 @@ type alias_field_change = [
 	]
 type domain_field_change = [
 	| `Domain of string
-	| `Hint of string option
+	| `Note of string option
 	| `Suffix of string option
 	| `Length of int
 	(* | `Digest of digest *)
@@ -203,7 +203,7 @@ module Format = struct
 
 	let string_key k = { key=k; getter=mandatory get_string; setter=set_string }
 
-	let hint = {key="hint"; getter=optional get_string; setter=optional json_string}
+	let note = {key="hint"; getter=optional get_string; setter=optional json_string}
 	let suffix = {key="suffix"; getter=optional get_string; setter=optional json_string}
 	let length = {key="length"; getter=mandatory get_int; setter=set_int }
 	(* let digest = { key="digest"; *)
@@ -240,7 +240,7 @@ module Format = struct
 					| `Alias -> Alias { alias=id; destination=parse_field destination pairs }
 					| `Domain -> Domain {
 						domain=id;
-						hint = parse_field hint pairs;
+						note = parse_field note pairs;
 						suffix = parse_field suffix pairs;
 						length = parse_field length pairs;
 						(* digest = parse_field digest pairs *)
@@ -258,7 +258,7 @@ module Format = struct
 		])
 		| Domain d -> (d.domain, build_assoc [
 			store_field record_type `Domain;
-			store_field hint d.hint;
+			store_field note d.note;
 			store_field suffix d.suffix;
 			store_field length d.length;
 			(* store_field digest d.digest *)
@@ -321,7 +321,7 @@ module Format = struct
 
 	let domain_field_change_of_json json :domain_field_change = (unioned_getter [
 		attempt FieldChange.domain (fun x -> `Domain x);
-		attempt hint (fun x -> `Hint x);
+		attempt note (fun x -> `Note x);
 		attempt suffix (fun x -> `Suffix x);
 		attempt length (fun x -> `Length x);
 		(* attempt digest (fun x -> `Digest x); *)
@@ -336,7 +336,7 @@ module Format = struct
 		| `Domain x      -> tag FieldChange.domain x
 		| `Alias x       -> tag FieldChange.alias x
 		| `Destination x -> tag destination x
-		| `Hint x        -> tag hint x
+		| `Note x        -> tag note x
 		| `Suffix x      -> tag suffix x
 		| `Length x      -> tag length x
 		(* | `Digest x      -> tag digest x *)
@@ -426,7 +426,7 @@ let apply_changes core changes : record StringMap.t =
 	let apply_domain_edit edit domain =
 		match edit with
 		| `Domain x -> {domain with domain=x}
-		| `Hint   x -> {domain with hint=x}
+		| `Note   x -> {domain with note=x}
 		| `Suffix x -> {domain with suffix=x}
 		| `Length x -> {domain with length=x}
 		(* | `Digest x -> {domain with digest=x} *)
@@ -546,7 +546,7 @@ let update ~(db:t) ~(original:record option) (updated:record option) =
 				orig.domain,
 				`Domain (filter_some [
 					Option.cond (orig.domain <> u.domain) (`Domain u.domain);
-					Option.cond (orig.hint <> u.hint) (`Hint u.hint);
+					Option.cond (orig.note <> u.note) (`Note u.note);
 					Option.cond (orig.suffix <> u.suffix) (`Suffix u.suffix);
 					Option.cond (orig.length <> u.length) (`Length u.length);
 					(* Option.cond (orig.digest <> u.digest) (`Digest u.digest); *)

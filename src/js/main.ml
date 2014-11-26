@@ -251,9 +251,9 @@ let password_form () : #Dom_html.element Ui.widget =
 		(saved_domain_info |> S.map get)
 	in
 	
-	let hint_input = domain_info_editor
-		~get:(fun d -> d.hint |> default_empty_string)
-		~set:(fun v -> {S.value saved_domain_info with hint=non_empty_string v}) in
+	let notes_input = domain_info_editor
+		~get:(fun d -> d.note |> default_empty_string)
+		~set:(fun v -> {S.value saved_domain_info with note=non_empty_string v}) in
 
 	let length_input = domain_info_editor
 		~get:(fun d -> d.length |> string_of_int)
@@ -388,9 +388,9 @@ let password_form () : #Dom_html.element Ui.widget =
 				] ();
 
 				child div ~cls:"inline" ~children:[
-					child strong ~text: "Hint: " ();
+					child strong ~text: "Notes: " ();
 					child span ~children:[
-						frag hint_input;
+						frag notes_input;
 					] ();
 				] ();
 
