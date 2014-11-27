@@ -298,8 +298,8 @@ let handler ~document_root ~data_root ~user_db sock req body =
 										return core
 									) else (
 										let updated_core = {
+											Store.apply_changes core changes with
 											version = new_version;
-											records = Store.apply_changes core changes;
 										} in
 										let tmp = (db_path ^ ".tmp") in
 										lwt () = Lwt_io.with_file ~mode:Lwt_io.output tmp

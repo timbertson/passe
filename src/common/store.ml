@@ -39,8 +39,13 @@ let record_type_of_string s = match s with
 	| "domain" -> `Domain
 	| _ -> raise_invalid_format "Expected alias or domain, got %s" s
 
-let default_length = 10 (* TODO: put in DB *)
-(* let default_digest = MD5 (* TODO: put in DB *) *)
+type defaults = {
+	default_length : int;
+}
+
+let fallback_defaults = {
+	default_length = 10;
+}
 
 type domain = {
 	domain: string;
@@ -48,14 +53,6 @@ type domain = {
 	suffix: string option;
 	length: int;
 	(* digest: digest; *)
-}
-
-let default domain = {
-	domain = domain;
-	note = None;
-	suffix = None;
-	length = default_length;
-	(* digest = default_digest; *)
 }
 
 type alias = {
@@ -97,20 +94,28 @@ type edit = [
 	| `Alias of alias_field_change list
 	]
 
+type default_change = [ `Length of int ]
 type change =
 	| Edit of (string * edit)
 	| Create of record
 	| Delete of string
+	| Default of default_change
 
 type core = {
 	version: int;
 	records: record StringMap.t;
+	defaults : defaults;
+}
+
+type db_view = {
+	v_records: record StringMap.t;
+	v_defaults: defaults;
 }
 
 type t = {
 	core: core;
 	changes: change list;
-	composite: record StringMap.t Lazy.t;
+	composite: db_view Lazy.t;
 }
 
 let record_eq:record -> record -> bool = fun a b -> a = b
@@ -127,8 +132,9 @@ let eq : t -> t -> bool = fun a b ->
 
 
 
-let empty_core = {version=0; records=StringMap.empty}
-let empty:t = { core=empty_core; changes=[]; composite=lazy StringMap.empty }
+let empty_core = {version=0; records=StringMap.empty; defaults=fallback_defaults; }
+let empty_view = {v_records = StringMap.empty; v_defaults = fallback_defaults; }
+let empty:t = { core=empty_core; changes=[]; composite=lazy empty_view }
 
 let get domain db : record option =
 	try
@@ -148,11 +154,13 @@ let string_of_change_type = function
 	| `Edit -> "edit"
 	| `Delete -> "delete"
 	| `Create -> "create"
+	| `Default -> "default"
 
 let change_type_of_string = function
 	| "edit" -> `Edit
 	| "delete" -> `Delete
 	| "create" -> `Create
+	| "default" -> `Default
 	| s -> raise_invalid_format "Expected change type, got %s" s
 
 module Format = struct
@@ -196,6 +204,10 @@ module Format = struct
 	let mandatory fn (v:J.json option) = fn @@ match v with
 		| Some v -> v
 		| None -> `Null
+
+	let defaulted d fn (v:J.json option) = match v with
+		| Some v -> fn v
+		| None -> d
 
 	let build_assoc (pairs:(string * J.json) option list) : J.json =
 		`Assoc (pairs |> List.fold_left (fun acc v ->
@@ -279,17 +291,34 @@ module Format = struct
 			in
 			Some (`Assoc pairs));
 	}
+	let defaults : defaults field = { key = "defaults";
+		getter = (fun field ->
+			match field with
+			| Some (`Assoc pairs) ->
+				let default_length =
+					{length with getter=defaulted (fallback_defaults.default_length) get_int}
+				in
+				{ default_length = parse_field default_length pairs }
+			| Some j -> fail_expecting "Object" j
+			| None -> fallback_defaults
+		);
+		setter = (fun def -> Some (build_assoc [
+			store_field length def.default_length;
+		]));
+	}
 
 	let core_of_json = (function
 			| (`Assoc fields) -> {
 					version = parse_field version fields;
 					records = parse_field records fields;
+					defaults = parse_field defaults fields;
 				}
 			| j -> fail_expecting "Object" j
 	)
 	let json_of_core core = build_assoc [
 		store_field version core.version;
 		store_field records core.records;
+		store_field defaults core.defaults;
 	]
 
 	let core = {key="core";
@@ -367,10 +396,16 @@ module Format = struct
 		| `Assoc pairs -> (
 				match parse_field change_type pairs with
 				| `Edit -> Edit (
-						parse_field id pairs,
-						parse_field edit pairs)
+					parse_field id pairs,
+					parse_field edit pairs)
 				| `Create -> Create (parse_field create_value pairs)
 				| `Delete -> Delete (parse_field id pairs)
+				| `Default ->
+					let pairs = pairs |> List.filter (fun (k,_v) -> k <> change_type.key) in
+					Default (match pairs with
+						| [key, _] when key = length.key -> `Length (parse_field length pairs)
+						| _ -> fail_expecting "an object with only a \"length\" property" (`Assoc pairs)
+					)
 			)
 		| j -> fail_expecting "List of pairs" j
 
@@ -388,6 +423,10 @@ module Format = struct
 		| Delete _id -> build_assoc [
 				store_field change_type `Delete;
 				store_field id _id;
+			]
+		| Default (`Length len) -> build_assoc [
+				store_field length len;
+				store_field change_type `Default;
 			]
 
 	let json_of_changes changes = (`List (changes |> List.map json_of_change))
@@ -422,7 +461,7 @@ let to_json_string = J.to_string % to_json
 let json_string_of_domain d = J.to_string (
 	Format.json_of_record (Domain d))
 
-let apply_changes core changes : record StringMap.t =
+let apply_changes core changes : core =
 	let apply_domain_edit edit domain =
 		match edit with
 		| `Domain x -> {domain with domain=x}
@@ -438,50 +477,53 @@ let apply_changes core changes : record StringMap.t =
 		| `Destination x -> {alias with destination=x}
 	in
 
-	let apply_change current = function
+	let apply_change change current : core = match change with
 		| Create record ->
-			if (StringMap.mem (id_of record) current) then
+			let records = current.records in
+			if (StringMap.mem (id_of record) records) then
 				log#warn "creation of %a replaces existing entry"
 				J.print (Format.json_of_record record)
 			;
-			StringMap.add (id_of record) record current
+			{current with records = StringMap.add (id_of record) record records}
 		| Delete id ->
-			if not (StringMap.mem id current) then
+			let records = current.records in
+			if not (StringMap.mem id records) then
 				log#warn "dropping deletion of %s" id
 			;
-			StringMap.remove id current
+			{current with records = StringMap.remove id records}
 		| Edit (id, edit) ->
-			match StringMap.find_opt id current with
-			| None -> log#warn "dropping edits to %s (no such record)" id; current
-			| Some existing -> (
-				let new_ = match edit, existing with
-				| `Domain edits, Domain record ->
-						Some (Domain (List.fold_right apply_domain_edit edits record))
+			let records = current.records in
+			begin match StringMap.find_opt id records with
+				| None -> log#warn "dropping edits to %s (no such record)" id; current
+				| Some existing -> (
+					let new_ = match edit, existing with
+					| `Domain edits, Domain record ->
+							Some (Domain (List.fold_right apply_domain_edit edits record))
 
-				| `Alias edits, Alias record ->
-						Some (Alias (List.fold_right apply_alias_edit edits record))
+					| `Alias edits, Alias record ->
+							Some (Alias (List.fold_right apply_alias_edit edits record))
 
-				| _ -> log#warn "dropping edits on mismatching types for %s" id; None
-				in
-				match new_ with
-				| Some new_ -> StringMap.add (id_of new_) new_ (StringMap.remove id current)
-				| None -> current
-			)
+					| _ -> log#warn "dropping edits on mismatching types for %s" id; None
+					in
+					match new_ with
+					| Some new_ -> {current with
+							records = StringMap.add (id_of new_) new_ (StringMap.remove id records)
+						}
+					| None -> current
+				)
+			end
+		| Default (`Length len) -> { current with defaults = {default_length = len}}
 	in
-
-	let rec inner current = function
-		| [] -> current
-		| change::remaining_changes ->
-			inner (apply_change current change) remaining_changes
-	in
-	inner core.records changes
+	List.fold_right apply_change changes core
 
 
 let build_t core changes =
 	{
 		core = core;
 		changes = changes;
-		composite = lazy (apply_changes core changes)
+		composite = lazy (let new_core = apply_changes core changes in
+			{v_records = new_core.records; v_defaults = new_core.defaults}
+		)
 	}
 
 let parse_json json : t =
@@ -506,7 +548,16 @@ let rec take n l =
 		| x::xs -> x :: (take (n-1) xs)
 		| [] -> []
 
-let get_records (db:t) = db.composite |> Lazy.force
+let get_records (db:t) = (db.composite |> Lazy.force).v_records
+let get_defaults (db:t) = (db.composite |> Lazy.force).v_defaults
+
+let default db domain = {
+	domain = domain;
+	note = None;
+	suffix = None;
+	length = (get_defaults db).default_length;
+}
+
 
 let lookup domain (db:t) : domain option =
 	let rec _lookup domain =

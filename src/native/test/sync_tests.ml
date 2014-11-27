@@ -91,6 +91,8 @@ let suite = "sync" >:::
 		get_server_db () |> Store.assert_equal db
 	in
 
+	let default_domain = Store.default (Store.empty) in
+
 	let sync_db ~db ~expected_result =
 		(* first, we check that the sync_result is the same *)
 		Sync.sync_db ~token:(Lazy.force user_token) db
@@ -135,11 +137,12 @@ let suite = "sync" >:::
 			suffix = Some "1";
 			length = 23;
 		}) in
-		let db = {empty with changes = [Create entry]} in
+		let db = {empty with changes = [Create entry; Default (`Length 12)]} in
 
 		let expected_core = {
 			version = 1;
 			records = StringMap.empty |> StringMap.add "example.com" entry;
+			defaults = { default_length = 12; };
 		} in
 
 		sync_db ~db ~expected_result:(core_to_db expected_core)
@@ -157,18 +160,16 @@ let suite = "sync" >:::
 	);
 
 	"version mismatch" >:::
-		let old_core = Store.({
-			version = 5;
-			records = apply_changes empty_core
-				[Create (Domain {default "old.example.com" with note = Some "old note"})]
-		}) in
-		let old_db = Store.(build_t old_core []) in
+		let open Store in
+		let old_core =
+			apply_changes {empty_core with version = 5}
+				[Create (Domain {default_domain "old.example.com" with note = Some "old note"})]
+		in
+		let old_db = Store.build_t old_core [] in
 
-		let new_core = Store.({
-			version = 50;
-			records = apply_changes empty_core
-				[Create (Domain {default "new.example.com" with note = Some "new note"})]
-		}) in
+		let new_core = apply_changes {empty_core with version = 50}
+			[Create (Domain {default_domain "new.example.com" with note = Some "new note"})]
+		in
 		let new_db = Store.(build_t new_core []) in
 
 		[
@@ -185,7 +186,7 @@ let suite = "sync" >:::
 		];
 
 		"with changes" >:::
-		let new_record = Store.(Domain (default "newdomain.com")) in
+		let new_record = Store.(Domain (default_domain "newdomain.com")) in
 		let clean_change = Store.(Create new_record) in
 		let outdated_change = Store.(Delete "old.example.com") in
 		[
@@ -197,6 +198,7 @@ let suite = "sync" >:::
 					~db:{old_db with changes = [clean_change; outdated_change]}
 					~expected_result:{new_db with core = {
 						records = new_db.core.records |> StringMap.add "newdomain.com" new_record;
+						defaults = new_db.core.defaults;
 						version = new_db.core.version + 1;
 					}}
 			);
@@ -209,6 +211,7 @@ let suite = "sync" >:::
 					~db:{new_db with changes = [clean_change; outdated_change]}
 					~expected_result:{new_db with core = {
 						records = new_db.core.records |> StringMap.add "newdomain.com" new_record;
+						defaults = new_db.core.defaults;
 						version = new_db.core.version + 1;
 					}}
 			);

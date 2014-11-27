@@ -221,12 +221,20 @@ let validate_credentials t creds =
 	t.set_auth_state new_state;
 	return new_state
 
+let _mutate state fn =
+	match S.value state.current_user_db with
+		| None -> log#error "Can't alter DB - no current user"; false
+		| Some user_db ->
+			let current_db = S.value state.db_fallback in
+			let new_db = fn current_db in
+			log#info "Saving new DB: %s" (Store.to_json_string new_db);
+			user_db#save (Store.to_json new_db);
+			true
 
 let save_change ~state ~original updated =
-	match S.value state.current_user_db with
-		| None -> log#error "Can't save DB - no current user"; false
-		| Some user_db ->
-				let current_db = S.value state.db_fallback in
-				let new_db = Store.update ~db:current_db ~original updated in
-				log#info "Saving new DB: %s" (Store.to_json_string new_db);
-				user_db#save (Store.to_json new_db); true
+	_mutate state (fun db -> Store.update ~db ~original updated)
+
+let save_default ~state change =
+	_mutate state (fun db ->
+		Store.({db with changes = db.changes @ [Default change]})
+	)

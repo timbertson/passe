@@ -192,6 +192,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 	lwt term = Lazy.force LTerm.stderr in
 	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
 	let user_db () = S.value (sync_state.Sync.db_signal) in
+	let db_fallback () = S.value (sync_state.Sync.db_fallback) in
 
 	(* unbind default actions we don't want *)
 	Input_map.bindings !LTerm_edit.bindings |> List.iter (let open LTerm_key in function
@@ -274,8 +275,9 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			in ask ()
 		in
 
+		let db = db_fallback () in
 		if edit then
-			let domain = stored_domain |> Option.default (Store.default domain_text) in
+			let domain = stored_domain |> Option.default (Store.default db domain_text) in
 			lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
@@ -283,7 +285,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			let domain = match stored_domain with
 				| None ->
 						log#log "Note: this is a new domain.";
-						Store.default domain_text
+						Store.default db domain_text
 				| Some domain ->
 						log#log " - Length: %d" domain.length;
 						domain.suffix |> Option.may (log#log " - Suffix: %s");

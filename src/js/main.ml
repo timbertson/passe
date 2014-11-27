@@ -142,11 +142,11 @@ let password_form () : #Dom_html.element Ui.widget =
 	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
 	let empty_domain = domain |> S.map (fun d -> d = "") in
 	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
-	let saved_domain_info = S.l2 (fun domain text ->
+	let saved_domain_info = S.l3 (fun db domain text ->
 		match domain with
 			| Some d -> d
-			| None -> Store.default text
-	) domain_record domain in
+			| None -> Store.default db text
+	) db_fallback domain_record domain in
 	let domain_is_unknown = (S.map Option.is_none domain_record) in
 
 	let _domain_suggestions = S.l2 (fun db query ->
