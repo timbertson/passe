@@ -276,22 +276,21 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 		in
 
 		let db = db_fallback () in
+		let domain = stored_domain |> Option.default (Store.default db domain_text) in
 		if edit then
-			let domain = stored_domain |> Option.default (Store.default db domain_text) in
 			lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
 		else begin
-			let domain = match stored_domain with
+			log#log "";
+			log#log " - Length: %d" domain.length;
+			begin match stored_domain with
 				| None ->
-						log#log "Note: this is a new domain.";
-						Store.default db domain_text
+						log#log " - This is a new domain."
 				| Some domain ->
-						log#log " - Length: %d" domain.length;
 						domain.suffix |> Option.may (log#log " - Suffix: %s");
 						domain.note |> Option.may (log#log " - Note: %s");
-						domain
-			in
+			end;
 
 			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 			let generated = Password.generate ~domain password in
