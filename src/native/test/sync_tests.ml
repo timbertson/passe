@@ -137,12 +137,12 @@ let suite = "sync" >:::
 			suffix = Some "1";
 			length = 23;
 		}) in
-		let db = {empty with changes = [Create entry; Default (`Length 12)]} in
+		let db = {empty with changes = [Create entry; Default (`Length 12); Default (`Length 13)]} in
 
 		let expected_core = {
 			version = 1;
 			records = StringMap.empty |> StringMap.add "example.com" entry;
-			defaults = { default_length = 12; };
+			defaults = { default_length = 13; };
 		} in
 
 		sync_db ~db ~expected_result:(core_to_db expected_core)

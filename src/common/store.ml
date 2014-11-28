@@ -462,7 +462,7 @@ let json_string_of_domain d = J.to_string (
 	Format.json_of_record (Domain d))
 
 let apply_changes core changes : core =
-	let apply_domain_edit edit domain =
+	let apply_domain_edit domain edit =
 		match edit with
 		| `Domain x -> {domain with domain=x}
 		| `Note   x -> {domain with note=x}
@@ -471,13 +471,15 @@ let apply_changes core changes : core =
 		(* | `Digest x -> {domain with digest=x} *)
 	in
 
-	let apply_alias_edit edit alias =
+	let apply_alias_edit alias edit =
 		match edit with
 		| `Alias       x -> {alias with alias=x}
 		| `Destination x -> {alias with destination=x}
 	in
 
-	let apply_change change current : core = match change with
+	let apply_change current change : core =
+		log#debug "applying change: %s" (change |> Format.json_of_change |> J.to_single_line_string);
+		match change with
 		| Create record ->
 			let records = current.records in
 			if (StringMap.mem (id_of record) records) then
@@ -498,10 +500,10 @@ let apply_changes core changes : core =
 				| Some existing -> (
 					let new_ = match edit, existing with
 					| `Domain edits, Domain record ->
-							Some (Domain (List.fold_right apply_domain_edit edits record))
+							Some (Domain (List.fold_left apply_domain_edit record edits))
 
 					| `Alias edits, Alias record ->
-							Some (Alias (List.fold_right apply_alias_edit edits record))
+							Some (Alias (List.fold_left apply_alias_edit record edits))
 
 					| _ -> log#warn "dropping edits on mismatching types for %s" id; None
 					in
@@ -514,7 +516,7 @@ let apply_changes core changes : core =
 			end
 		| Default (`Length len) -> { current with defaults = {default_length = len}}
 	in
-	List.fold_right apply_change changes core
+	List.fold_left apply_change core changes
 
 
 let build_t core changes =
