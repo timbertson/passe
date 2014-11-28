@@ -6,6 +6,7 @@ let print_exc dest exc =
 open Passe
 open Batteries
 open Extlib
+open React_ext
 module Json = Yojson.Safe
 
 let log = Logging.get_logger "passe"
@@ -41,6 +42,49 @@ module Actions = struct
 		in
 		let ok = Ui.list_domains env.config domain in
 		exit (if ok then 0 else 1)
+	
+	type config_field = {
+		key : string;
+		get : (Store.t signal -> string);
+		change : (string -> Store.default_change);
+	}
+	
+	let config env args =
+		let state = Sync.build env.config in
+		let open Store in
+		match S.value (state.Sync.db_signal) with
+		| None -> raise @@ SafeError "No current user; try --sync first"
+		| Some db -> begin
+			let db = state.Sync.db_fallback in
+			let get_defaults db = Store.get_defaults (S.value db) in
+			let fields = [{
+				key = "length";
+				get = (fun db -> (get_defaults db).default_length |> string_of_int);
+				change = (fun len -> `Length (int_of_string len));
+			}] in
+			let lookup key =
+				try List.find (fun f -> f.key = key) fields
+				with Not_found -> raise @@ SafeError ("Unknown config key: "^key)
+			in
+			let print_field field = log#log "%s: %s" (field.key) (field.get db) in
+
+			match args with
+				| [] ->
+					log#log "# Current config for %s:" (state.Sync.current_username |> S.value |> Option.get);
+					fields |> List.iter print_field
+
+				| [key] ->
+					let field = lookup key in
+					log#log "%s" (field.get db)
+
+				| [key; value] ->
+					let field = lookup key in
+					let change = field.change value in
+					if not (Sync.save_default ~state change) then exit 1;
+					print_field field
+
+				| _ -> too_many_args ()
+			end
 end
 
 let apply_verbosity verbosity =
@@ -69,6 +113,7 @@ struct
 	let quiet = StdOpt.decr_option   ~dest:verbosity ()
 	let verbose = StdOpt.incr_option ~dest:verbosity ()
 	let list_only = StdOpt.store_true ()
+	let config = StdOpt.store_true ()
 	let edit = StdOpt.store_true ()
 	(* let interactive = StdOpt.store_true () *)
 	(* let dry_run = StdOpt.store_true () *)
@@ -80,6 +125,8 @@ struct
 			Actions.sync env posargs
 		else if Opt.get list_only then
 			Actions.list_domains env posargs
+		else if Opt.get config then
+			Actions.config env posargs
 		else
 			(* XXX remove `quiet` argument *)
 			Actions.generate ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) ~edit:(Opt.get edit) env posargs
@@ -92,6 +139,7 @@ struct
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;
 		add options ~short_name:'l' ~long_name:"list" list_only;
+		add options ~long_name:"config" config;
 		add options ~short_name:'e' ~long_name:"edit" edit;
 		add options ~long_name:"sync" sync;
 		options
