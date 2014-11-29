@@ -369,7 +369,7 @@ let main () =
 	let open OptParse in
 	let open OptParser in
 
-	let port = StdOpt.int_option ~default:8080 () in
+	let port = StdOpt.int_option ~default:2055 () in
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
 	let document_root = StdOpt.str_option ~default:"_build" () in
 	let data_root = StdOpt.str_option ~default:"data" () in
