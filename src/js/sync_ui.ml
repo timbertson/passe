@@ -163,200 +163,172 @@ let ui state =
 		~mechanism:(fun elem ->
 			Lwt_js_events.clicks elem (fun evt _ ->
 				Ui.overlay (fun close ->
-					let dialog = div ~cls:"panel panel-default" ~children:[
-						child div ~cls:"panel-heading" ~text:"Account settings" ~children:[
-							child ~cls:"link pull-right" span ~children:[icon "remove"] ~mechanism:(fun elem ->
-								lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
-								close ();
-								return_unit
-							) ()
-						] ();
-						child div ~cls:"panel-body" ~children:[
-							child div ~children:[
+					Ui.panel ~close ~title:"Account settings" ~children:[
+						child div ~children:[
+							(
+								let error, set_error = S.create None in
+								let error_widget = error
+									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+										icon "remove";
+									] ())
+									|> Ui.stream in
+								let db = S.value state.db_fallback in
+								let current_length = Store.((get_defaults db).default_length) in
+								let length, set_length = S.create current_length in
+								let set_length str =
+									match (try Some (int_of_string str) with _ -> None) with
+										| Some len -> set_length len
+										| None -> set_error (Some "Not a number")
+								in
+								let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in
+								length_field#attr "class" "form-control";
 
-								(
-									let error, set_error = S.create None in
-									let error_widget = error
-										|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-											icon "remove";
-										] ())
-										|> Ui.stream in
-									let db = S.value state.db_fallback in
-									let current_length = Store.((get_defaults db).default_length) in
-									let length, set_length = S.create current_length in
-									let set_length str =
-										match (try Some (int_of_string str) with _ -> None) with
-											| Some len -> set_length len
-											| None -> set_error (Some "Not a number")
-									in
-									let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in
-									length_field#attr "class" "form-control";
+								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+									error_widget;
 
-									child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
-										error_widget;
+									row `XS ~cls:"form-group" [
+										col ~size:4 [control_label "Default password length"];
+										col [frag length_field];
+									];
 
-										child div ~cls:"form-group" ~children:[
-											child label ~cls:"col-xs-4 control-label" ~text:"Default password length" ();
-											child div ~cls:"col-xs-8" ~children:[
-												frag length_field;
-											] ();
-										] ();
+									row `XS [
+										col ~size:8 ~offset:4 [
+											child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Save defaults")] ();
+										];
+									];
+								] ~mechanism:(fun form ->
+									Lwt_js_events.submits form (fun event _ ->
+										stop event;
+										let length = S.value length in
+										let saved = if length = current_length
+											then true
+											else Sync.save_default ~state (`Length length)
+										in
+										if saved then (
+											Dom_html.window##alert (Js.string "Defaults saved");
+											close ();
+										) else (
+											Dom_html.window##alert (Js.string "Unable to save DB");
+										);
+										return_unit
+									)
+								) ();
 
-										child div ~cls:"row" ~children:[
-											child div ~cls:"col-xs-8 col-sm-offset-4" ~children:[
-												child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Save defaults")] ();
-											] ();
-										] ();
-									] ~mechanism:(fun form ->
-										Lwt_js_events.submits form (fun event _ ->
-											stop event;
-											let length = S.value length in
-											let saved = if length = current_length
-												then true
-												else Sync.save_default ~state (`Length length)
-											in
-											if saved then (
-												Dom_html.window##alert (Js.string "Defaults saved");
-												close ();
-											) else (
-												Dom_html.window##alert (Js.string "Unable to save DB");
-											);
+							);
+
+							child hr ();
+
+							(
+								let error, set_error = S.create None in
+								let error_widget = error
+									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+										child i ~cls:"glyphicon glyphicon-remove" ();
+									] ())
+									|> Ui.stream in
+								let password_input ~label name =
+									let attrs = ["name",name; "type","password"] in
+									row `XS ~cls:"form-group" [
+										col ~size:4 [control_label label];
+										col [child input ~cls:"form-control" ~attrs:attrs ()];
+									]
+								in
+
+								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+									error_widget;
+									password_input ~label:"Old password" "new";
+									password_input ~label:"New password" "new";
+									password_input ~label:"New password (again)" "new2";
+
+									row `XS [
+										col ~size:8 ~offset:4 [
+											child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Change password")] ();
+										]
+									];
+								] ~mechanism:(fun form ->
+									Lwt_js_events.submits form (fun event _ ->
+										stop event;
+										let pairs = Form.get_form_contents form in
+										let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
+										let new1 = data |> J.mandatory J.string_field "new"
+										and new2 = data |> J.mandatory J.string_field "new2" in
+										if new1 <> new2 then (
+											set_error (Some "Passwords don't match");
 											return_unit
+										) else (
+											let open Server in
+											match_lwt post_json ~token:creds ~data Client_auth.change_password_url with
+												| OK creds ->
+													Dom_html.window##alert (Js.string "Password changed.");
+													set_auth_state (Auth.Active_user (username, creds));
+													close ();
+													return_unit
+												| Unauthorized msg ->
+													set_error (Some (msg |> Option.default "Unauthorized"));
+													return_unit;
+												| Failed (_, msg,_) ->
+													set_error (Some msg);
+													return_unit
 										)
-									) ();
+									)
+								) ()
+							);
 
-								);
+							child hr ();
 
-								child hr ();
+							(
+								let error, set_error = S.create None in
+								let error_widget = error
+									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+										child i ~cls:"glyphicon glyphicon-remove" ();
+									] ())
+									|> Ui.stream in
+								let password, set_password = S.create "" in
+								let password_field = input_of_signal ~update:set_password password in
+								let () = (
+									password_field#attr "type" "password";
+									password_field#attr "class" "form-control";
+								) in
 
-								(
-									let error, set_error = S.create None in
-									let error_widget = error
-										|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-											child i ~cls:"glyphicon glyphicon-remove" ();
-										] ())
-										|> Ui.stream in
-									child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+									error_widget;
+									row `XS ~cls:"form-group" [
+										col ~size:4 [control_label "Password"];
+										col [frag password_field ];
+									];
 
-										error_widget;
-
-										child div ~cls:"form-group" ~children:[
-											child label ~cls:"col-xs-4 control-label" ~text:"Old password" ();
-											child div ~cls:"col-xs-8" ~children:[
-												child input ~cls:"form-control" ~attrs:["name","old"; "type","password"] ();
-											] ();
-										] ();
-
-										child div ~cls:"form-group" ~children:[
-											child label ~cls:"col-xs-4 control-label" ~text:"New password" ();
-											child div ~cls:"col-xs-8" ~children:[
-												child input ~cls:"form-control" ~attrs:["name","new"; "type","password"] ();
-											] ();
-										] ();
-
-										child div ~cls:"form-group" ~children:[
-											child label ~cls:"col-xs-4 control-label" ~text:"New password (again)" ();
-											child div ~cls:"col-xs-8" ~children:[
-												child input ~cls:"form-control" ~attrs:["name","new2"; "type","password"] ();
-											] ();
-										] ();
-
-										child div ~cls:"row" ~children:[
-											child div ~cls:"col-xs-8 col-sm-offset-4" ~children:[
-												child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Change password")] ();
-											] ();
-										] ();
-									] ~mechanism:(fun form ->
-										Lwt_js_events.submits form (fun event _ ->
-											stop event;
-											let pairs = Form.get_form_contents form in
-											let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
-											let new1 = data |> J.mandatory J.string_field "new"
-											and new2 = data |> J.mandatory J.string_field "new2" in
-											if new1 <> new2 then (
-												set_error (Some "Passwords don't match");
-												return_unit
-											) else (
-												let open Server in
-												match_lwt post_json ~token:creds ~data Client_auth.change_password_url with
-													| OK creds ->
-														Dom_html.window##alert (Js.string "Password changed.");
-														set_auth_state (Auth.Active_user (username, creds));
-														close ();
-														return_unit
-													| Unauthorized msg ->
-														set_error (Some (msg |> Option.default "Unauthorized"));
-														return_unit;
-													| Failed (_, msg,_) ->
-														set_error (Some msg);
-														return_unit
-											)
-										)
-									) ()
-								);
-
-								child hr ();
-
-								(
-									let error, set_error = S.create None in
-									let error_widget = error
-										|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-											child i ~cls:"glyphicon glyphicon-remove" ();
-										] ())
-										|> Ui.stream in
-									let password, set_password = S.create "" in
-									let password_field = input_of_signal ~update:set_password password in
-									let () = (
-										password_field#attr "type" "password";
-										password_field#attr "class" "form-control";
-									) in
-
-									child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
-
-										error_widget;
-
-										child div ~cls:"form-group" ~children:[
-											child label ~cls:"col-xs-4 control-label" ~text:"Password" ();
-											child div ~cls:"col-xs-8" ~children:[
-												frag password_field;
-											] ();
-										] ();
-
-										child div ~cls:"row" ~children:[
-											child div ~cls:"col-xs-8 col-sm-offset-4" ~attrs:["style","text-align:right;"] ~children:[
-												child span ~cls:"text-muted" ~text:"Careful now... " ();
-												child input ~cls:"btn btn-danger" ~attrs:[("type","submit"); ("value","Delete account")] ();
-											] ();
-										] ();
-									] ~mechanism:(fun form ->
-										Lwt_js_events.submits form (fun event _ ->
-											stop event;
-											if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
-												set_error None;
-												let open Server in
-												match_lwt post_json
-													~token:creds
-													~data:(`Assoc ["password", `String (S.value password)])
-													Client_auth.delete_user_url
-												with
-													| OK _ ->
-														set_auth_state Auth.Anonymous;
-														close ();
-														return_unit;
-													| Unauthorized msg ->
-														set_error (Some (msg |> Option.default "Unauthorized"));
-														return_unit;
-													| Failed (_, msg,_) ->
-														set_error (Some msg);
-														return_unit
-											end else return_unit
-										)
-									) ();
-								)
-							] ()
-						] ();
-					] () in
-					dialog
+									row `XS ~collapse:true [
+										col ~size:8 ~offset:4 ~cls:"text-right" [
+											child span ~cls:"text-muted" ~text:"Careful now... " ();
+											child input ~cls:"btn btn-danger" ~attrs:[("type","submit"); ("value","Delete account")] ();
+										];
+									];
+								] ~mechanism:(fun form ->
+									Lwt_js_events.submits form (fun event _ ->
+										stop event;
+										if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
+											set_error None;
+											let open Server in
+											match_lwt post_json
+												~token:creds
+												~data:(`Assoc ["password", `String (S.value password)])
+												Client_auth.delete_user_url
+											with
+												| OK _ ->
+													set_auth_state Auth.Anonymous;
+													close ();
+													return_unit;
+												| Unauthorized msg ->
+													set_error (Some (msg |> Option.default "Unauthorized"));
+													return_unit;
+												| Failed (_, msg,_) ->
+													set_error (Some msg);
+													return_unit
+										end else return_unit
+									)
+								) ();
+							)
+						] ()
+					] ()
 				)
 			)
 		) ()

@@ -405,3 +405,100 @@ let overlay content =
 		(* todo: listen for `esc` *)
 		hold
 	)
+
+let panel ~title ?close ~children () =
+	let header = [
+		child h3 ~cls:"panel-title" ~text:title ();
+	] in
+	let header = match close with
+		| None -> header
+		| Some close ->
+			(child button ~cls:"link pull-right close" ~children:[icon "remove"] ~mechanism:(fun elem ->
+				lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+				close ();
+				return_unit
+			) ()) :: header
+	in
+	div ~cls:"panel panel-default" ~children:[
+		child div ~cls:"panel-heading" ~children:header ();
+		child div ~cls:"panel-body" ~children ();
+	] ()
+
+type col_scale = [ `XS | `Sml | `Med | `Lg ]
+let string_of_col_scale = function
+	| `XS -> "xs"
+	| `Sml -> "sm"
+	| `Med -> "md"
+	| `Lg -> "lg"
+
+type col_spec = {
+	col_scale: col_scale;
+	col_size : int;
+	col_offset : int option;
+	col_cls : string option;
+}
+
+type col_partial = {
+	cp_scale: col_scale option;
+	cp_size : int option;
+	cp_offset : int option;
+	cp_cls : string option;
+}
+
+let filter_map fn l =
+	List.fold_right (fun item acc ->
+		match fn item with
+			| None -> acc
+			| Some item -> item :: acc
+	) l []
+
+let identity x = x
+
+let class_of_col_spec s =
+	let scale = string_of_col_scale s.col_scale in
+	[
+		Some ("col col-" ^scale^"-"^(string_of_int s.col_size));
+		s.col_offset |> Option.map (fun offset -> "col-"^scale^"-offset-"^(string_of_int offset));
+		s.col_cls;
+	] |> filter_map identity |> String.concat " "
+
+let col ?scale ?size ?offset ?cls children =
+	({cp_scale = scale; cp_size = size; cp_offset = offset; cp_cls=cls}, children)
+
+let total_row_size = 12
+let row scale ?collapse ?cls children =
+	let unsized_columns = children
+		|> List.filter (fun (col, _) -> Option.is_none col.cp_size) in
+	let remainder_size = match List.length unsized_columns with
+		| 0 -> 0
+		| n ->
+			let taken_size = List.fold_left (fun acc (col, _) ->
+				acc + (col.cp_size |> Option.default 0) + (col.cp_offset |> Option.default 0)
+			) 0 children in
+			log#debug "taken size = %d, from %d cols" taken_size ((List.length children) - n);
+			let available_size = total_row_size - taken_size in
+			log#debug "available size = %d, split between %d" available_size n;
+			available_size / n
+	in
+
+	let children = children |> List.map (fun (col, elem) ->
+		let col = {
+			col_scale = col.cp_scale |> Option.default scale;
+			col_size = col.cp_size |> Option.default remainder_size;
+			col_offset = col.cp_offset;
+			col_cls = col.cp_cls;
+		} in
+		(col, elem)
+	) in
+
+	let classes = [
+		if collapse = Some true then None else Some "row";
+		cls
+	] |> filter_map identity |> String.concat " " in
+	child div ~cls:classes ~children:(
+		children |> List.map (fun (col, children) ->
+			child div ~cls:(class_of_col_spec col) ~children ()
+		)
+	) ()
+
+let control_label text = child label ~cls:"control-label" ~text ()

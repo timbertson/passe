@@ -57,44 +57,34 @@ let footer () =
 
 	incognito_container#class_s "selected" incognito;
 
-	div ~cls:"row" ~children:[
-		child div ~cls:"col col-xs-6" ~children:[
+	row `XS [
+		col [
 			child ul ~cls:"list-unstyled" ~children:[
 				child li ~children:[
 					frag incognito_container;
 				] ();
 			] ();
-		] ();
-		child div ~cls:"col col-xs-6 text-right" ~children:[
+		];
+		col ~cls:"text-right" [
 			child ul ~cls:"list-unstyled" ~children:[
 				child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
 					Lwt_js_events.clicks elem (fun e _ ->
 						Ui.stop e;
 						Ui.overlay (fun close ->
-							div ~cls:"panel panel-default" ~children:[
-								child div ~cls:"panel-heading" ~children:[
-									child button ~cls:"link pull-right close" ~children:[icon "remove"] ~mechanism:(fun elem ->
-										lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
-										close ();
-										return_unit
-									) ();
-									child h3 ~cls:"panel-title" ~text:"About Passé" ();
-								] ();
-								child div ~cls:"panel-body" ~children:[
-									child div ~mechanism:(fun elem ->
-										elem##innerHTML <- Js.string (
-											About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
-										);
-										return_unit
-									) ();
-								] ();
+							Ui.panel ~close ~title:"About Passé" ~children:[
+								child div ~mechanism:(fun elem ->
+									elem##innerHTML <- Js.string (
+										About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
+									);
+									return_unit
+								) ();
 							] ()
 						)
 					)
 				) ();
 			] ()
-		] ();
-	] ()
+		];
+	]
 
 let password_form () : #Dom_html.element Ui.widget =
 	let open Ui in
@@ -406,54 +396,40 @@ let password_form () : #Dom_html.element Ui.widget =
 	in
 
 	let form = Ui.form ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
-		(* child div ~cls:"row" ~children:[ *)
-		(* 	child div ~cls:"col-sm-7" ~children:[ *)
-		(* 		child div ~cls:"col-xs-offset-2" ~children:[ *)
-		(* 			child h3 ~children:[ *)
-		(* 				frag (text "Passé"); *)
-		(* 				frag (text ""); *)
-		(* 			] (); *)
-		(* 		] (); *)
-		(* 		child div ~cls:"col-xs-5" ~children:[ *)
-		(* 		] (); *)
-		(* 	] (); *)
-		(* ] (); *)
+		let left elem = col ~size:2 [elem] in
 
-		child div ~cls:"row" ~children:[
-			child div ~cls:"col-sm-7" ~children:[
-				child div ~cls:"form-group" ~children:[
-					child label ~cls:"col-xs-2 control-label" ~text:"Domain" ();
-					child div ~cls:"col-xs-10" ~children:[
+		row `Sml [
+			col ~size:7 [
+				row `XS ~collapse:true ~cls:"form-group" [
+					left @@ control_label "Domain";
+					col [
 						clear_btn ();
 						frag domain_input;
 						Ui.stream (
 							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
 							|> optional_signal_content make_suggestion_ui
 						);
-					] ();
-				] ();
-				child div ~cls:"form-group" ~children:[
-					child label ~cls:"col-xs-2 control-label" ~text:"Password" ();
-					child div ~cls:"col-xs-10" ~children:[
+					];
+				];
+
+				row `XS ~collapse:true ~cls:"form-group" [
+					left @@ control_label "Password";
+					col [
 						clear_btn ();
 						frag password_input;
-					] ();
-				] ();
+					];
+				];
 
-				child div ~cls:"form-group" ~children:[
-					child div ~cls:"col-xs-offset-2 col-xs-2" ~children:[
+				row `XS ~collapse:true ~cls:"form-group" [
+					col ~offset:2 ~size:2 [
 						child input ~cls:"btn btn-primary" ~attrs:[("type", "submit");("value","Generate")] ();
-					] ();
-					child div ~cls:"col-xs-8" ~children:[
-						frag password_display;
-					] ();
-				] ();
-			] ();
+					];
+					col [frag password_display];
+				];
+			];
 
-			child div ~cls:"col-sm-5" ~children:[
-				frag domain_panel;
-			] ();
-		] ();
+			col [frag domain_panel];
+		];
 	] () in
 
 
