@@ -80,7 +80,7 @@ body {
 	position:absolute;
 	top:8px;
 	opacity:0.3;
-	z-index:950;
+	z-index:80;
 }
 
 @media (min-width: @screen-sm-min) {
@@ -110,6 +110,10 @@ body {
 }
 
 .domain-info {
+	width:100%;
+	display:table;
+	margin-bottom:1em;
+
 	strong {
 		&:extend(.text-muted);
 	}
@@ -138,10 +142,6 @@ body {
 		right:3px;
 	}
 
-	width:100%;
-	display:table;
-	margin-bottom:1em;
-
 	.inline {
 		span {
 			display:table-cell;
@@ -166,7 +166,6 @@ body {
 			}
 		}
 	}
-
 }
 
 .db-editor {
@@ -310,6 +309,7 @@ body {
 }
 
 .overlay {
+	z-index:9999;
 	position: fixed;
 	overflow:auto;
 	top:0; left:0; right:0; bottom:0;
