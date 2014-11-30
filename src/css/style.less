@@ -4,20 +4,18 @@
 @import "../bootstrap/less/mixins.less";
 
 @text-highlight-color: rgb(59, 133, 202);
+@password-popover-bg: rgba(50, 50, 50, 0.85);
 
 .link {
 	cursor:pointer;
 }
 
 body {
-	background-color:#556;
+	background:#e0e0e0;
 }
 
 .container {
 	background-color:#fff;
-	box-shadow: 0px 7px 10px rgba(0, 0, 0, 0.19);
-	padding-bottom:15px;
-
 	&.footer {
 		border-top: 1px solid rgb(208, 209, 211);
 		border-radius:10px;
@@ -43,52 +41,14 @@ body {
 	}
 }
 
-.password-display {
-	&:extend(.well, .well-sm);
-	font-size: 1.5em;
-	text-align:center;
-	padding:1px;
-	margin-bottom:0;
-	width:auto;
-	display:block-inline;
-	margin-left:1em;
-
-	.dummy {
-		padding-top: 0.1em;
-		&.selected {
-			color: white;
-			background: @text-highlight-color;
-		}
+@media (min-width: @screen-sm-min) {
+	body {
+		background-color:#556;
 	}
 
-	.secret {
-		display:block;
-		height:1px;
-		overflow:hidden;
-		width:1px;
-		color:transparent;
-	}
-
-	padding-right: 2em;
-	position:relative;
-
-	.toggle {
-		position:absolute;
-		top:0;
-		right:0;
-		bottom:0;
-		width: 2em;
-		background: darken(@well-bg, 4%);
-		border-left: 1px solid darken(@well-bg, 15%);
-
-		background: @input-bg;
-		color: mix(@input-color, @input-bg, 80%);
-		border-left: 1px solid @well-border;
-		border-top-right-radius: 3px;
-		border-bottom-right-radius: 3px;
-		cursor: pointer;
-		padding: 4px 4px 0 4px;
-		font-size: 0.9em;
+	.container {
+		box-shadow: 0px 7px 10px rgba(0, 0, 0, 0.19);
+		padding-bottom:15px;
 	}
 }
 
@@ -314,4 +274,69 @@ body {
 	background: rgba(0,0,0,0.5);
 	padding: 100px 10%;
 	font-size:1.4em;
+}
+
+.popover.static {
+	display: block;
+}
+
+.password-popover.popover.bottom {
+	margin-top:40px;
+	width: 90%;
+	margin-left:5%;
+	max-width:none;
+	background:@password-popover-bg;
+	color: #bbb;
+	border:none;
+
+	font-size: 1.5em;
+
+	.popover-content {
+		table {
+			width: 100%;
+		}
+
+		.title {
+			font-weight:bold;
+		}
+	}
+
+	.password-display {
+		color: white;
+		text-align:center;
+		margin-bottom:0;
+		padding:1px 1em;
+		position:relative;
+
+
+		.dummy {
+			padding-top: 0.1em;
+			font-family: monospace;
+			letter-spacing: 0.1em;
+			&.selected {
+				color: white;
+				background: @text-highlight-color;
+			}
+		}
+
+		.secret {
+			display:block;
+			height:1px;
+			overflow:hidden;
+			width:1px;
+			color:transparent;
+		}
+	}
+
+	.toggle {
+		position:relative;
+		top:0.1em;
+		width: 2em;
+		cursor: pointer;
+	}
+
+}
+
+.popover.bottom .arrow:after {
+	border-bottom-color:@password-popover-bg;
 }

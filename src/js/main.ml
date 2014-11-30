@@ -106,18 +106,37 @@ let password_form () : #Dom_html.element Ui.widget =
 	password_input#attr "class" "form-control";
 	password_input#mechanism invalidate_password;
 
-	let clear_btn () =
+	let to_html_elem : Dom.node Js.t -> Dom_html.element Js.t Js.opt = fun node ->
+		let elem = Dom.CoerceTo.element node in
+		Opt.map elem Dom_html.element
+	in
+
+	let upto_class cls (elem:Dom_html.element Js.t) =
+		let cls = Js.string cls in
+		let rec up (elem:Dom_html.element Js.t) =
+			if (elem##classList##contains(cls) |> Js.to_bool)
+				then Opt.return elem
+				else (
+					let elem = Opt.bind elem##parentNode to_html_elem in
+					Opt.bind elem up
+				)
+		in
+		up elem
+	in
+
+	let clear_btn ?right ?trigger () =
 		child span ~cls:"link text-muted"
-			~attrs:["style","position:absolute;right:20px;top:8px;opacity:0.3;"]
+			~attrs:["style","position:absolute;right:"^(right |> Option.default 25 |> string_of_int)^"px;top:8px;opacity:0.3;z-index:950;"]
 			~children:[icon "remove"]
 			~mechanism:(fun elem ->
+				let container = elem |> upto_class "form-group" in
 				Lwt_js_events.clicks elem (fun event _ ->
-					let input = elem##nextSibling in
-					let input = Opt.bind input Dom.CoerceTo.element in
-					let input = Opt.map input Dom_html.element in
+					let input = Opt.bind container (fun el -> el##querySelector (Js.string"input")) in
 					let input = Opt.bind input Dom_html.CoerceTo.input in
-					let input = Opt.get input (fun () -> failwith "can't find input to clear") in
+					let input = Opt.get input (fun () -> failwith "can't find input for clear_button") in
+
 					set_current_password None;
+					trigger |> Option.may (fun f -> f ());
 					input##value <- Js.string"";
 					input##focus ();
 					return_unit
@@ -265,7 +284,9 @@ let password_form () : #Dom_html.element Ui.widget =
 	let password_display = current_password |> Ui.optional_signal_content (fun (p:string) ->
 		let length = String.length p in
 		let is_selected, set_is_selected = S.create true in
-		let dummy_text = (String.make length '*') in
+
+		let string_repeat s n = Array.fold_left (^) "" (Array.make n s) in
+		let dummy_text = (string_repeat "●" length) in
 		let dummy = span ~cls:"dummy"
 			~children: [
 				frag (Ui.text_stream (show_plaintext_password |>
@@ -275,7 +296,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		in
 		dummy#class_s "selected" is_selected;
 
-		div
+		let display = div
 			~cls:"password-display"
 			~mechanism:(fun elem ->
 				let child = elem##querySelector(Js.string ".secret") |> non_null in
@@ -289,6 +310,8 @@ let password_form () : #Dom_html.element Ui.widget =
 
 				select ();
 
+				effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ()))
+				<&>
 				Lwt_js_events.clicks ~use_capture:true document (fun e _ ->
 					update_highlight ();
 					Lwt.return_unit
@@ -305,10 +328,30 @@ let password_form () : #Dom_html.element Ui.widget =
 			) ~children:[
 				child span ~cls:"secret" ~text:p ();
 				frag dummy;
-				child span ~cls:"toggle" ~mechanism:plaintext_toggle_mech ~children:[
-					child span ~cls:"glyphicon glyphicon-eye-open" ();
+			] () in
+
+		div ~cls:"popover static password-popover fade bottom in" ~attrs:["role","tooltip"] ~children:[
+			child div ~cls:"arrow" ();
+			child div ~cls:"popover-content" ~children:[
+				child table ~children:[
+					child tr ~children:[
+						child td ~children:[
+							child h4 ~cls:"title visible-lg visible-md" ~text:"Generated: " ();
+						] ();
+
+						child td ~attrs:["width","*"] ~children:[
+							frag display;
+						] ();
+
+						child td ~children:[
+							child span ~cls:"toggle"
+								~mechanism:plaintext_toggle_mech
+								~children:[icon "eye-open"] ();
+						] ();
+					] ();
 				] ();
-			] ()
+			] ();
+		] ();
 	) |> Ui.stream in
 
 	let unchanged_domain = S.l2 (fun db_dom domain_info ->
@@ -403,7 +446,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				row `XS ~collapse:true ~cls:"form-group" [
 					left @@ control_label "Domain";
 					col [
-						clear_btn ();
+						clear_btn ~trigger:(fun () -> set_domain "") ();
 						frag domain_input;
 						Ui.stream (
 							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
@@ -415,16 +458,15 @@ let password_form () : #Dom_html.element Ui.widget =
 				row `XS ~collapse:true ~cls:"form-group" [
 					left @@ control_label "Password";
 					col [
-						clear_btn ();
-						frag password_input;
+						clear_btn ~right:68 ();
+						child div ~cls:"input-group" ~children:[
+							frag password_input;
+							child span ~cls:"input-group-btn" ~children:[
+								child button ~cls:"btn btn-default" ~attrs:[("type", "submit")] ~children:[icon "play"] ();
+							] ();
+						]();
+						frag password_display;
 					];
-				];
-
-				row `XS ~collapse:true ~cls:"form-group" [
-					col ~offset:2 ~size:2 [
-						child input ~cls:"btn btn-primary" ~attrs:[("type", "submit");("value","Generate")] ();
-					];
-					col [frag password_display];
 				];
 			];
 
