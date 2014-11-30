@@ -295,8 +295,12 @@ type 'a lwt_js_events =
 	(#Dom_html.eventTarget as 'a) Js.t ->
 	(Dom_html.event Js.t -> unit Lwt.t -> unit Lwt.t) -> unit Lwt.t
 
+class type editable_element = object
+	inherit Dom_html.element
+end
+
 let editable_of_signal : 'v 'elem.
-	cons:(unit -> ((#Dom_html.inputElement) as 'elem) Js.t)
+	cons:(unit -> ((#editable_element) as 'elem) Js.t)
 	-> ?events:'elem lwt_js_events
 	-> get:('elem Js.t -> 'v)
 	-> set:('elem Js.t -> 'v -> unit)
@@ -348,6 +352,16 @@ let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
 		~get:get_input_value
 		~set:set_input_value
 		~events ~cons ?update source
+
+let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
+	let cons = match cons with Some c -> c | None -> (
+		fun () -> Dom_html.createTextarea Dom_html.document
+	) in
+	editable_of_signal
+		~get:get_input_value
+		~set:set_input_value
+		~events ~cons ?update source
+
 
 let checkbox_of_signal ?(events=Lwt_js_events.changes) ?cons ?update source =
 	let cons = match cons with Some c -> c | None -> (

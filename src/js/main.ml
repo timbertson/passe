@@ -409,6 +409,16 @@ let password_form () : #Dom_html.element Ui.widget =
 			)
 		);
 
+		let inline_input text input =
+			child div ~cls:"inline" ~children:[
+				child strong ~text: text ();
+				child span ~children:[
+					frag input;
+				] ();
+			] ()
+		in
+
+
 		domain_panel#append_all [
 			child div ~cls:"panel-heading" ~children:[
 				child h3 ~children: [
@@ -424,27 +434,9 @@ let password_form () : #Dom_html.element Ui.widget =
 				] ();
 			] ();
 			child div ~cls:"panel-body" ~children: [
-				child div ~cls:"inline" ~children:[
-					child strong ~text: "Length: " ();
-					child span ~children:[
-						frag length_input;
-					] ();
-				] ();
-
-				child div ~cls:"inline" ~children:[
-					child strong ~text: "Notes: " ();
-					child span ~children:[
-						frag notes_input;
-					] ();
-				] ();
-
-				child div ~cls:"inline" ~children:[
-					child strong ~text: "Suffix: " ();
-					child span ~children:[
-						frag suffix_input;
-					] ();
-				] ();
-
+				inline_input "Length:" length_input;
+				inline_input "Notes:" notes_input;
+				inline_input "Suffix:" suffix_input;
 			] ();
 		];
 	in
