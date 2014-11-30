@@ -125,8 +125,8 @@ let password_form () : #Dom_html.element Ui.widget =
 	in
 
 	let clear_btn ?right ?trigger () =
-		child span ~cls:"link text-muted"
-			~attrs:["style","position:absolute;right:"^(right |> Option.default 25 |> string_of_int)^"px;top:8px;opacity:0.3;z-index:950;"]
+		child span ~cls:"link text-muted clear-btn"
+			~attrs:["style","right:"^(right |> Option.default 25 |> string_of_int)^"px;"]
 			~children:[icon "remove"]
 			~mechanism:(fun elem ->
 				let container = elem |> upto_class "form-group" in
@@ -280,13 +280,20 @@ let password_form () : #Dom_html.element Ui.widget =
 			return_unit
 		)
 	) in
+	let reset_generated_password_mech = (fun elem ->
+		Lwt_js_events.clicks elem (fun e _ ->
+			Ui.stop e;
+			set_current_password None;
+			return_unit
+		)
+	) in
 
 	let password_display = current_password |> Ui.optional_signal_content (fun (p:string) ->
 		let length = String.length p in
 		let is_selected, set_is_selected = S.create true in
 
 		let string_repeat s n = Array.fold_left (^) "" (Array.make n s) in
-		let dummy_text = (string_repeat "●" length) in
+		let dummy_text = (string_repeat "•" length) in
 		let dummy = span ~cls:"dummy"
 			~children: [
 				frag (Ui.text_stream (show_plaintext_password |>
@@ -310,8 +317,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 				select ();
 
-				effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ()))
-				<&>
+				(* effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ())) <&> *)
 				Lwt_js_events.clicks ~use_capture:true document (fun e _ ->
 					update_highlight ();
 					Lwt.return_unit
@@ -343,10 +349,15 @@ let password_form () : #Dom_html.element Ui.widget =
 							frag display;
 						] ();
 
-						child td ~children:[
+						child td ~cls:"controls" ~children:[
 							child span ~cls:"toggle"
 								~mechanism:plaintext_toggle_mech
 								~children:[icon "eye-open"] ();
+						] ();
+						child td ~cls:"controls" ~children:[
+							child span ~cls:"toggle"
+								~mechanism:reset_generated_password_mech
+								~children:[icon "remove"] ();
 						] ();
 					] ();
 				] ();
@@ -442,7 +453,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		let left elem = col ~size:2 [elem] in
 
 		row `Sml [
-			col ~size:7 [
+			col ~size:7 ~cls:"password-form" [
 				row `XS ~collapse:true ~cls:"form-group" [
 					left @@ control_label "Domain";
 					col [

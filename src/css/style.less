@@ -37,8 +37,50 @@ body {
 	}
 
 	.main-form {
+		margin-bottom:0.5em;
 		margin-top:1em;
+		.control-label {
+			margin-bottom:0;
+			margin-top: 5px;
+		}
 	}
+
+	@media (max-width: @screen-xs-max) {
+		.main-form {
+			margin-top:0.5em;
+			.form-group {
+				margin-bottom:7px;
+			}
+			input[type="text"], input[type="password"], button {
+				height:32px;
+			}
+		}
+
+		.domain-info.panel {
+			margin:0.5em 0 1em;
+			.panel-heading {
+				padding: 6px 13px;
+			}
+			.panel-body {
+				padding:5px 13px;
+				.inline strong {
+					padding:0;
+				}
+
+				input[type="text"], input[type="password"], button {
+					height:auto;
+				}
+			}
+		}
+	}
+}
+
+
+.clear-btn {
+	position:absolute;
+	top:8px;
+	opacity:0.3;
+	z-index:950;
 }
 
 @media (min-width: @screen-sm-min) {
@@ -71,7 +113,7 @@ body {
 	strong {
 		&:extend(.text-muted);
 	}
-	&:extend(.panel-success all);
+	&:extend(.panel-info all);
 	&.unknown {
 		&:extend(.panel-default all);
 	}
@@ -98,7 +140,7 @@ body {
 
 	width:100%;
 	display:table;
-	margin-bottom:5px;
+	margin-bottom:1em;
 
 	.inline {
 		span {
@@ -282,14 +324,18 @@ body {
 
 .password-popover.popover.bottom {
 	margin-top:40px;
-	width: 90%;
-	margin-left:5%;
+	/*width: 90%;*/
+	/*margin-left:5%;*/
+	left:auto;
 	max-width:none;
 	background:@password-popover-bg;
 	color: #bbb;
 	border:none;
 
-	font-size: 1.5em;
+	font-size: 1.4em;
+	@media (max-width: @screen-xs-max) {
+		font-size: 1.2em;
+	}
 
 	.popover-content {
 		table {
@@ -328,10 +374,13 @@ body {
 		}
 	}
 
+	td.controls {
+		text-align:right;
+		min-width:2em;
+	}
 	.toggle {
 		position:relative;
 		top:0.1em;
-		width: 2em;
 		cursor: pointer;
 	}
 
