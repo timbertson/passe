@@ -24,6 +24,10 @@ let bind fn opt = match opt with
 	| Some v -> fn v
 	| None -> None
 
+let or_fn opt fn = match opt with
+	| Some _ as v -> v
+	| None -> fn ()
+
 let some x = Some x
 
 let is_some = function Some _ -> true | None -> false

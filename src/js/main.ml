@@ -103,7 +103,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
 	domain_input#attr "class" "form-control";
-	password_input#attr "class" "form-control";
+	password_input#attr "class" "form-control password";
 	password_input#mechanism invalidate_password;
 
 	let to_html_elem : Dom.node Js.t -> Dom_html.element Js.t Js.opt = fun node ->
@@ -111,7 +111,7 @@ let password_form () : #Dom_html.element Ui.widget =
 		Opt.map elem Dom_html.element
 	in
 
-	let upto_class cls (elem:Dom_html.element Js.t) =
+	let upto_class cls (elem:#Dom_html.element Js.t) =
 		let cls = Js.string cls in
 		let rec up (elem:Dom_html.element Js.t) =
 			if (elem##classList##contains(cls) |> Js.to_bool)
@@ -183,13 +183,27 @@ let password_form () : #Dom_html.element Ui.widget =
 		set_suggestion_idx (Some (min desired max_len));
 	in
 	
+	let keycode_return = 13 in
+	let keycode_tab = 9 in
+	let accept_suggestion : 'a. string -> (#Dom_html.element as 'a) Js.t -> unit
+		= fun text elem ->
+		set_domain text;
+		let container = (elem:>Dom_html.element Js.t) |> upto_class "password-form" in
+		let input = Opt.bind container (fun el -> el##querySelector (Js.string"input[type=\"password\"]")) in
+		let input = Opt.bind input Dom_html.CoerceTo.input in
+		match input |> Opt.to_option with
+			| Some input -> input##focus()
+			| None -> log#error "can't find input for clear_button"
+	in
+
 	domain_input#class_s "suggestions" (S.map Option.is_some domain_suggestions);
-	domain_input#mechanism (fun elem -> elem##focus();
+	domain_input#mechanism (fun elem ->
+		elem##focus();
 		set_domain_is_active true;
 		Lwt.join [
 			invalidate_password elem;
-			Lwt_js_events.focuses elem (fun _ _ -> set_domain_is_active true; return_unit);
-			Lwt_js_events.blurs   elem (fun _ _ -> set_domain_is_active false; return_unit);
+			Lwt_js_events.focuses  elem (fun _ _ -> set_domain_is_active true; return_unit);
+			Lwt_js_events.blurs    elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
 			Lwt_js_events.keydowns elem (fun e _ ->
 				Optdef.iter (e##keyIdentifier) (fun ident ->
@@ -204,7 +218,7 @@ let password_form () : #Dom_html.element Ui.widget =
 					S.value suggestion_idx |> Option.may (fun idx ->
 						S.value _domain_suggestions |> Option.may (fun l ->
 							try (
-								set_domain @@ (List.nth l idx);
+								accept_suggestion (List.nth l idx) elem;
 								selected := true
 							) with Not_found -> ()
 						)
@@ -213,9 +227,9 @@ let password_form () : #Dom_html.element Ui.widget =
 				in
 
 				begin match which with
-					| 9 -> ignore (select_current ())
-					| 13 -> if (select_current ()) then stop e;
-					| _ -> ()
+					| k when k = keycode_tab -> if (select_current ()) then stop e
+					| k when k = keycode_return -> if (select_current ()) then stop e
+					| k -> log#debug "ignoring unknown key code %d" k
 				end;
 				Console.console##log(e);
 				return_unit
@@ -236,7 +250,7 @@ let password_form () : #Dom_html.element Ui.widget =
 				let w = li ~text ~mechanism:(fun elem ->
 					Lwt_js_events.mousedowns elem (fun click _ ->
 						Ui.stop click;
-						set_domain text;
+						accept_suggestion text elem;
 						return_unit
 					) <&>
 					Lwt_js_events.mouseovers elem (fun e _ ->
@@ -317,7 +331,7 @@ let password_form () : #Dom_html.element Ui.widget =
 
 				select ();
 
-				(* effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ())) <&> *)
+				effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ())) <&>
 				Lwt_js_events.clicks ~use_capture:true document (fun e _ ->
 					update_highlight ();
 					Lwt.return_unit
@@ -327,7 +341,7 @@ let password_form () : #Dom_html.element Ui.widget =
 						update_highlight ();
 					Lwt.return_unit
 				) <&>
-				Lwt_js_events.clicks ~use_capture:true elem (fun e _ ->
+				Lwt_js_events.clicks ~use_capture:false elem (fun e _ ->
 					select ();
 					Lwt.return_unit
 				)
@@ -478,10 +492,11 @@ let password_form () : #Dom_html.element Ui.widget =
 	] () in
 
 
+	let keycode_s = 83 in
 	form#mechanism (fun elem ->
 		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
 			Console.console##log(event);
-			if (to_bool event##ctrlKey && event##keyCode = 83) then (
+			if (to_bool event##ctrlKey && event##keyCode = keycode_s) then (
 				stop event;
 				save_current_domain ();
 				return_unit
@@ -497,7 +512,6 @@ let password_form () : #Dom_html.element Ui.widget =
 						input##blur()
 				);
 
-			(* TODO: store & retrieve defaults in DB *)
 			let domain = S.value domain_info in
 			let password = S.value master_password in
 			let password = Password.generate ~domain password in
