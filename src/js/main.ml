@@ -206,10 +206,12 @@ let password_form () : #Dom_html.element Ui.widget =
 			Lwt_js_events.blurs    elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
 			Lwt_js_events.keydowns elem (fun e _ ->
-				Optdef.iter (e##keyIdentifier) (fun ident ->
+				e##keyIdentifier |> Optdef.to_option
+				|> Option.or_fn (fun () -> Unsafe.get e "key" |> Optdef.to_option)
+				|> Option.may (fun ident ->
 					match Js.to_string ident with
-					| "Up" -> select_diff (-1); stop e
-					| "Down" -> select_diff 1; stop e
+					| "Up" | "ArrowUp" -> select_diff (-1); stop e
+					| "Down" | "ArrowDown" -> select_diff 1; stop e
 					| _ -> ()
 				);
 				let which = Unsafe.get e "which" in
