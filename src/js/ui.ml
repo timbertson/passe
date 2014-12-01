@@ -304,11 +304,12 @@ let editable_of_signal : 'v 'elem.
 	-> ?events:'elem lwt_js_events
 	-> get:('elem Js.t -> 'v)
 	-> set:('elem Js.t -> 'v -> unit)
+	-> eq:('v -> 'v -> bool)
 	-> ?update:('v -> unit)
 	-> 'v signal
 	-> 'elem widget
 	=
-	fun ~cons ?(events=Lwt_js_events.inputs) ~get ~set ?update source ->
+	fun ~cons ?(events=Lwt_js_events.inputs) ~get ~set ~eq ?update source ->
 	let clear_error elem = elem##classList##remove(Js.string"error") in
 	let set_error elem = elem##classList##add(Js.string"error") in
 
@@ -331,7 +332,8 @@ let editable_of_signal : 'v 'elem.
 	let watch_loop elem =
 		effectful_stream_mechanism (source |> S.map (fun v ->
 			clear_error elem;
-			set elem v
+			(* only call `set` on actual changes; otherwise we can get feedback loops *)
+			if not (eq (get elem) v) then set elem v
 		))
 	in
 
@@ -351,6 +353,7 @@ let input_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
 	editable_of_signal
 		~get:get_input_value
 		~set:set_input_value
+		~eq:(fun (a:string) (b:string) -> a = b)
 		~events ~cons ?update source
 
 let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
@@ -360,6 +363,7 @@ let textarea_of_signal ?(events=Lwt_js_events.inputs) ?cons ?update source =
 	editable_of_signal
 		~get:get_input_value
 		~set:set_input_value
+		~eq:(fun (a:string) (b:string) -> a = b)
 		~events ~cons ?update source
 
 
@@ -370,6 +374,7 @@ let checkbox_of_signal ?(events=Lwt_js_events.changes) ?cons ?update source =
 	editable_of_signal
 		~get:get_checkbox_value
 		~set:set_checkbox_value
+		~eq:(fun (a:bool) (b:bool) -> a = b)
 		~events ~cons ?update source
 
 let signal_of_widget
