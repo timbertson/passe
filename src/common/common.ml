@@ -11,6 +11,8 @@ module StringMap = struct
 	let from_pairs pairs = List.fold_left (fun map (k,v) -> add k v map) empty pairs
 end
 
+let startswith big sml = String.sub big 0 (String.length sml) = sml
+
 let find_safe fn l = try Some (List.find fn l) with Not_found -> None
 
 let (%) f g = (fun x -> f (g x))

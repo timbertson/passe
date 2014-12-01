@@ -574,10 +574,20 @@ let lookup domain (db:t) : domain option =
 
 let keys_like (db:t) query =
 	let q_re = Str.regexp_string query in
+	let cmp a b =
+		let a_start = startswith a query
+		and b_start = startswith b query in
+		(* log#debug "a_start = %b; b_start=%b" a_start b_start; *)
+		if a_start = b_start then (
+			let a_len = String.length a and b_len = String.length b in
+			(* log#debug "a_len = %d; b_len=%d" a_len b_len; *)
+			if a_len = b_len then (compare a b) else a_len - b_len
+		) else if a_start then -1 else 1
+	in
 	get_records db
 		|> StringMap.keys
 		|> List.filter (Str.contains q_re)
-		|> List.sort (compare) |> take 5
+		|> List.sort (cmp) |> take 5
 
 let update ~(db:t) ~(original:record option) (updated:record option) =
 	log#info "modifying %a -> %a"
