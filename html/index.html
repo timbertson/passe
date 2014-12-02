@@ -9,11 +9,12 @@
 		<link href="res/css/style.css" rel="stylesheet">
 		<script>
 			window.onerror = function(e) {
+				console.error(e);
 				var e = document.getElementById("main");
 				e.innerHTML = "";
 				
 				var tag = function(name, text) {
-					var node=dopcument.createElement(name);
+					var node=document.createElement(name);
 					node.appendContent(text);
 					e.appendNode(node);
 				}
