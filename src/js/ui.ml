@@ -497,9 +497,9 @@ let row scale ?collapse ?cls children =
 			let taken_size = List.fold_left (fun acc (col, _) ->
 				acc + (col.cp_size |> Option.default 0) + (col.cp_offset |> Option.default 0)
 			) 0 children in
-			log#debug "taken size = %d, from %d cols" taken_size ((List.length children) - n);
+			(* log#debug "taken size = %d, from %d cols" taken_size ((List.length children) - n); *)
 			let available_size = total_row_size - taken_size in
-			log#debug "available size = %d, split between %d" available_size n;
+			(* log#debug "available size = %d, split between %d" available_size n; *)
 			available_size / n
 	in
 

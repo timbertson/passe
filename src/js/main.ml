@@ -21,14 +21,8 @@ let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
 let incognito, set_incognito = S.create false
-let storage_provider = (new Local_storage.provider (true))
-let config_provider = Config.build storage_provider
-let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v))
 
-let sync = Sync.build config_provider
-
-let db_fallback = sync.Sync.db_fallback
-let db_display () : #Dom_html.element Ui.widget =
+let db_display sync : #Dom_html.element Ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
 			|> Option.map (J.to_string)
@@ -86,7 +80,8 @@ let footer () =
 		];
 	]
 
-let password_form () : #Dom_html.element Ui.widget =
+let password_form sync : #Dom_html.element Ui.widget =
+	let db_fallback = sync.Sync.db_fallback in
 	let open Ui in
 
 	let current_password, set_current_password = S.create None in
@@ -523,14 +518,14 @@ let password_form () : #Dom_html.element Ui.widget =
 	);
 	form
 
-let show_form (container:Dom_html.element Js.t) =
+let show_form sync (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Ui.div
 		~children:[
 			Ui.child Ui.div ~cls:"container" ~children:[
 				Ui.frag @@ Sync_ui.ui sync;
-				Ui.frag @@ password_form ();
+				Ui.frag @@ password_form sync;
 			] ();
 			Ui.child Ui.div ~cls:"container footer" ~children:[
 				Ui.frag @@ footer ();
@@ -550,13 +545,13 @@ let print_exc context e =
 
 let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
-let main () = Lwt.async (fun () ->
+let main sync = Lwt.async (fun () ->
 	try_lwt (
 		let main_elem = (document##getElementById (s"main")) in
 		check (Opt.test main_elem) "main_elem not found!";
 		let main_elem = Opt.get main_elem (fun _ -> raise Fail) in
 		lwt () =
-			show_form main_elem
+			show_form sync main_elem
 			<&>
 			App_cache.update_monitor (fun () ->
 				log#info("appcache update ready");
@@ -585,13 +580,29 @@ let main () = Lwt.async (fun () ->
 
 let () =
 	log#info "passe %s" (Version.pretty ());
+	Logging.(current_level := ord (
+		let uri = !Server.root_url in
+		match Uri.fragment uri with
+		| Some "debug" -> Debug
+		| Some "info" -> Info
+		| _ -> (match Uri.host uri with
+			| Some "localhost" -> Info
+			| _ -> Warn
+		)
+	));
+
+	let storage_provider = (new Local_storage.provider (true)) in
+	let config_provider = Config.build storage_provider in
+	let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v)) in
+	let sync = Sync.build config_provider in
+
 	let listener = ref null in
 	listener := Opt.return @@ Dom_events.listen
 		window
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->
 			Opt.iter !listener Dom_events.stop_listen;
-			main ();
+			main sync;
 			false
 		)
 
