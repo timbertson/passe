@@ -341,7 +341,8 @@ module Format = struct
 
 	let attempt (field: 't field) (conv:'t -> 'r) (value:J.json) : 'r option = match value with
 		| `List [`String tag ; value] when tag = field.key -> (
-			Some (field.getter (Some value) |> conv)
+			let value = match value with | `Null -> None | v -> Some v in
+			Some (field.getter value |> conv)
 		)
 		| _ -> None
 	

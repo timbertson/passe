@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 t="_build/native/test/main.byte"
-gup -u "$t"
+gup -u -j4 "$t"
 # we poke the server on test boundaries,
 # which requires the sequential runner
 # to make sure tests don't overlap
