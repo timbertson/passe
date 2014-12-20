@@ -163,6 +163,42 @@ let change_type_of_string = function
 	| "default" -> `Default
 	| s -> raise_invalid_format "Expected change type, got %s" s
 
+(* used for exhaustive JSON parsing,
+ * to ensure we actually parse all keys *)
+class assoc (pairs:(string * J.json) list) =
+	let pairs = ref pairs in
+object (self:'self)
+	method pop key : J.json option =
+		let subject, remainder =
+			List.partition (fun (k,v) -> k = key) !pairs
+		in
+		match subject with
+			| [] -> None
+			| [(_,rv)] ->
+				pairs := remainder;
+				Some rv
+			| _ -> raise (AssertionError "multiple identical keys")
+
+	method contains key =
+		find_safe (fun (k,v) -> k = key) !pairs
+			|> Option.is_some
+
+	method exhaust =
+		match !pairs with
+			| [] -> ()
+			| p ->
+					let keys = List.map Tuple.fst p in
+					let msg = "Un-processed keys after parsing: " ^
+						String.concat ", " keys in
+					raise (AssertionError msg)
+	
+	method use : 'a. ('self -> 'a) -> 'a = fun fn ->
+		let rv = fn self in
+		self#exhaust;
+		rv
+end
+let with_assoc pairs fn = (new assoc pairs)#use fn
+
 module Format = struct
 	let current_version = 1
 	type 't field = {
@@ -172,12 +208,19 @@ module Format = struct
 	}
 
 	(* entry points for parse / serialize *)
-	let parse_field field pairs =
-		let json = find_safe (fun (k,v) -> k = field.key) pairs in
+	let parse_field field (pairs:assoc) =
+		let v = pairs#pop field.key in
 		try
-			field.getter (Option.map snd json)
+			field.getter v
 		with InvalidFormat err ->
 			raise (InvalidFormat ("Error getting " ^ field.key ^ ": " ^ err))
+
+	let parse_field_alt fields (pairs:assoc) =
+		let field = find_safe (fun field -> pairs#contains field.key) fields in
+		(* if neither found, just treat that as "no value" and use
+		 * the first field given *)
+		let field = field |> Option.default_fn (fun () -> List.hd fields) in
+		parse_field field pairs
 	
 	let store_field field v = let v = field.setter v in
 		v |> Option.map (fun v -> (field.key, v))
@@ -216,6 +259,7 @@ module Format = struct
 	let string_key k = { key=k; getter=mandatory get_string; setter=set_string }
 
 	let note = {key="hint"; getter=optional get_string; setter=optional json_string}
+	let note_future_compat = {note with key="note"}
 	let suffix = {key="suffix"; getter=optional get_string; setter=optional json_string}
 	let length = {key="length"; getter=mandatory get_int; setter=set_int }
 	(* let digest = { key="digest"; *)
@@ -247,17 +291,18 @@ module Format = struct
 	let parse_record : (string * J.json) -> record = fun (id, r) ->
 		log#debug "Parsing: %s (%s)" id (J.to_string r);
 		match r with
-			| `Assoc pairs -> begin
+			| `Assoc pairs -> with_assoc pairs (fun pairs ->
 				match parse_field record_type pairs with
 					| `Alias -> Alias { alias=id; destination=parse_field destination pairs }
 					| `Domain -> Domain {
 						domain=id;
-						note = parse_field note pairs;
+						(* allow `note` to come from either `note` or `hint` *)
+						note = parse_field_alt [note_future_compat; note] pairs;
 						suffix = parse_field suffix pairs;
 						length = parse_field length pairs;
 						(* digest = parse_field digest pairs *)
 					}
-				end
+				)
 			| _ ->
 				log#error "can't parse!";
 				raise (InvalidFormat "can't parse record")
@@ -270,7 +315,7 @@ module Format = struct
 		])
 		| Domain d -> (d.domain, build_assoc [
 			store_field record_type `Domain;
-			store_field note d.note;
+			store_field note d.note; (* TODO: move to note_future_compat in a later release *)
 			store_field suffix d.suffix;
 			store_field length d.length;
 			(* store_field digest d.digest *)
@@ -295,10 +340,12 @@ module Format = struct
 		getter = (fun field ->
 			match field with
 			| Some (`Assoc pairs) ->
-				let default_length =
-					{length with getter=defaulted (fallback_defaults.default_length) get_int}
-				in
-				{ default_length = parse_field default_length pairs }
+				with_assoc pairs (fun pairs ->
+					let default_length =
+						{length with getter=defaulted (fallback_defaults.default_length) get_int}
+					in
+					{ default_length = parse_field default_length pairs }
+				)
 			| Some j -> fail_expecting "Object" j
 			| None -> fallback_defaults
 		);
@@ -308,11 +355,11 @@ module Format = struct
 	}
 
 	let core_of_json = (function
-			| (`Assoc fields) -> {
-					version = parse_field version fields;
-					records = parse_field records fields;
-					defaults = parse_field defaults fields;
-				}
+			| (`Assoc pairs) -> with_assoc pairs (fun pairs -> {
+					version = parse_field version pairs;
+					records = parse_field records pairs;
+					defaults = parse_field defaults pairs;
+				})
 			| j -> fail_expecting "Object" j
 	)
 	let json_of_core core = build_assoc [
@@ -351,6 +398,9 @@ module Format = struct
 
 	let domain_field_change_of_json json :domain_field_change = (unioned_getter [
 		attempt FieldChange.domain (fun x -> `Domain x);
+		(* In the future, we'll start sending `note` changes instead of hints.
+		 * Be compatible with such future clients *)
+		attempt note_future_compat (fun x -> `Note x);
 		attempt note (fun x -> `Note x);
 		attempt suffix (fun x -> `Suffix x);
 		attempt length (fun x -> `Length x);
@@ -394,19 +444,14 @@ module Format = struct
 	}
 
 	let change_of_json = function
-		| `Assoc pairs -> (
+		| `Assoc pairs -> with_assoc pairs (fun pairs ->
 				match parse_field change_type pairs with
 				| `Edit -> Edit (
 					parse_field id pairs,
 					parse_field edit pairs)
 				| `Create -> Create (parse_field create_value pairs)
 				| `Delete -> Delete (parse_field id pairs)
-				| `Default ->
-					let pairs = pairs |> List.filter (fun (k,_v) -> k <> change_type.key) in
-					Default (match pairs with
-						| [key, _] when key = length.key -> `Length (parse_field length pairs)
-						| _ -> fail_expecting "an object with only a \"length\" property" (`Assoc pairs)
-					)
+				| `Default -> Default (`Length (parse_field length pairs))
 			)
 		| j -> fail_expecting "List of pairs" j
 
@@ -461,6 +506,8 @@ let to_json_string = J.to_string % to_json
 
 let json_string_of_domain d = J.to_string (
 	Format.json_of_record (Domain d))
+
+let json_string_of_record d = J.to_string (Format.json_of_record d)
 
 let apply_changes core changes : core =
 	let apply_domain_edit domain edit =
@@ -533,9 +580,10 @@ let parse_json json : t =
 	let open Format in
 	match json with
 		| `Assoc pairs ->
-			build_t
+			with_assoc pairs (fun pairs -> build_t
 				(parse_field core pairs)
 				(parse_field changes pairs)
+			)
 		| _ -> raise (InvalidFormat "Expected toplevel object")
 
 let parse : string -> (string, t) either = fun str ->

@@ -1,7 +1,7 @@
 open Batteries
 open Passe
 open OUnit2
-module J = Json_ext
+open Test_common
 
 let post_json ?token ~data url = Server.post_json ?token ~data url |> Lwt_main.run
 let get_json ?token url = Server.get_json ?token url |> Lwt_main.run
@@ -61,14 +61,13 @@ let get_server_db () =
 
 module Store = struct
 	include Store
-	let assert_equal = assert_equal ~cmp:Store.eq ~printer:Store.to_json_string
+	let assert_equal = OUnit2.assert_equal ~cmp:Store.eq ~printer:Store.to_json_string
+	let assert_equal_core = OUnit2.assert_equal ~cmp:Store.core_eq ~printer:(J.to_string % Store.Format.json_of_core)
 end
 
 (* module-wide setup *)
 let (>::) desc test =
-	let initial_writer = !Logging.current_writer in
 	let setup ctx =
-		Logging.current_writer := (fun _dest str -> logf ctx `Info "%s" str);
 		log#info "Wiping user db: %s" test_username;
 		post_json
 		~data:(`Assoc ["user", `String test_username])
@@ -76,7 +75,7 @@ let (>::) desc test =
 		|> Response.assert_ok;
 		()
 	in
-	let teardown () _ = Logging.current_writer := initial_writer in
+	let teardown () _ = () in
 	desc >:: (fun ctx ->
 		bracket setup teardown ctx;
 		test ctx
@@ -126,7 +125,7 @@ let suite = "sync" >:::
 	];
 	"initial DB" >:: (fun _ ->
 		let db = get_json ~token:(Lazy.force user_token) db_path |> Response.ok in
-		Store.parse_json db |> Store.assert_equal Store.empty
+		db |> Store.Format.core_of_json |> Store.assert_equal_core Store.empty_core
 	);
 
 	"saving changes stores db and returns new core" >:: (fun _c ->
