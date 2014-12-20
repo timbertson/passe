@@ -48,7 +48,7 @@ let output_password ~use_clipboard ~term ~quiet ~domain text =
 
 module Input_map = Zed_input.Make(LTerm_key)
 
-let edit_and_save ~sync_state ~domain ~existing ~term () =
+let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 	let open CamomileLibraryDyn.Camomile in (* ??? *)
 	let frame = new LTerm_widget.vbox in
 
@@ -213,11 +213,14 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
 		lwt domain_text = (Domain.guess domain) in
-		let stored_domain = user_db () |> Option.bind (Store.lookup domain) in
+		let get_stored () = user_db () |> Option.bind (Store.lookup domain_text) in
+		let get_domain db stored = stored |> Option.default (Store.default db domain_text) in
 
 		let open Store in
-		let rec post_generate_actions domain () =
-			let continue = post_generate_actions domain in
+		let rec post_generate_actions (stored_domain:Store.domain option) =
+			let db = db_fallback () in
+			let domain = get_domain db stored_domain in
+			let continue () = post_generate_actions (get_stored ()) in
 			let next (_:bool) = continue () in
 			let edit_and_save () =
 				edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () >>= next
@@ -234,8 +237,8 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			let common_actions = [
 				("c", "c: Continue", break);
 				("q", "q: Quit", fun () -> Lwt.return ());
-				("a", "a: Again", input_loop ~domain:(Some domain_text));
-				("r", "r: Sync", try_sync);
+				("r", "r: Regenerate", input_loop ~domain:(Some domain_text));
+				("s", "s: Sync", try_sync);
 			] in
 			let actions = match S.value (sync_state.Sync.current_user_db) with
 				| None -> common_actions
@@ -247,7 +250,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 						]
 					| None ->
 						[
-							("s", "s: Save " ^ domain_text, edit_and_save);
+							("a", "a: Add " ^ domain_text ^ " to database", edit_and_save);
 						]
 				)
 			in
@@ -276,13 +279,13 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 		in
 
 		let db = db_fallback () in
-		let domain = stored_domain |> Option.default (Store.default db domain_text) in
+		let stored_domain = get_stored () in
+		let domain = get_domain db stored_domain in
 		if edit then
 			lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
 		else begin
-			log#log "";
 			log#log " - Length: %d" domain.length;
 			begin match stored_domain with
 				| None ->
@@ -295,7 +298,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 			let generated = Password.generate ~domain password in
 			lwt () = output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated in
-			post_generate_actions domain ()
+			post_generate_actions stored_domain
 		end
 	in
 
