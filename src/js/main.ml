@@ -537,6 +537,51 @@ let password_form sync : #Dom_html.element Ui.widget =
 			submit_form ();
 			Lwt.return_unit
 		)
+		<&>
+		(while_lwt true do
+			lwt () = Lwt_react.E.next form_submits in
+			Lwt.pick [
+				(
+					lwt _ = Lwt_react.E.next (S.changes password_input_data) in
+					log#debug "input changed; cancelling timeout";
+					return_unit
+				);
+				(
+
+					(* After generating a password, if the window stays blurred
+					 * for more than 10s we clear the master password (to prevent
+					 * leaving master passwords around)
+					 *)
+					let await evt subject : unit Lwt.t =
+						lwt _ = evt subject in
+						return_unit
+					in
+					let blur_timeout = 30.0 in
+					while_lwt true do
+						log#debug "awaiting window blur";
+						lwt () = await Lwt_js_events.blur window in
+						Lwt.pick [
+							(
+								lwt () = await Lwt_js_events.focus window in
+								log#debug "window back in focus";
+								(* continue loop, waiting until next blur *)
+								return_unit
+							);
+							(
+								log#debug "window blurred; clearing pwd in %fs" blur_timeout;
+								lwt () = Lwt_js.sleep blur_timeout in
+								log#debug "clearing generated password";
+								(* cancels this branch because the other one is waiting
+								 * on `password_input_data` changes *)
+								set_master_password "";
+								return_unit
+							)
+						]
+					done
+				);
+			]
+		done)
+
 	);
 	form
 
