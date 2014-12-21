@@ -84,22 +84,64 @@ let password_form sync : #Dom_html.element Ui.widget =
 	let db_fallback = sync.Sync.db_fallback in
 	let open Ui in
 
-	let current_password, set_current_password = S.create None in
-	let invalidate_password = fun elem ->
-		Lwt_js_events.inputs elem (fun event _ ->
-			set_current_password None;
-			Lwt.return_unit
-		) in
 	let domain, set_domain = S.create "" in
 
 	let domain_is_active, set_domain_is_active = S.create false in
 	let domain_input = Ui.input_of_signal ~update:set_domain domain in
 	domain_input#attr "name" "domain";
 
-	let password_input = element (fun () -> createInput document ~_type:(s"password") ~name:(s"password")) in
+	let master_password, set_master_password = S.create "" in
+	let password_input :Dom_html.inputElement widget = Ui.input_of_signal
+		~cons:(fun () -> createInput document ~_type:(s"password") ~name:(s"password"))
+		~update:set_master_password
+		master_password
+	in
 	domain_input#attr "class" "form-control";
 	password_input#attr "class" "form-control password";
-	password_input#mechanism invalidate_password;
+
+	let empty_domain = domain |> S.map (fun d -> d = "") in
+	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
+	let saved_domain_info = S.l3 (fun db domain text ->
+		match domain with
+			| Some d -> d
+			| None -> Store.default db text
+	) db_fallback domain_record domain in
+	let domain_is_unknown = (S.map Option.is_none domain_record) in
+
+	let domain_info, update_domain_info = editable_signal saved_domain_info in
+	let update_domain_info = fun v ->
+		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
+
+
+	(* build up the generated password.
+	 * It tracks (master_password, domain_info), but only
+	 * sampled on form_submits. Whenever the inputs change or
+	 * clear_generated_password is triggered, the inputs are
+	 * overridden to be `None`, so the password is removed.
+	 *)
+	let password_input_data = S.l2 (fun a b -> (a,b)) master_password domain_info in
+	let password_resets, clear_generated_password = E.create () in
+	let password_resets =
+		(* reset password info to `None` when a reset is explicitly triggered,
+		 * or when the input data changes *)
+		let to_none = fun _ -> None in
+		E.select [
+			password_resets |> E.map to_none;
+			S.changes password_input_data |> E.map to_none;
+		] in
+
+	let form_submits, submit_form = E.create () in
+	let password_submissions = S.sample (fun () v -> v) form_submits password_input_data
+		|> E.map (fun inputs -> (Some inputs)) in
+
+	let current_password = E.select [password_resets; password_submissions]
+		|> S.hold None
+		|> S.map (fun inputs -> inputs
+			|> Option.map (fun (password, domain)
+				-> Password.generate ~domain password
+			)
+		)
+	in
 
 	let to_html_elem : Dom.node Js.t -> Dom_html.element Js.t Js.opt = fun node ->
 		let elem = Dom.CoerceTo.element node in
@@ -130,7 +172,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 					let input = Opt.bind input Dom_html.CoerceTo.input in
 					let input = Opt.get input (fun () -> failwith "can't find input for clear_button") in
 
-					set_current_password None;
+					clear_generated_password ();
 					trigger |> Option.may (fun f -> f ());
 					input##value <- Js.string"";
 					input##focus ();
@@ -142,16 +184,6 @@ let password_form sync : #Dom_html.element Ui.widget =
 	let disable_autocomplete input = input#attr "autocomplete" "off" in
 	disable_autocomplete domain_input;
 	disable_autocomplete password_input;
-
-	let master_password = Ui.signal_of_input ~events:Lwt_js_events.inputs password_input in
-	let empty_domain = domain |> S.map (fun d -> d = "") in
-	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
-	let saved_domain_info = S.l3 (fun db domain text ->
-		match domain with
-			| Some d -> d
-			| None -> Store.default db text
-	) db_fallback domain_record domain in
-	let domain_is_unknown = (S.map Option.is_none domain_record) in
 
 	let _domain_suggestions = S.l2 (fun db query ->
 		if query = "" then None else (
@@ -196,7 +228,6 @@ let password_form sync : #Dom_html.element Ui.widget =
 		elem##focus();
 		set_domain_is_active true;
 		Lwt.join [
-			invalidate_password elem;
 			Lwt_js_events.focuses  elem (fun _ _ -> set_domain_is_active true; return_unit);
 			Lwt_js_events.blurs    elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
@@ -261,10 +292,6 @@ let password_form sync : #Dom_html.element Ui.widget =
 		) ~mechanism:parent_mech ()
 	in
 
-	let domain_info, update_domain_info = editable_signal saved_domain_info in
-	let update_domain_info = fun v ->
-		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
-
 	let open Store in
 	let domain_info_editor ~get ~set = input_of_signal
 		~update:(fun v -> update_domain_info (set v))
@@ -291,10 +318,10 @@ let password_form sync : #Dom_html.element Ui.widget =
 			return_unit
 		)
 	) in
-	let reset_generated_password_mech = (fun elem ->
+	let clear_generated_password_mech = (fun elem ->
 		Lwt_js_events.clicks elem (fun e _ ->
 			Ui.stop e;
-			set_current_password None;
+			clear_generated_password ();
 			return_unit
 		)
 	) in
@@ -367,7 +394,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 						] ();
 						child td ~cls:"controls" ~children:[
 							child span ~cls:"toggle"
-								~mechanism:reset_generated_password_mech
+								~mechanism:clear_generated_password_mech
 								~children:[icon "remove"] ();
 						] ();
 					] ();
@@ -488,7 +515,6 @@ let password_form sync : #Dom_html.element Ui.widget =
 		];
 	] () in
 
-
 	let keycode_s = 83 in
 	form#mechanism (fun elem ->
 		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
@@ -508,11 +534,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 						let input = CoerceTo.input(elem) |> non_null in
 						input##blur()
 				);
-
-			let domain = S.value domain_info in
-			let password = S.value master_password in
-			let password = Password.generate ~domain password in
-			set_current_password (Some password);
+			submit_form ();
 			Lwt.return_unit
 		)
 	);
