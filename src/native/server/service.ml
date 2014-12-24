@@ -163,10 +163,20 @@ let handler ~document_root ~data_root ~user_db sock req body =
 				| Some u -> fn u
 		in
 
+		let check_version () =
+			match Header.get (Cohttp.Request.headers req) "x-passe-version" with
+				| None -> log#debug "client did not provide a version - good luck!"
+				| Some client_version ->
+					(* this will be used when breaking format changes *)
+					log#debug "Client version: %s" client_version;
+					()
+		in
+
 		match Cohttp.Request.meth req with
 			| `GET -> (
 				match path with
 					| ["db"] ->
+							check_version ();
 							authorized (fun user ->
 								let username = user.Auth.User.name in
 								log#debug "serving db for user: %s" username;
@@ -195,6 +205,7 @@ let handler ~document_root ~data_root ~user_db sock req body =
 					| _ -> serve_static uri
 				)
 			| `POST -> (
+				check_version ();
 				lwt params = (
 					lwt json = (Cohttp_lwt_body.to_string body) in
 					(* log#trace "got body: %s" json; *)

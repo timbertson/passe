@@ -121,4 +121,5 @@ let () =
 	run_test_tt_main (OUnit2.test_list [
 		Sync_tests.suite;
 		Db_tests.suite;
+		Version_tests.suite;
 	])

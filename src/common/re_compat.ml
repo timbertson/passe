@@ -2,6 +2,7 @@
 
 IFDEF JS THEN
 	module Str = struct
+		let split = Regexp.split
 		let regexp = Regexp.regexp
 		let quote = Regexp.quote
 		let regexp_string = Regexp.regexp_string

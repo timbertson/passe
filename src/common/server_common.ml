@@ -14,3 +14,7 @@ let path p = `Path p
 let canonicalize ~root = function
 	| `Absolute u -> u
 	| `Path p -> Uri.with_path root ("/" ^ String.concat "/" p)
+
+let common_headers = [
+	"x-passe-version", Version.version;
+]

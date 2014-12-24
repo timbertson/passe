@@ -370,7 +370,7 @@ let ui state =
 						set_auth_state (Client_auth.Failed_login username);
 						return_unit
 					| Failed (_, msg, _) ->
-						log#warn "unknown failure, assuming connectivity issue: %s" msg;
+						log#warn "unknown failure: %s" msg;
 						continue := true;
 						set_busy false;
 						Lwt.pick [

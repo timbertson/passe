@@ -39,6 +39,9 @@ let json_payload (response, body) =
 
 let request ?content_type ?token ~meth ?data url =
 	let headers = ref (Header.init ()) in
+	headers := common_headers |> List.fold_left (fun headers (k,v) ->
+		Header.add headers k v
+	) !headers;
 	content_type |> Option.may (fun content_type ->
 		headers := Header.add !headers "Content-type" content_type
 	);

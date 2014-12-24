@@ -12,8 +12,22 @@ else
 fi
 
 cat >"$1" <<EOF
+open Re_compat
 let version="$(cat ../../VERSION)"
 let commit = $commit
+let parse v = let open Re_compat in
+	let dot = Str.(regexp (quote ".")) in
+	let v =
+		try String.sub v 0 (String.rindex v '-')
+		with Not_found -> v in
+	let parts = Str.(split dot v) in
+	let parts = List.map int_of_string parts in
+	match parts with
+		| maj :: min :: patch :: _ -> (maj, min, patch)
+		| _ -> raise (Common.AssertionError ("unparseable version: " ^ v))
+
+let minor (maj, min, patch) = (maj, min)
+
 let pretty () = match commit with
 	| Some c -> version ^ "-" ^ c
 	| None -> version

@@ -42,6 +42,11 @@ let request ?content_type ?token ~meth ?data url =
 	let req = Xhr.create () in
 	let url = Uri.to_string (canonicalize ~root:!root_url url) in
 	req##_open (Js.string meth, Js.string url, Js._true);
+
+	common_headers |> List.iter (fun (k,v) ->
+		req##setRequestHeader (Js.string k, Js.string v)
+	);
+
 	content_type |> Option.may (fun content_type ->
 		req##setRequestHeader (Js.string "Content-type", Js.string content_type)
 	);
