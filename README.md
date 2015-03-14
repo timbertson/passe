@@ -29,7 +29,7 @@ a pinch to generate a compatible password (since they all use the same algorithm
 Having said that, it's a very _nice_ convenience. It means you can change certain settings and store notes per-domain.
 Like perhaps which master password a given site uses, if you have multiple or are in the process of changing your master password.
 It also helps you out when a site gets hacked - you can store a non-sensitive "suffix" which alters your
-generated password without having to chang your master password."
+generated password without having to change your master password."
 
 ### But you're storing my data online! Is that safe?
 
