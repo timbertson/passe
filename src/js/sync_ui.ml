@@ -71,7 +71,7 @@ let ui state =
 
 				child div ~cls:"clearfix" ();
 			] ~mechanism:(fun elem ->
-				let signup_button = elem##querySelector(".signup") |> non_null in
+				let signup_button = elem##querySelector(Js.string ".signup") |> non_null in
 				let submit url =
 					log#info "form submitted";
 					let data = `Assoc (Form.get_form_contents elem

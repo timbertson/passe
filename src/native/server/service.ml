@@ -370,10 +370,13 @@ let start_server ~host ~port ~document_root ~data_root () =
 	log#info "Data root: %s" data_root;
 	if enable_rc then log#warn "Remote control enabled (for test use only)";
 	let user_db = make_db data_root in
-	let conn_closed id () = log#trace "connection %s closed" (Connection.to_string id) in
+	let conn_closed (_ch, _conn) = log#trace "connection closed" in
 	let callback = handler ~document_root ~data_root:(ref data_root) ~user_db:(ref user_db) in
-	let config = { Server.callback; conn_closed } in
-	Server.create ~address:host ~port:port config
+	let config = Server.make ~callback ~conn_closed () in
+	let mode = `TCP (`Port port) in
+	lwt ctx = Conduit_lwt_unix.init ~src:host () in
+	let ctx = Cohttp_lwt_unix_net.init ~ctx () in
+	Server.create ~ctx ~mode config
 
 let main () =
 	let open Extlib in

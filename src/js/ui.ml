@@ -115,7 +115,8 @@ let effectful_stream_mechanism effect : unit Lwt.t =
 	
 
 let stream_attribute_mechanism name value = fun elem ->
-	let set v = elem##setAttribute(name, Js.string v) in
+	let name_js = Js.string name in
+	let set v = elem##setAttribute(name_js, Js.string v) in
 	effectful_stream_mechanism (value |> S.map set)
 
 let stream_class_mechanism name value = fun elem ->

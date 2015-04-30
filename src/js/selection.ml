@@ -1,7 +1,7 @@
 open Js
 
 class type range = object
-	method selectNodeContents : #Dom.node -> unit meth
+	method selectNodeContents : #Dom.node t -> unit meth
 	method commonAncestorContainer : #Dom.node t prop
 	method startContainer : #Dom.node t prop
 	method endContainer : #Dom.node t prop
@@ -13,7 +13,7 @@ class type selection = object
 	method removeAllRanges : unit meth
 	method addRange : range t -> unit meth
 	method rangeCount : int prop
-	method getRangeAt : int t -> range t meth
+	method getRangeAt : int -> range t meth
 end
 
 class type doc = object
@@ -35,6 +35,7 @@ let is_fully_selected ~length node =
 let select node =
 	let sel = doc##getSelection() in
 	let range = doc##createRange() in
+	let node = (node :> #Dom.node Js.t) in
 	range##selectNodeContents(node);
 	sel##removeAllRanges();
 	sel##addRange(range)
