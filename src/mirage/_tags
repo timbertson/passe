@@ -1,0 +1,2 @@
+<passe/*.cmx>: for-pack(Passe)
+<server/*.cmx>: for-pack(Passe_server)

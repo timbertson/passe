@@ -1,0 +1,3 @@
+gup-build-selections:
+	selections.*.nix
+

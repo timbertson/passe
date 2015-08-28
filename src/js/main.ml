@@ -1,4 +1,5 @@
 open Passe
+open Passe_js
 open Lwt
 open Js
 open Dom_html
@@ -97,7 +98,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 		master_password
 	in
 	domain_input#attr "class" "form-control";
-	password_input#attr "class" "form-control password";
+	password_input#attr "class" "form-control password-input";
 
 	let empty_domain = domain |> S.map (fun d -> d = "") in
 	let domain_record = S.l2 (fun db dom -> Store.lookup dom db) db_fallback domain in
@@ -181,9 +182,14 @@ let password_form sync : #Dom_html.element Ui.widget =
 			) ();
 	in
 
-	let disable_autocomplete input = input#attr "autocomplete" "off" in
-	disable_autocomplete domain_input;
-	disable_autocomplete password_input;
+	let disable_input_coersion input =
+		(* Stop it stop it stop it. *)
+		input#attr "autocomplete" "off";
+		input#attr "autocorrect" "off";
+		input#attr "autocapitalize" "off"
+	in
+	disable_input_coersion domain_input;
+	disable_input_coersion password_input;
 
 	let _domain_suggestions = S.l2 (fun db query ->
 		if query = "" then None else (
@@ -210,8 +216,8 @@ let password_form sync : #Dom_html.element Ui.widget =
 		set_suggestion_idx (Some (min desired max_len));
 	in
 	
-	let keycode_return = 13 in
-	let keycode_tab = 9 in
+	let keycode_s = 83 in
+
 	let accept_suggestion : 'a. string -> (#Dom_html.element as 'a) Js.t -> unit
 		= fun text elem ->
 		set_domain text;
@@ -232,34 +238,40 @@ let password_form sync : #Dom_html.element Ui.widget =
 			Lwt_js_events.blurs    elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
 			Lwt_js_events.keydowns elem (fun e _ ->
-				e##keyIdentifier |> Optdef.to_option
-				|> Option.or_fn (fun () -> Unsafe.get e "key" |> Optdef.to_option)
-				|> Option.may (fun ident ->
-					match Js.to_string ident with
-					| "Up" | "ArrowUp" -> select_diff (-1); stop e
-					| "Down" | "ArrowDown" -> select_diff 1; stop e
-					| _ -> ()
-				);
-				let which = Unsafe.get e "which" in
-				let select_current () =
-					let selected = ref false in
-					S.value suggestion_idx |> Option.may (fun idx ->
-						S.value _domain_suggestions |> Option.may (fun l ->
-							try (
-								accept_suggestion (List.nth l idx) elem;
-								selected := true
-							) with Not_found -> ()
-						)
+				if e##keyCode = keycode_esc then (
+					stop e;
+					set_domain "";
+					elem##focus()
+				) else (
+					e##keyIdentifier |> Optdef.to_option
+					|> Option.or_fn (fun () -> Unsafe.get e "key" |> Optdef.to_option)
+					|> Option.may (fun ident ->
+						match Js.to_string ident with
+						| "Up" | "ArrowUp" -> select_diff (-1); stop e
+						| "Down" | "ArrowDown" -> select_diff 1; stop e
+						| _ -> ()
 					);
-					!selected
-				in
+					let which = Unsafe.get e "which" in
+					let select_current () =
+						let selected = ref false in
+						S.value suggestion_idx |> Option.may (fun idx ->
+							S.value _domain_suggestions |> Option.may (fun l ->
+								try (
+									accept_suggestion (List.nth l idx) elem;
+									selected := true
+								) with Not_found -> ()
+							)
+						);
+						!selected
+					in
 
-				begin match which with
-					| k when k = keycode_tab -> if (select_current ()) then stop e
-					| k when k = keycode_return -> if (select_current ()) then stop e
-					| k -> log#debug "ignoring unknown key code %d" k
-				end;
-				Console.console##log(e);
+					begin match which with
+						| k when k = keycode_tab -> if (select_current ()) then stop e
+						| k when k = keycode_return -> if (select_current ()) then stop e
+						| k -> log#debug "ignoring unknown key code %d" k
+					end;
+					(* Console.console##log(e); *)
+				);
 				return_unit
 			);
 		]
@@ -479,7 +491,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 		];
 	in
 
-	let form = Ui.form ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
+	let form = Ui.div ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
 		let left elem = col ~size:2 [elem] in
 
 		row `Sml [
@@ -503,7 +515,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 						child div ~cls:"input-group" ~children:[
 							frag password_input;
 							child span ~cls:"input-group-btn" ~children:[
-								child button ~cls:"btn btn-default" ~attrs:[("type", "submit")] ~children:[icon "play"] ();
+								child button ~cls:"btn btn-default submit" ~attrs:[("type", "submit")] ~children:[icon "play"] ();
 							] ();
 						]();
 						frag password_display;
@@ -515,18 +527,10 @@ let password_form sync : #Dom_html.element Ui.widget =
 		];
 	] () in
 
-	let keycode_s = 83 in
 	form#mechanism (fun elem ->
-		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
-			Console.console##log(event);
-			if (to_bool event##ctrlKey && event##keyCode = keycode_s) then (
-				stop event;
-				save_current_domain ();
-				return_unit
-			) else return_unit
-		)
-		<&>
-		Lwt_js_events.submits elem (fun event _ ->
+		let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
+		let password_input = elem##querySelector(Js.string "input.password-input") |> non_null in
+		let submit_form event =
 			Ui.stop event;
 			log#info "form submitted";
 			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList
@@ -536,6 +540,36 @@ let password_form sync : #Dom_html.element Ui.widget =
 				);
 			submit_form ();
 			Lwt.return_unit
+		in
+
+		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
+			if (to_bool event##ctrlKey && event##keyCode = keycode_s) then (
+				stop event;
+				save_current_domain ();
+				return_unit
+			) else (
+				return_unit
+			)
+		)
+		<&>
+		Lwt_js_events.keydowns ~use_capture:false document (fun event _ ->
+			if (event##keyCode = keycode_esc) then (
+				stop event;
+				set_master_password "";
+				let input = elem##querySelector (Js.string "input[name=password]") in
+				let input = Opt.bind input Dom_html.CoerceTo.input in
+				let input = Opt.get input (fun () -> failwith "can't find password input") in
+				input##focus ();
+			);
+			return_unit
+		)
+		<&>
+		Lwt_js_events.clicks submit_button (fun event _ -> submit_form event)
+		<&>
+		Lwt_js_events.keyups password_input (fun event _ ->
+			if event##keyCode = keycode_return then (
+				submit_form event
+			) else return_unit
 		)
 		<&>
 		(while_lwt true do
@@ -598,7 +632,7 @@ let show_form sync (container:Dom_html.element Js.t) =
 				Ui.frag @@ footer ();
 			]()
 		] () in
-	(* all_content#append @@ db_display (); *)
+	(* all_content#append @@ db_display sync; *)
 	Ui.withContent container all_content (fun _ ->
 		lwt () = Ui.pause () in
 		Lwt.return_unit

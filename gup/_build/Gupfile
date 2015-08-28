@@ -1,7 +1,10 @@
 gup-ocamlbuild:
 	**/*.byte
 	**/*.native
+	**/*.native.o
 	**/*.cmo
 	**/*.cma
 gup-js:
 	**/*.js
+gup-xen:
+	**/mir-console.xen

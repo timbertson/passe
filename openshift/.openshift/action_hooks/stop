@@ -1,6 +1,2 @@
 #!/bin/bash
-set -eu
-source "$(dirname "$0")/base.sh"
-
-pid="$(get_pid)"
-kill_session "$pid"
+exec "$(dirname "$0")/ctl.sh" stop

@@ -1,37 +1,41 @@
 #!python
 from __future__ import print_function
 import sys
-
-sources = [
-	"index.html",
-	"js/main.js",
-	"res/css/style.css",
-	# "res/incognito.png",
-	"res/fonts/glyphicons-halflings-regular.woff",
-]
-
 import subprocess
-subprocess.check_call(["gup", "-u", 'res/fonts'])
-subprocess.check_call(["gup", "-u"] + sources)
 
-import hashlib
-digest = hashlib.md5()
+try:
 
-for fname in sources:
-	print("reading " + fname)
-	with open(fname) as input:
-		while True:
-			chunk = input.read(1024)
-			if not chunk:
-				break
-			digest.update(chunk)
+	sources = [
+		"index.html",
+		"js/main.js",
+		"res/css/style.css",
+		# "res/incognito.png",
+		"res/fonts/glyphicons-halflings-regular.woff",
+	]
 
-with open(sys.argv[1], 'w') as output:
-	output.write("CACHE MANIFEST\n")
-	output.write("# md5: " + digest.hexdigest() + "\n")
+	subprocess.check_call(["gup", "-u", 'res/fonts'])
+	subprocess.check_call(["gup", "-u"] + sources)
+
+	import hashlib
+	digest = hashlib.md5()
+
 	for fname in sources:
-		output.write(fname + "\n")
-	output.write("\n".join([
-		"NETWORK:",
-		"*",
-	]))
+		print("reading " + fname)
+		with open(fname) as input:
+			while True:
+				chunk = input.read(1024)
+				if not chunk:
+					break
+				digest.update(chunk)
+
+	with open(sys.argv[1], 'w') as output:
+		output.write("CACHE MANIFEST\n")
+		output.write("# md5: " + digest.hexdigest() + "\n")
+		for fname in sources:
+			output.write(fname + "\n")
+		output.write("\n".join([
+			"NETWORK:",
+			"*",
+		]))
+except subprocess.CalledProcessError as e:
+	sys.exit(1)

@@ -1,6 +1,9 @@
 open Lwt
 module Xhr = XmlHttpRequest
 module J = Json_ext
+module Version = Version.Make(Re_js)
+module Server_common = Server_common.Make(Version)
+module Logging = Logging.Make(Logging.Js_output)
 include Server_common
 
 let log = Logging.get_logger "sync"
@@ -130,7 +133,6 @@ let post_json ?token ~(data:J.json) url =
 		~meth:"POST"
 		~data:(J.to_string data)
 		url in
-	(* lwt frame = Xhr.perform ~post_args:data url in *)
 	handle_json_response frame
 
 

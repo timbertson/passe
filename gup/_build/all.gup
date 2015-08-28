@@ -5,4 +5,6 @@ gup -u \
 	index.appcache \
 	js/all \
 	native/all \
+	bin \
 	;
+gup -u manifest

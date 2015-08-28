@@ -1,4 +1,5 @@
 open Passe
+open Passe_js
 open Common
 open React_ext
 open Ui
@@ -43,7 +44,7 @@ let ui state =
 			|> Ui.stream in
 		
 		div ~cls:"account-status login alert alert-info" ~children:[
-			child form ~cls:"login form-inline" ~attrs:[("role","form")] ~children:[
+			child div ~cls:"login form-inline" ~attrs:["role","form"] ~children:[
 				error_widget;
 				child div ~cls:"form-group form-group-xs email" ~children:[
 					child label ~cls:"sr-only" ~text:"User" ();
@@ -58,7 +59,7 @@ let ui state =
 
 				child div ~cls:"form-group form-group-xs password" ~children:[
 					child label ~cls:"sr-only" ~text:"password" ();
-					child input ~cls:"form-control" ~attrs:[
+					child input ~cls:"form-control password-input" ~attrs:[
 						("type","password");
 						("name","password");
 						("placeholder","password")
@@ -66,15 +67,17 @@ let ui state =
 				] ();
 
 				space;
+				child input ~cls:"btn btn-primary login" ~attrs:[("type","submit"); ("value","Sign in")] ();
 				child input ~cls:"btn btn-default muted signup pull-right" ~attrs:[("type","button"); ("value","Register")] ~text:"Register" ();
-				child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Sign in")] ();
 
 				child div ~cls:"clearfix" ();
 			] ~mechanism:(fun elem ->
-				let signup_button = elem##querySelector(".signup") |> non_null in
+				let signup_button = elem##querySelector(Js.string ".signup") |> non_null in
+				let login_button = elem##querySelector(Js.string ".login") |> non_null in
+				let password_input = elem##querySelector(Js.string ".password-input") |> non_null in
 				let submit url =
 					log#info "form submitted";
-					let data = `Assoc (Form.get_form_contents elem
+					let data = `Assoc (get_form_contents elem
 						|> List.map (fun (name, value) -> (name, `String value))) in
 					let open Server in
 					let open Either in
@@ -96,9 +99,16 @@ let ui state =
 					submit Client_auth.signup_url
 				)
 				<&>
-				Lwt_js_events.submits elem (fun event _ ->
+				Lwt_js_events.clicks login_button (fun event _ ->
 					stop event;
 					submit Client_auth.login_url
+				)
+				<&>
+				Lwt_js_events.keydowns password_input (fun event _ ->
+					if event##keyCode = keycode_return then (
+						stop event;
+						submit Client_auth.login_url
+					) else return_unit
 				)
 			) ()
 		] ()
@@ -183,7 +193,7 @@ let ui state =
 								let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in
 								length_field#attr "class" "form-control";
 
-								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+								child div ~cls:"form-horizontal" ~children:[
 									error_widget;
 
 									row `XS ~cls:"form-group" [
@@ -193,11 +203,12 @@ let ui state =
 
 									row `XS [
 										col ~size:8 ~offset:4 [
-											child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Save defaults")] ();
+											child input ~cls:"btn btn-primary save" ~attrs:[("type","submit"); ("value","Save defaults")] ();
 										];
 									];
 								] ~mechanism:(fun form ->
-									Lwt_js_events.submits form (fun event _ ->
+									let submit_button = elem##querySelector(Js.string ".save") |> non_null in
+									Lwt_js_events.clicks submit_button (fun event _ ->
 										stop event;
 										let length = S.value length in
 										let saved = if length = current_length
@@ -233,7 +244,7 @@ let ui state =
 									]
 								in
 
-								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+								child div ~cls:"form-horizontal" ~children:[
 									error_widget;
 									password_input ~label:"Old password" "new";
 									password_input ~label:"New password" "new";
@@ -241,13 +252,14 @@ let ui state =
 
 									row `XS [
 										col ~size:8 ~offset:4 [
-											child input ~cls:"btn btn-primary" ~attrs:[("type","submit"); ("value","Change password")] ();
+											child input ~cls:"btn btn-primary submit" ~attrs:[("type","submit"); ("value","Change password")] ();
 										]
 									];
 								] ~mechanism:(fun form ->
-									Lwt_js_events.submits form (fun event _ ->
+									let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
+									Lwt_js_events.clicks submit_button (fun event _ ->
 										stop event;
-										let pairs = Form.get_form_contents form in
+										let pairs = get_form_contents form in
 										let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
 										let new1 = data |> J.mandatory J.string_field "new"
 										and new2 = data |> J.mandatory J.string_field "new2" in
@@ -289,7 +301,7 @@ let ui state =
 									password_field#attr "class" "form-control";
 								) in
 
-								child form ~cls:"form-horizontal" ~attrs:["action","/fail";"method","POST"] ~children:[
+								child div ~cls:"form-horizontal" ~children:[
 									error_widget;
 									row `XS ~cls:"form-group" [
 										col ~size:4 [control_label "Password"];
@@ -299,11 +311,12 @@ let ui state =
 									row `XS ~collapse:true [
 										col ~size:8 ~offset:4 ~cls:"text-right" [
 											child span ~cls:"text-muted" ~text:"Careful now... " ();
-											child input ~cls:"btn btn-danger" ~attrs:[("type","submit"); ("value","Delete account")] ();
+											child input ~cls:"btn btn-danger submit" ~attrs:[("type","submit"); ("value","Delete account")] ();
 										];
 									];
 								] ~mechanism:(fun form ->
-									Lwt_js_events.submits form (fun event _ ->
+									let submit_button = form##querySelector(Js.string ".submit") |> non_null in
+									Lwt_js_events.clicks submit_button (fun event _ ->
 										stop event;
 										if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
 											set_error None;

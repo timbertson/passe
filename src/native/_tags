@@ -1,5 +1,9 @@
-true: debug, package(batteries,yojson, cohttp,cohttp.lwt, lambda-term, react,camlp4.macro, uri, lwt, lwt.unix, lwt.syntax, sha, safepass), syntax(camlp4o)
+true: debug, package(mirage-clock-unix,mirage,mirage-fs-unix, batteries,yojson, cohttp,cohttp.lwt, uri, lwt, lwt.unix, lwt.syntax, sha, react), syntax(camlp4o)
+<server/*> or <passe_server.*> or <bin/server.*>: package(nocrypto, nocrypto.lwt, safepass)
+<client/*> or <passe_client.*> or <bin/client.*>: package(lambda-term)
+
 <passe/*.cmx>: for-pack(Passe)
 <server/*.cmx>: for-pack(Passe_server)
 <client/*.cmx>: for-pack(Passe_client)
+
 <test/*>: package(oUnit)

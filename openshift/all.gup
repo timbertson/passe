@@ -1,2 +1,15 @@
 #!bash -eu
-gup -u share build
+set -x
+gup --always
+build_type=_build.prod
+gup -u "../$build_type/all"
+
+rm -rf "./app"
+../install.sh "$build_type" ./app
+
+# remove client binaries
+rm -r "app/$build_type/native/bin/client.native"
+rm -r app/bin/passe
+
+# copy dependencies (so we can run on old RHEL)
+gup lib

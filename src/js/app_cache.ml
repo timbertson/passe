@@ -1,5 +1,6 @@
 open Js
 open Passe
+open Passe_js
 
 type cache_event = [
 	| `Updateready

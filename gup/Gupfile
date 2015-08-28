@@ -1,2 +1,2 @@
 _build/gup-mlpack:
-	src/*/*.mlpack
+	src/**/*.mlpack

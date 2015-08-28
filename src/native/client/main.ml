@@ -4,6 +4,7 @@ let print_exc dest exc =
 	output_string dest (Printexc.to_string exc)
 
 open Passe
+open Passe_unix
 open Batteries
 open Extlib
 open React_ext
@@ -97,8 +98,8 @@ let apply_verbosity verbosity =
 		| 3 -> Debug
 		| n -> if n <= 0 then Error else Trace
 	) in
-	Logging.current_level := Logging.ord new_level;
-	log#info "Log level: %s" (Logging.string_of_level new_level)
+	Logging.current_level := ord new_level;
+	log#info "Log level: %s" (string_of_level new_level)
 
 let default_verbosity = 1 (* warnings only *)
 

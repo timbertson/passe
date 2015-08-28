@@ -1,4 +1,0 @@
-#!bash -eu
-gup -u docker/Dockerfile
-docker build -t passe-centos docker
-touch "$1"

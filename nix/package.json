@@ -1,0 +1,7 @@
+{ "name": "passe-deps"
+, "dependencies":
+  { "bootstrap": "3.2.0"
+  , "less": "*"
+  , "less-plugin-clean-css": "*"
+  }
+}

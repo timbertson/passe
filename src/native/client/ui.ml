@@ -1,4 +1,5 @@
 open Passe
+open Passe_unix
 open Common
 open Lwt
 open Lwt_react
@@ -166,7 +167,7 @@ let sync_ui state =
 	try_lwt
 		lwt credentials =
 			let rec loop auth_state =
-				let open Auth in
+				let open Client_auth in
 				match auth_state with
 					| Active_user creds -> return creds
 					| Saved_user creds ->

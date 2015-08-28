@@ -1,4 +1,5 @@
 open Passe
+open Passe_js
 open Common
 open Lwt
 open React
@@ -115,7 +116,8 @@ let effectful_stream_mechanism effect : unit Lwt.t =
 	
 
 let stream_attribute_mechanism name value = fun elem ->
-	let set v = elem##setAttribute(name, Js.string v) in
+	let name_js = Js.string name in
+	let set v = elem##setAttribute(name_js, Js.string v) in
 	effectful_stream_mechanism (value |> S.map set)
 
 let stream_class_mechanism name value = fun elem ->
@@ -202,7 +204,7 @@ let element cons = new widget cons []
 let textArea = wrap Dom_html.createTextarea
 let div = wrap Dom_html.createDiv
 let span = wrap Dom_html.createSpan
-let form = wrap Dom_html.createForm
+(* let form = wrap Dom_html.createForm *)
 let label = wrap Dom_html.createLabel
 let a = wrap Dom_html.createA
 let p = wrap Dom_html.createP
@@ -524,3 +526,15 @@ let row scale ?collapse ?cls children =
 	) ()
 
 let control_label text = child label ~cls:"control-label" ~text ()
+
+let get_form_contents (elem:Dom_html.htmlElement Js.t) =
+	let open Js in 
+	elem##querySelectorAll(string "input[name]") |> Dom.list_of_nodeList |> List.map(fun elem ->
+		let input = Dom_html.CoerceTo.input elem in
+		let input = Opt.get input (fun () -> failwith "failed to cast input element") in
+		(input##name |> to_string, input##value |> to_string)
+	)
+
+let keycode_tab = 9
+let keycode_esc = 27
+let keycode_return = 13

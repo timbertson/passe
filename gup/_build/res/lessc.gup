@@ -1,3 +1,9 @@
 #!bash -eu
-gup -u ../../node_modules/less
-ln -s "../../node_modules/.bin/lessc" "$1"
+if [ -z "${LESSC:-}" ]; then
+	gup -u ../../node_modules/less
+	LESSC=../../node_modules/.bin/lessc
+else
+	gup --always
+	echo "$LESSC" | gup --contents
+fi
+ln -s "$LESSC" "$1"

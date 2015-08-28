@@ -10,5 +10,5 @@
 /src/common/domain_list.ml
 /src/js/about.md
 /src/js/about.ml
-/openshift/build
-/openshift/share
+/openshift/app
+/openshift/lib

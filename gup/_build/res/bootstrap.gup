@@ -1,4 +1,9 @@
 #!bash -eu
-dest="../../node_modules/bootstrap"
-gup -u "$dest"
-ln -s "$dest" "$1"
+if [ -z "${TWITTER_BOOTSTRAP:-}" ]; then
+	TWITTER_BOOTSTRAP=../../node_modules/bootstrap
+	gup -u "$TWITTER_BOOTSTRAP"
+else
+	gup --always
+	echo "$TWITTER_BOOTSTRAP" | gup --contents
+fi
+ln -s "$TWITTER_BOOTSTRAP" "$1"

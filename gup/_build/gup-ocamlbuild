@@ -15,11 +15,34 @@ gup -u $(cat prebuild.targets)
 popd > /dev/null
 
 pushd "../src/$compile_mode" >/dev/null
-gup -u $(cat prebuild.targets)
+if [ -e prebuild.targets ]; then
+	gup -u prebuild.targets
+	gup -u $(cat prebuild.targets)
+else
+	gup --ifcreate prebuild.targets
+fi
 gup --always
-ocamlbuild $ocamlbuild_args \
+
+FLAGS=""
+if [ "$compile_mode" = 'mirage-xen' ]; then
+	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"
+fi
+
+rainbow="$(which rainbow 2>/dev/null)"
+if [ -z "$rainbow" ]; then
+	rainbow="ocamlbuild"
+else
+	rainbow="$rainbow -- ocamlbuild"
+fi
+
+# for debugging
+# ocamlbuild $ocamlbuild_args -use-ocamlfind -show-tags "$target"
+
+set -x
+
+$rainbow $ocamlbuild_args \
 	-cflag -warn-error -cflag +a-3 \
-	-build-dir "$BUILDDIR" -use-ocamlfind "$target"
+	-build-dir "$BUILDDIR" -use-ocamlfind $FLAGS "$target"
 popd >/dev/null
 
 touch "$2"

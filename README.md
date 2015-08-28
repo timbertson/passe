@@ -89,31 +89,45 @@ Good! Depending on how little you trust me, you can do any (or all) of these thi
 
 <!-- /about -->
 
-# Hacking
+## Hacking
 
-Passé is written in Ocaml (both the server and client; which is compiled for the browser using `js_of_ocaml`).
+Passé is written in Ocaml (both the server and client; which is compiled for the browser using `js_of_ocaml`). Some of the build tools require nodejs.
 
-You'll need [opam](http://opam.ocamlpro.com/), and then:
+### Dependencies:
 
-	$ opam install camlp4 batteries yojson ssl cohttp lambda-term uri lwt sha safepass js_of_ocaml
+If you have [nix](http://nixos.org/nix/), you can just use `nix-shell` to get the required dependencies (or just run `nix-build` to build the whole thing).
+
+----
+
+If you don't have `nix`, you'll need:
+
+ - [opam](http://opam.ocamlpro.com/) (for ocaml dependencies)
+ - [nodejs](https://nodejs.org/) (for the less compiler + twitter bootstrap sources)
+ - then run: `opam install camlp4 batteries yojson ssl cohttp lambda-term uri lwt sha safepass js_of_ocaml`
+
+### Building / running:
+
+To build for development (in _build):
+
 	$ make
 
 	# run the server
-	$ ./bin/passe
+	$ ./_build/bin/passe-server
 
 	# You can now hit up http://localhost:8080/ in a browser,
 	# or run the CLI with:
-	$ env PASSE_SERVER="http://localhost:8080" ./bin/passe
+	$ env PASSE_SERVER="http://localhost:8080" ./_build/bin/passe
+
+To install (this will build the production version, without debug info):
+
+	./install.sh <destination>
 
 <a name="run-own"/>
 
-# Run your own server:
+# Run your own openshift instance:
 
-If you'd just like to build a server and don't want to install the dependencies yourself,
-you can just `make openshift/all`. As long as you have docker,
-that should build a binary in openshift/bin/server which should run on any
-recent RPM-based distro (fedora/centos/rhel). This includes running on an
-openshift DIY container, which is what I do.
+To build a portable image, run `make openshift/all`. That'll make a self-contained
+installation including all required libraries, as long as you're building on an x86_64 machine.
 
 # Licence
 

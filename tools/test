@@ -1,5 +1,8 @@
 #!/bin/bash
 set -eu
+if [ "${GUP_XTRACE:-}" = 1 ]; then
+	set -x
+fi
 t="_build/native/test/main.byte"
 gup -u -j4 "$t"
 # we poke the server on test boundaries,

@@ -1,0 +1,15 @@
+#!bash -eu
+gup --always
+. "$(dirname "$0")/build_type.sh"
+cd ..
+function sources {
+filter='-type f -o -type l'
+	find html/ $filter
+	find "$build_dir/" -maxdepth 1 $filter
+	find "$build_dir/bin" $filter
+	find "$build_dir/res/" $filter -a -name '*.css'
+	find "$build_dir/res/fonts/" $filter
+	find "$build_dir/js/" -name '*.js'
+	find "$build_dir/" -name '*.native'
+}
+sources | fgrep -v '.gup' > "$1"
