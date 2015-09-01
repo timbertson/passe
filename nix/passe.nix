@@ -51,7 +51,7 @@ in stdenv.mkDerivation ({
 	NODE_PATH = lib.concatStringsSep ":"
 		(map (base: "${base}/lib/node_modules") lessc_plugins);
 	MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
-	# passthru = { inherit opamSelections; };
+	passthru = { inherit opamSelections; };
 	buildInputs = [
 		coreutils
 		python

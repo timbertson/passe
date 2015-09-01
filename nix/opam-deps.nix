@@ -1,6 +1,13 @@
 {target, pkgs ? null}:
+with pkgs;
 let
-	# XXX is repetitive; could surely be neater...
+	opam2nix_repo = (import <nixpkgs> {}).fetchgit {
+		url = "https://github.com/gfxmonk/opam2nix-packages.git";
+		rev = "6f8c46e88c71c5876ff1b02f70085616fbdcc126";
+		sha256 = "0dg4niisixwzldc1dyjvwmrnppbn3qlcl86w1gykg97bjrw5gm85";
+	};
+
+	# XXX this is repetitive; could surely be neater...
 	names = import (
 		if target == "common" then ./opam-deps/common.nix
 		else if target == "mirage-unix" then ./opam-deps/mirage-unix.nix
@@ -9,32 +16,49 @@ let
 		else assert false; null
 	);
 	selections = assert pkgs != null;
-		import (
+		let selections_file = (
 			if target == "common" then ./selections.common.nix
 			else if target == "mirage-unix" then ./selections.mirage-unix.nix
 			else if target == "mirage-xen" then ./selections.mirage-xen.nix
 			else if target == "devel" then ./selections.devel.nix
 			else assert false; null
-		) {
+		); in
+		import "${opam2nix_repo}/import.nix" selections_file {
 			inherit pkgs;
-			opamPackages = import ../../opam2nix/dest/nix {inherit pkgs; };
-			opam2nix = pkgs.callPackage ../../opam2nix/nix/local.nix {};
-			# for testing patches...
-			overrideSelections = sels: if target == "mirage-xen" then sels // {
-				mirage-xen-posix = pkgs.lib.overrideDerivation sels.mirage-xen-posix (o: {
-					src = /home/tim/dev/scratch/mirage-platform/local.tgz;
+			opam2nix = pkgs.lib.overrideDerivation
+				(callPackage "${opam2nix_repo}/opam2nix/nix/opam2nix.nix" {})
+				(base: { src = "${opam2nix_repo}/opam2nix"; });
+
+			overrideSelections = sels: if target == "mirage-xen" then
+			let mirage-platform-src = fetchgit {
+				url = "https://github.com/gfxmonk/mirage-platform";
+				rev = "6121921ef6e666f021a61f3570840108927f90d8";
+				sha256 = "c22e03c43c823d057d240f61487e4b3659c7ec19b065b8acd14c2244d0ca6118";
+			};
+			in
+			sels // {
+				mirage-xen-posix = lib.overrideDerivation sels.mirage-xen-posix (o: {
+					src = mirage-platform-src;
 				});
-				mirage-xen-ocaml = pkgs.lib.overrideDerivation sels.mirage-xen-ocaml (o: {
-					src = /home/tim/dev/scratch/mirage-platform/local.tgz;
+				mirage-xen-ocaml = lib.overrideDerivation sels.mirage-xen-ocaml (o: {
+					src = mirage-platform-src;
 				});
-				mirage-xen = pkgs.lib.overrideDerivation sels.mirage-xen (o: {
-					src = /home/tim/dev/scratch/mirage-platform/local.tgz;
+				mirage-xen = lib.overrideDerivation sels.mirage-xen (o: {
+					src = mirage-platform-src;
 				});
-				io-page = pkgs.lib.overrideDerivation sels.io-page (o: {
-					src = /home/tim/dev/scratch/io-page/local.tgz;
+				io-page = lib.overrideDerivation sels.io-page (o: {
+					src = fetchgit {
+						url = "https://github.com/gfxmonk/io-page";
+						rev = "ce3dc3766626556b62ca0a10c3e6b85b338bff46";
+						sha256 = "a8fe256ec84e3f07e8aa1bc0b743cfa4a71fbe8f2aeb263ebba879a109f88d54";
+					};
 				});
-				tcpip = pkgs.lib.overrideDerivation sels.tcpip (o: {
-					src = /home/tim/dev/scratch/mirage-tcpip/local.tgz;
+				tcpip = lib.overrideDerivation sels.tcpip (o: {
+					src = fetchgit {
+						url = "https://github.com/gfxmonk/mirage-tcpip";
+						rev = "27bde287a8eaac87fc3016dc983c98605d3cdd54";
+						sha256 = "e23b3b0428baaa348ff7adfab2473a6273c1847052a3c05c6db16a9a9fc4b6bd";
+					};
 				});
 			} else sels;
 		};
