@@ -17,17 +17,17 @@ def print_cmd(args):
 dep_files = list(filter(lambda f: f.endswith('.nix') and '.selections' not in f, os.listdir(dir)))
 # print(repr(dep_files))
 subprocess.check_call(['gup', '-u'] + [os.path.join(dir, f) for f in dep_files])
+subprocess.check_call(['gup', '-u', 'opam2nix', 'opam2nix-packages'])
 
 deps = json.loads(subprocess.check_output(print_cmd(['nix-instantiate', '--show-trace', '--eval', '--json', "opam-deps.nix", "-A", "names", "--argstr", "target", target])))
 print(repr(deps))
 
-opam2nix = os.path.abspath('../../opam2nix')
 subprocess.check_call(print_cmd([
-	os.path.join(opam2nix, 'bin/opam2nix'),
+	'opam2nix/bin/opam2nix',
 	'select',
 	'--dest', dest,
 	'--ocaml-version', '4.01.0',
 	'--base-packages', 'base-unix,base-bigarray,base-threads',
-	'--repo', os.path.join(opam2nix, 'dest/nix'),
+	'--repo', os.path.join('opam2nix-packages', 'repo'),
 	] + deps))
 subprocess.check_call(['gup', '--contents', dest])

@@ -75,6 +75,7 @@ function start_action {
 			--host $OPENSHIFT_DIY_IP \
 			--root $OPENSHIFT_REPO_DIR/docroot \
 			--data $OPENSHIFT_DATA_DIR \
+			-vv \
 		;
 EOF
 	} |& /usr/bin/logshifter -tag sgp &

@@ -1,0 +1,4 @@
+#!bash -eu
+gup -u opam2nix-packages.nix
+nix-build --out-link "$1" -A src opam2nix-packages.nix
+readlink "$1" | gup --contents

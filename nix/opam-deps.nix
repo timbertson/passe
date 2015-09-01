@@ -1,12 +1,7 @@
 {target, pkgs ? null}:
 with pkgs;
 let
-	opam2nix_repo = (import <nixpkgs> {}).fetchgit {
-		url = "https://github.com/gfxmonk/opam2nix-packages.git";
-		rev = "6f8c46e88c71c5876ff1b02f70085616fbdcc126";
-		sha256 = "0dg4niisixwzldc1dyjvwmrnppbn3qlcl86w1gykg97bjrw5gm85";
-	};
-
+	opam2nix-packages = import ./opam2nix-packages { inherit pkgs; };
 	# XXX this is repetitive; could surely be neater...
 	names = import (
 		if target == "common" then ./opam-deps/common.nix
@@ -23,11 +18,9 @@ let
 			else if target == "devel" then ./selections.devel.nix
 			else assert false; null
 		); in
-		import "${opam2nix_repo}/import.nix" selections_file {
+		opam2nix-packages.import selections_file {
 			inherit pkgs;
-			opam2nix = pkgs.lib.overrideDerivation
-				(callPackage "${opam2nix_repo}/opam2nix/nix/opam2nix.nix" {})
-				(base: { src = "${opam2nix_repo}/opam2nix"; });
+			inherit (opam2nix-packages) opam2nix;
 
 			overrideSelections = sels: if target == "mirage-xen" then
 			let mirage-platform-src = fetchgit {
