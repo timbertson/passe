@@ -5,6 +5,7 @@ cd ..
 filter='-type f -o -type l'
 function find_in {
 	if [ -e "$1" ]; then
+		# echo "Traversing $1 ..." >&2
 		src="$1"
 		shift 1
 		_and="-a"
@@ -12,17 +13,18 @@ function find_in {
 			_and="";
 		fi
 		find "$src" '(' $filter ')' $_and "$@"
+	else
+		echo "Skipping $1 ..." >&2
 	fi
 }
 function sources {
-	find_in "$build_dir/" -name '*.native'
-	find_in "$build_dir/bin"
 	if [ -e "$build_dir/js" ]; then
 		find_in html/
+		find_in "$build_dir/js/" -name '*.js'
+		find_in "$build_dir/res/" -name '*.css'
+		find_in "$build_dir/res/fonts/"
+		find "$build_dir/" -maxdepth 1 $filter
 	fi
-	find "$build_dir/" -maxdepth 1 $filter
-	find_in "$build_dir/res/" -name '*.css'
-	find_in "$build_dir/res/fonts/"
-	find_in "$build_dir/js/" -name '*.js'
+	find_in "$build_dir/bin"
 }
 sources | fgrep -v '.gup' > "$1"

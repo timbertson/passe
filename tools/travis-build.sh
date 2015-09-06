@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-set -eux
+set -eu
 [ -n "$PASSE_TARGET" ]
 export NIX_CURL_FLAGS=-sS
 if [ ! -e /nix ]; then
-	if [ "${CI:None}" != "true" ]; then
+	if [ "${CI:-null}" != "true" ]; then
 		echo "It looks like you're not a CI server, and you don't have a /nix folder. Aborting."
 		exit 1
 	fi
@@ -21,18 +21,33 @@ build-max-jobs = 4
 EOF
 fi
 
+set -x
 tools/bin/gup -u nix/local.tgz
-nix-build --show-trace --argstr target "$PASSE_TARGET" default.nix
-tree result
-du -hs /nix/store
+# first, run a nix-shell to check dependencies
+# (verbose; so we only log it if it fails)
+if ! nix-shell --run true >log 2>&1; then
+	tail -n500 log
+	exit 1
+fi
 
+# dependencies OK; run a build
+set +x
+function build {
+	nix-build --show-trace
+	echo "== Built files:"
+	ls -lR result/
+}
+
+set -x
 # perform appropriate checks on the result
 case "$PASSE_TARGET" in
 	server)
+		build
 		./result/bin/passe-server --help >/dev/null
 		;;
 	client)
-		./result/bin/passe-server --help >/dev/null
+		build
+		./result/bin/passe --help >/dev/null
 		;;
 	devel)
 		nix-shell --pure --run "gup test"
@@ -40,5 +55,14 @@ case "$PASSE_TARGET" in
 	mirage-*)
 		# no mirage tests yet
 		;;
-	*) echo "Error:  unknown $PASSE_TARGET"
+	*)
+		echo "Error:  unknown $PASSE_TARGET"
+		exit 1
+		;;
+esac
+
+# just curiosity...
+if [ "${CI:-null}" != "true" ]; then
+	du -hs /nix/store
+fi
 

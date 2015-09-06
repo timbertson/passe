@@ -4,7 +4,11 @@ set -o pipefail
 git_meta="../../.git"
 gup -u ../../VERSION
 if [ -e $git_meta ]; then
-	gup -u $git_meta/refs/heads/master
+	gup -u $git_meta/HEAD
+	head_ref="$(cat $git_meta/HEAD | grep -o 'refs/heads/.*')"
+	if [ -n "$head_ref" ]; then
+		gup -u $git_meta/$head_ref
+	fi
 	commit="Some \"$(git rev-parse HEAD | cut -c -10)\""
 else
 	gup --ifcreate $git_meta

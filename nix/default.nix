@@ -4,7 +4,6 @@
 	target,
 }:
 with pkgs;
-let _target = target; in
 let
 	# possible targets:
 	# client (client-only)
@@ -12,10 +11,11 @@ let
 	# mirage-xen (xen mirage microkernel)
 	# mirage-unix (unix mirage microkernel, mainly for testing)
 	# devel (client + server, plus local development utils)
-	target = if _target == null then "devel" else _target;
 
-	buildTargets =
-		(if target == "devel" then [ "all" ] else [ "_build.prod/${target}" ]);
+	buildTargets = let prod = "_build.prod/${target}"; in
+		if target == "devel" then [ "all" ]
+		else if target == "client" then [ prod ]
+		else [ "www" prod ];
 
 	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs;});
 	opamDeps = opamDepsFile.deps;

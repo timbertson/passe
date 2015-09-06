@@ -3,7 +3,7 @@ set -eu
 base="$(dirname "$0")"
 build_dir="_build.prod"
 function print_dest {
-	echo " Installing: $1"
+	echo " Installing: $1 -> $2"
 }
 
 if [ "$#" -gt 1 ]; then
@@ -27,23 +27,23 @@ if [ "$#" -eq 0 ]; then
 	echo "# I will install the following files:" >&2
 	echo ""
 	function print_dest {
-		echo "$1"
+		echo "$1 -> \$PREFIX/$2"
 	}
 	function copy_relative {
-		print_dest "$1"
+		print_dest "$@"
 	}
 	function link_build_file {
-		print_dest "$1"
+		print_dest "$@"
 	}
 else
 	dest="$1"
 	echo " Installing from $base/$build_dir into $dest" >&2
 
 	function copy_relative {
-		print_dest "$1"
-		abs="$dest/$f"
+		abs="$dest/$2"
+		print_dest "$1" "$abs"
 		mkdir -p "$(dirname "$abs")"
-		cp -a "$base/$f" "$abs"
+		cp --dereference "$base/$f" "$abs"
 		if [ ! -L "$abs" ]; then
 			chmod u+w "$abs"
 		fi
@@ -51,13 +51,21 @@ else
 
 	function link_build_file {
 		if [ -e "$build_dir/$1" ]; then
-			ln -sfn "$build_dir/$1" "$dest/$2"
+			ln -sfn "$build_dir/$1" "$dest/$1"
 		fi
 	}
 fi
 cat "$base/$build_dir/manifest" | while read f; do
-	if [ -e "$f" ]; then
-		copy_relative "$f"
+	if [ -e "$base/$f" ]; then
+		# chop builddir prefix, if present
+		d="${f#$build_dir/}"
+		case "$d" in
+			bin/*) ;;
+			share/*) ;;
+			*)
+				# put misc files into share/
+				d="share/$d";;
+		esac
+		copy_relative "$f" "$d"
 	fi
 done
-link_build_file  "native/bin" "bin"
