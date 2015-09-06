@@ -1,6 +1,5 @@
 deps: args:
-with deps.pkgs;
-callPackage ./default.nix {} ({
+import ./default.nix deps ({
 	version = "devel";
 	src = ./local.tgz;
 } // args)
