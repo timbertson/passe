@@ -1,10 +1,10 @@
-matrix:
-	env:
-		- PASSE_TARGET=client
-		- PASSE_TARGET=server
-		- PASSE_TARGET=devel
-	#TODO:
-	#- PASSE_TARGET=mirage-unix
-	#- PASSE_TARGET=mirage-xen
+env:
+  matrix:
+   - PASSE_TARGET=client
+   - PASSE_TARGET=server
+   - PASSE_TARGET=devel
+  #TODO:
+  #- PASSE_TARGET=mirage-unix
+  #- PASSE_TARGET=mirage-xen
 script:
-	- "tools/travis-build.sh"
+ - "tools/travis-build.sh"
