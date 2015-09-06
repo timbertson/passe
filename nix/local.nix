@@ -1,6 +1,6 @@
-args:
-with args.pkgs;
-lib.overrideDerivation (import ./passe.nix args) (orig: {
-	name="passe-local";
+deps: args:
+with deps.pkgs;
+callPackage ./default.nix {} ({
+	version = "devel";
 	src = ./local.tgz;
-})
+} // args)

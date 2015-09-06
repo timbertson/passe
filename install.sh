@@ -19,6 +19,8 @@ if [ "$#" -gt 1 ]; then
 	shift 1
 fi
 
+gup -u "$build_dir/manifest"
+
 if [ "$#" -eq 0 ]; then
 	echo ""
 	echo "# Dry run: if you provide a destination" >&2
@@ -30,7 +32,7 @@ if [ "$#" -eq 0 ]; then
 	function copy_relative {
 		print_dest "$1"
 	}
-	function link_dest {
+	function link_build_file {
 		print_dest "$1"
 	}
 else
@@ -47,11 +49,15 @@ else
 		fi
 	}
 
-	function link_dest {
-		ln -sfn "$build_dir/$1" "$dest/$1"
+	function link_build_file {
+		if [ -e "$build_dir/$1" ]; then
+			ln -sfn "$build_dir/$1" "$dest/$2"
+		fi
 	}
 fi
 cat "$base/$build_dir/manifest" | while read f; do
-	copy_relative "$f"
+	if [ -e "$f" ]; then
+		copy_relative "$f"
+	fi
 done
-link_dest  "bin"
+link_build_file  "native/bin" "bin"

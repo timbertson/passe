@@ -3,7 +3,6 @@ pwd
 dest="$1"
 mkdir "$dest"
 function link {
-	gup -u "$1"
 	ln -s "../$1" "$dest/$2"
 }
 link native/bin/client.native passe

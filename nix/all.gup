@@ -1,2 +1,2 @@
 #!bash -eu
-gup -u selections local.tgz
+gup -u local.tgz

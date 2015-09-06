@@ -1,27 +1,13 @@
 {target, pkgs ? null}:
 with pkgs;
 let
-	opam2nix-packages = import ./opam2nix-packages { inherit pkgs; };
-	# XXX this is repetitive; could surely be neater...
-	names = import (
-		if target == "common" then ./opam-deps/common.nix
-		else if target == "mirage-unix" then ./opam-deps/mirage-unix.nix
-		else if target == "mirage-xen" then ./opam-deps/mirage-xen.nix
-		else if target == "devel" then ./opam-deps/devel.nix
-		else assert false; null
-	);
+	opam2nix-packages = import ./opam2nix-packages.nix { inherit pkgs; };
+	names = import "${./opam-deps}/${target}.nix";
 	selections = assert pkgs != null;
-		let selections_file = (
-			if target == "common" then ./selections.common.nix
-			else if target == "mirage-unix" then ./selections.mirage-unix.nix
-			else if target == "mirage-xen" then ./selections.mirage-xen.nix
-			else if target == "devel" then ./selections.devel.nix
-			else assert false; null
-		); in
+		let
+			selections_file = opam2nix-packages.select {packages = names;};
+		in
 		opam2nix-packages.import selections_file {
-			inherit pkgs;
-			inherit (opam2nix-packages) opam2nix;
-
 			overrideSelections = sels: if target == "mirage-xen" then
 			let mirage-platform-src = fetchgit {
 				url = "https://github.com/gfxmonk/mirage-platform";

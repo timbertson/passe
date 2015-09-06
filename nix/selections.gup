@@ -1,2 +1,0 @@
-#!bash -eu
-gup -u selections.{common,mirage-unix,mirage-xen,devel}.nix

@@ -2,14 +2,27 @@
 gup --always
 . "$(dirname "$0")/build_type.sh"
 cd ..
-function sources {
 filter='-type f -o -type l'
-	find html/ $filter
+function find_in {
+	if [ -e "$1" ]; then
+		src="$1"
+		shift 1
+		_and="-a"
+		if [ "$#" -eq 0 ]; then
+			_and="";
+		fi
+		find "$src" '(' $filter ')' $_and "$@"
+	fi
+}
+function sources {
+	find_in "$build_dir/" -name '*.native'
+	find_in "$build_dir/bin"
+	if [ -e "$build_dir/js" ]; then
+		find_in html/
+	fi
 	find "$build_dir/" -maxdepth 1 $filter
-	find "$build_dir/bin" $filter
-	find "$build_dir/res/" $filter -a -name '*.css'
-	find "$build_dir/res/fonts/" $filter
-	find "$build_dir/js/" -name '*.js'
-	find "$build_dir/" -name '*.native'
+	find_in "$build_dir/res/" -name '*.css'
+	find_in "$build_dir/res/fonts/"
+	find_in "$build_dir/js/" -name '*.js'
 }
 sources | fgrep -v '.gup' > "$1"

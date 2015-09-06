@@ -28,7 +28,7 @@ if [ "$compile_mode" = 'mirage-xen' ]; then
 	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"
 fi
 
-rainbow="$(which rainbow 2>/dev/null)"
+rainbow="$(which rainbow 2>/dev/null || true)"
 if [ -z "$rainbow" ]; then
 	rainbow="ocamlbuild"
 else
