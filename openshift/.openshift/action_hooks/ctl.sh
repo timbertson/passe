@@ -4,32 +4,16 @@ export PID_PATH="$OPENSHIFT_DATA_DIR/passe.pid"
 export LOG_TAG="sgp"
 export LOG_FILE="$OPENSHIFT_LOG_DIR/$LOG_TAG.log"
 export SERVER_PORT=8080
+export PYTHONUNBUFFERED=1
 
 # set -x
-
-function get_pid() {
-	# whoami >&2
-	# lsof -P >&2
-	# XXX `lsof` seems the right way to do this, but it's busted (can't determine port number in whatever context these scripts run)
-	# pid="$(lsof -P -i :$SERVER_PORT | tail -n +2 | awk '{print $2}')"
-
-	pid="$(pgrep -f passe-server)"
-	# echo "  (got pid: $pid)" >&2
-	if [ -z "$pid" ]; then
-		echo "No server running on port $SERVER_PORT" >&2
-	else
-		echo "Process pid: $pid" >&2
-		echo "-$pid"
-	fi
-}
 
 function is_running() {
 	pid="$1"
 	if [ -z "$pid" ]; then
-		echo "No PID file found"
 		return 1
 	else
-		if kill -s 0 -- "$pid"; then
+		if kill -s 0 -- "$pid" 2>/dev/null; then
 			return 0
 		else
 			clear_pid_file
@@ -37,6 +21,33 @@ function is_running() {
 		fi
 	fi
 }
+
+function clear_pid_file() {
+	rm -f "$PID_PATH"
+}
+
+function get_pid() {
+	pid="$(cat $PID_PATH 2>/dev/null)"
+	if [ -n "$pid" ]; then
+		if is_running $pid; then
+			echo "Process pid: $pid" >&2
+			pid="-$pid"
+		else
+			pid=""
+			clear_pid_file
+		fi
+	else
+		# no pidfile; check whether it's running anyway
+		pid="$(pgrep -f passe-server)"
+	fi
+	# echo "  (got pid: $pid)" >&2
+	if [ -n "$pid" ]; then
+		echo "$pid"
+	else
+		echo "No server running on port $SERVER_PORT" >&2
+	fi
+}
+
 
 function kill_session() {
 	pid="$1"
@@ -49,10 +60,6 @@ function kill_session() {
 	fi
 }
 
-function clear_pid_file() {
-	rm -f "$PID_PATH"
-}
-
 function stop_action {
 	echo " *** Ensuring app is stopped..."
 	pid="$(get_pid)"
@@ -62,26 +69,11 @@ function stop_action {
 function start_action {
 	stop_action
 	echo "*** Starting app ..."
-	{ nohup setsid bash -eu <<'EOF'
-		echo -e "\n---------------------------------\n*** Start: $(date) - PID $$"
-		echo $$ > $PID_PATH
-		# note: we need to explicitly invoke lib/ld because RHEL's ld-linux.so is usually too old
-		set -x
-		export LD_LIBRARY_PATH="$OPENSHIFT_REPO_DIR/lib"
-		export OCAMLRUNPARAM=b
-		exec $OPENSHIFT_REPO_DIR/lib/ld.so \
-			$OPENSHIFT_REPO_DIR/app/bin/passe-server \
-			--port $SERVER_PORT \
-			--host $OPENSHIFT_DIY_IP \
-			--root $OPENSHIFT_REPO_DIR/docroot \
-			--data $OPENSHIFT_DATA_DIR \
-			-vv \
-		;
-EOF
-	} |& /usr/bin/logshifter -tag sgp &
+	{ nohup setsid python "$OPENSHIFT_REPO_DIR/run.py"
+	} |& logshifter -tag "$LOG_TAG" &
 
 	echo "*** Waiting for app startup ..."
-	sleep 2
+	sleep 4
 	pid="$(get_pid)"
 	if ! is_running "$pid"; then
 		echo -e "*** Process failed! Recent logs:\n\n"

@@ -60,9 +60,3 @@ case "$PASSE_TARGET" in
 		exit 1
 		;;
 esac
-
-# just curiosity...
-if [ "${CI:-null}" != "true" ]; then
-	du -hs /nix/store
-fi
-

@@ -1,2 +1,2 @@
 #!/bin/bash
-exec "$(dirname "$0")/ctl.sh" stop
+exec "$(dirname "$0")/ctl.sh" start
