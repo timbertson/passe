@@ -4,8 +4,8 @@ let
 	src = fetchgit {
 		fetchSubmodules = false;
 		url = "https://github.com/gfxmonk/opam2nix-packages.git";
-		rev = "7104f035c734171853ee38ccba4140c456d035c3";
-		sha256 = "8da29a5753fd0fb338d1dae76887fa4d02232950104bf4e099d534b3ba56a0de";
+		rev = "c40f21eeda4df22f8b8e700c58734c77fb3e9af2";
+		sha256 = "84819b591a2474b8346b270721da03c0989c5c3fcb10581e29622369e8df3599";
 	};
 
 	# We could leave this out and just use `fetchSubmodules` above,
