@@ -1,11 +1,14 @@
 #!bash -eu
 set -o pipefail
+if [ "${GUP_XTRACE:-0}" = 1 ]; then
+	set -x
+fi
 
 git_meta="../../.git"
 gup -u ../../VERSION
 if [ -e $git_meta ]; then
 	gup -u $git_meta/HEAD
-	head_ref="$(cat $git_meta/HEAD | grep -o 'refs/heads/.*')"
+	head_ref="$(cat $git_meta/HEAD | grep -o 'refs/heads/.*' || true)"
 	if [ -n "$head_ref" ]; then
 		gup -u $git_meta/$head_ref
 	fi

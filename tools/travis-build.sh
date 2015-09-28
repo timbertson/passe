@@ -21,7 +21,6 @@ build-max-jobs = 4
 EOF
 fi
 
-set -x
 tools/bin/gup -u nix/local.tgz
 # first, run a nix-shell to check dependencies
 # (verbose; so we only log it if it fails)

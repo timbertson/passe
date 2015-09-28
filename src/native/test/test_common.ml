@@ -1,6 +1,7 @@
-include Passe
+open Passe
 include OUnit2
 module J = Json_ext
+module Logging = Logging.Make(Logging.Unix_output)
 
 (* module-wide setup *)
 let (>::) desc test =

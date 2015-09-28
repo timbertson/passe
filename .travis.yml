@@ -8,3 +8,5 @@ env:
   #- PASSE_TARGET=mirage-xen
 script:
  - "tools/travis-build.sh"
+notifications:
+  email: false

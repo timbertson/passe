@@ -4,7 +4,9 @@ set -eu
 # (returns the same hash for unchanged content, due to the overridden GIT_* variables below)
 # For convenience, this script also acts as a `gup` builder for a .tgz file
 
-# set -x
+if [ "${GUP_XTRACE:-0}" = 1 ]; then
+	set -x
+fi
 
 function get_commit() {
 	(
