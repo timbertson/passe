@@ -258,18 +258,23 @@ let password_form sync : #Dom_html.element Ui.widget =
 							S.value _domain_suggestions |> Option.may (fun l ->
 								try (
 									accept_suggestion (List.nth l idx) elem;
+									log#debug "selected item %d" idx;
 									selected := true
-								) with Not_found -> ()
+								) with Not_found -> (
+									log#debug "can't select (no such item): %d" idx;
+									()
+								)
 							)
 						);
 						!selected
 					in
 
+					log#debug "Processing key code %d" which;
 					begin match which with
 						| k when k = keycode_tab -> if (select_current ()) then stop e
 						| k when k = keycode_return -> if (select_current ()) then stop e
 						| k -> log#debug "ignoring unknown key code %d" k
-					end;
+					end
 					(* Console.console##log(e); *)
 				);
 				return_unit
@@ -530,6 +535,14 @@ let password_form sync : #Dom_html.element Ui.widget =
 	form#mechanism (fun elem ->
 		let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
 		let password_input = elem##querySelector(Js.string "input.password-input") |> non_null in
+		let clear_password () =
+			set_master_password "";
+			let input = elem##querySelector (Js.string "input[name=password]") in
+			let input = Opt.bind input Dom_html.CoerceTo.input in
+			let input = Opt.get input (fun () -> failwith "can't find password input") in
+			input##focus ();
+		in
+
 		let submit_form event =
 			Ui.stop event;
 			log#info "form submitted";
@@ -555,18 +568,14 @@ let password_form sync : #Dom_html.element Ui.widget =
 		Lwt_js_events.keydowns ~use_capture:false document (fun event _ ->
 			if (event##keyCode = keycode_esc) then (
 				stop event;
-				set_master_password "";
-				let input = elem##querySelector (Js.string "input[name=password]") in
-				let input = Opt.bind input Dom_html.CoerceTo.input in
-				let input = Opt.get input (fun () -> failwith "can't find password input") in
-				input##focus ();
+				clear_password ()
 			);
 			return_unit
 		)
 		<&>
 		Lwt_js_events.clicks submit_button (fun event _ -> submit_form event)
 		<&>
-		Lwt_js_events.keyups password_input (fun event _ ->
+		Lwt_js_events.keydowns password_input (fun event _ ->
 			if event##keyCode = keycode_return then (
 				submit_form event
 			) else return_unit
@@ -583,31 +592,32 @@ let password_form sync : #Dom_html.element Ui.widget =
 				(
 
 					(* After generating a password, if the window stays blurred
-					 * for more than 10s we clear the master password (to prevent
+					 * for more than a few seconds we clear the master password (to prevent
 					 * leaving master passwords around)
 					 *)
 					let await evt subject : unit Lwt.t =
 						lwt _ = evt subject in
 						return_unit
 					in
-					let blur_timeout = 30.0 in
+					let blur_timeout = 10.0 in
+					(* let blur_timeout = 3.0 in (* XXX *) *)
 					while_lwt true do
-						log#debug "awaiting window blur";
+						log#info "awaiting window blur";
 						lwt () = await Lwt_js_events.blur window in
 						Lwt.pick [
 							(
 								lwt () = await Lwt_js_events.focus window in
-								log#debug "window back in focus";
+								log#info "window back in focus";
 								(* continue loop, waiting until next blur *)
 								return_unit
 							);
 							(
-								log#debug "window blurred; clearing pwd in %fs" blur_timeout;
+								log#info "window blurred; clearing pwd in %fs" blur_timeout;
 								lwt () = Lwt_js.sleep blur_timeout in
-								log#debug "clearing generated password";
+								log#info "clearing generated password";
 								(* cancels this branch because the other one is waiting
 								 * on `password_input_data` changes *)
-								set_master_password "";
+								clear_password ();
 								return_unit
 							)
 						]
