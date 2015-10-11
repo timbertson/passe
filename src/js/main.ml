@@ -599,8 +599,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 						lwt _ = evt subject in
 						return_unit
 					in
-					let blur_timeout = 10.0 in
-					(* let blur_timeout = 3.0 in (* XXX *) *)
+					let blur_timeout = 5.0 in
 					while_lwt true do
 						log#info "awaiting window blur";
 						lwt () = await Lwt_js_events.blur window in
