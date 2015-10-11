@@ -1,5 +1,3 @@
-exception SafeError of string
-
 let print_exc dest exc =
 	output_string dest (Printexc.to_string exc)
 
@@ -9,6 +7,7 @@ open Batteries
 open Extlib
 open React_ext
 module Json = Yojson.Safe
+open Common
 
 let log = Logging.get_logger "passe"
 
@@ -150,19 +149,21 @@ end
 let getenv name = try Some (Unix.getenv name) with Not_found -> None
 
 let main () =
-	let p = Options.main () in
-	let posargs = OptParse.OptParser.parse ~first:1 p Sys.argv in
-	let storage_provider =
-		let config_dir = match getenv "XDG_CONFIG_HOME" with
-			| Some conf -> conf
-			| None ->
-				let conf = getenv "HOME" |> Option.map (fun home -> Filename.concat home ".config") in
-				Option.get_exn conf (SafeError "neither $XDG_CONFIG_HOME or $HOME are defined")
+	try
+		let p = Options.main () in
+		let posargs = OptParse.OptParser.parse ~first:1 p Sys.argv in
+		let storage_provider =
+			let config_dir = match getenv "XDG_CONFIG_HOME" with
+				| Some conf -> conf
+				| None ->
+					let conf = getenv "HOME" |> Option.map (fun home -> Filename.concat home ".config") in
+					Option.get_exn conf (SafeError "neither $XDG_CONFIG_HOME or $HOME are defined")
+			in
+			let path = Filename.concat config_dir "passe/db.json" in
+			new Config_storage.provider path
 		in
-		let path = Filename.concat config_dir "passe/db.json" in
-		new Config_storage.provider path
-	in
-	let env = {
-		config = Config.build storage_provider;
-	} in
-	Options.action env posargs
+		let env = {
+			config = Config.build storage_provider;
+		} in
+		Options.action env posargs
+	with SafeError e -> (prerr_endline e; exit 1)

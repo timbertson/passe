@@ -38,7 +38,10 @@ let
 		stripDebugList = [ "_build.prod" ];
 		installPhase = "./install.sh $out";
 
-		passthru = { inherit opamSelections; };
+		passthru = {
+			inherit opamSelections;
+			selectionNames = lib.attrNames opamSelections;
+		};
 		buildInputs = [
 			coreutils
 			python

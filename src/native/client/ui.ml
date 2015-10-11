@@ -184,8 +184,7 @@ let sync_ui state =
 		log#log "Sync completed successfully";
 		return_unit
 	with e -> (
-		log#log "Sync failed: %s" (Printexc.to_string e);
-		raise e
+		raise @@ SafeError ("Sync failed: " ^ (Printexc.to_string e))
 	)
 
 let main ~domain ~edit ~quiet ~use_clipboard ~config () =
@@ -230,8 +229,10 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 				delete ~sync_state ~existing ~term () >>= next
 			in
 			let try_sync () =
-				(* NOTE: we ignore sync errors, they'll already be printed *)
-				lwt () = try_lwt sync_ui sync_state with e -> return_unit in
+				lwt () = try_lwt sync_ui sync_state with SafeError e -> begin
+					log#error "%s" e;
+					return_unit
+				end in
 				continue ()
 			in
 

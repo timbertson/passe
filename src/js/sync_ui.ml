@@ -21,7 +21,14 @@ let ui state =
 	let set_auth_state = state.set_auth_state in
 
 	let sync_running = state.sync_running in
-	let run_sync = state.run_sync in
+	let run_sync auth =
+		try_lwt
+			state.run_sync auth
+		with e -> begin
+			log#error "%s" (Printexc.to_string e);
+			return ()
+		end
+	in
 
 	let sync_state = S.bind sync_running (fun is_running ->
 		if is_running then S.const Syncing else (

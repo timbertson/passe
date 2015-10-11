@@ -140,7 +140,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 
 						running_sync := Some task;
 						set_busy true;
-						try_lwt
+						lwt err = try_lwt
 							log#info "syncing...";
 							let db_storage = local_db_for_user config_provider username in
 
@@ -149,7 +149,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 
 							let sent_db = get_latest_db () in
 							lwt response = sync_db ~token sent_db in
-							(match response with
+							return (match response with
 								| Server.OK json ->
 										let open Store in
 										let version = J.(mandatory int_field "version" json) in
@@ -166,15 +166,18 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 											db_storage#save (Store.to_json new_db);
 										end;
 										set_last_sync_time (Date.time ());
+										None
 								| Server.Unauthorized msg ->
-									log#error "authentication failed: %a" (Option.print print_string) msg;
-									set_auth_state (Auth.Failed_login username)
+									set_auth_state (Auth.Failed_login username);
+									Some (SafeError (Printf.sprintf
+										"authentication failed: %a"
+										(Option.print print_string) msg))
 								| Server.Failed (_, msg, _) ->
-									log#error "sync failed: %s" msg;
-									set_auth_state (Auth.Saved_user credentials)
-							);
-							finish None
-						with e -> finish (Some e)
+									set_auth_state (Auth.Saved_user credentials);
+									Some (SafeError msg)
+							)
+						with e -> return (Some e) in
+						finish err
 				end
 			)
 		in
