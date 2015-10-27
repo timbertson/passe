@@ -1,7 +1,7 @@
 (* all of the paramaterized modules for unix *)
 open Passe
 module Re = Re_native
-module Logging = Logging.Make(Logging.Js_output)
+module Logging = Logging.Make(Logging.Unix_output)
 module Config = Config.Make(Logging)
 module Date = Date_unix
 module Server = Server_unix

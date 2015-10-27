@@ -1,4 +1,5 @@
 open Passe
+open Test_common
 open OUnit2
 
 let log = Logging.get_logger "test"

@@ -1,7 +1,9 @@
 open Passe
+module Json_ext = Json_ext
+module Common = Common
+include Passe_unix
 include OUnit2
 module J = Json_ext
-module Logging = Logging.Make(Logging.Unix_output)
 
 (* module-wide setup *)
 let (>::) desc test =
