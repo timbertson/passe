@@ -109,7 +109,7 @@ let () =
 	end;
 
 	(* inject test setup... *)
-	Server.root_url := "http://localhost:"^(string_of_int test_port)^"/" |> Uri.of_string;
+	Server.root_url := "http://127.0.0.1:"^(string_of_int test_port)^"/" |> Uri.of_string;
 
 	let () = match Server.post_json
 		~data:(`Assoc [("data",`String temp_root)])
