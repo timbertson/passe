@@ -99,7 +99,7 @@ let () =
 			let path = Filename.concat here "../../../tools/server" in
 			let open Unix in
 
-			let cmd = [| path; "-qq"; "--port"; string_of_int test_port|] in
+			let cmd = [| path; "-qq"; "--port"; string_of_int test_port; "--data"; temp_root|] in
 			log#info "Running: `%s`" (String.concat " " (Array.to_list cmd));
 			create_process cmd.(0) cmd stdin stdout stderr
 		) in
