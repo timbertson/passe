@@ -12,10 +12,11 @@ let
 	# mirage-unix (unix mirage microkernel, mainly for testing)
 	# devel (client + server, plus local development utils)
 
-	buildTargets = let prod = "_build.prod/${target}"; in
-		if target == "devel" then [ "all" ]
-		else if target == "client" then [ prod ]
-		else [ "www" prod ];
+	buildDir = "_build.prod";
+	buildTargets = let build = target: "${buildDir}/${target}"; in
+		if target == "devel" then [ (build "all") ]
+		else if target == "client" then [ (build target) ]
+		else [ (build "www") (build target) ];
 
 	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs;});
 	opamDeps = opamDepsFile.deps;
@@ -36,7 +37,7 @@ let
 			gup ${lib.concatStringsSep " " buildTargets}
 		'';
 		stripDebugList = [ "_build.prod" ];
-		installPhase = "./install.sh $out";
+		installPhase = "./install.sh ${buildDir} $out";
 
 		passthru = {
 			inherit opamSelections;

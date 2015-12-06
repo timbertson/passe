@@ -11,7 +11,7 @@ fi
 
 gup -u "$obj"
 
-# extracted from `mirage configure` makefile, with additional libs required for passe
+# extracted from `mirage configure` makefile
 pkg-config --print-errors --exists mirage-xen
 LIB_DIRS="$(ocamlfind query tcpip.xen io-page.xen nocrypto sha zarith-xen zarith safepass)"
 [ -n "$LIB_DIRS" ]

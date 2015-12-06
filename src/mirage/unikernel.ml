@@ -15,18 +15,21 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
     let resolve_file ~docroot ~uri = raise Not_found
   end
 
-  module Logging = Logging.Make(Logging.Unix_output)
+  module Logging = Passe.Logging.Make(Passe.Logging.Unix_output)
   module Fs = struct
     include Passe_server.Filesystem.Make(Fs)(Logging)
     let rename fs a b =
       (* XXX completely non-atomic, poorly-performant, and, may definitely fail halfway through.
        * TODO: before relying on this server, figure out a better way to do this *)
       lwt contents = read_file fs a in
-      try_fs_lwt "write" (write_file fs b contents) >> try_fs_lwt "destroy" (destroy fs a)
+      let open Lwt in
+      let write_new : unit Lwt.t = (write_file fs b contents |> unwrap_lwt "write_file") in
+      let destroy_old : unit Lwt.t = (destroy fs a |> unwrap_lwt "destroy") in
+      write_new >> destroy_old
   end
 
   module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash.Hash_sha256)(Fs)
-  module Server = Passe_server.Service.Make(Cohttp_server)(Fs)(Auth)(Passe.Re_native)
+  module Server = Passe_server.Service.Make(Logging)(Cohttp_server)(Fs)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =
     let http_callback = Server.handler
