@@ -13,7 +13,7 @@ let
 	# devel (client + server, plus local development utils)
 
 	buildDir = "_build.prod";
-	buildTargets = let build = target: "${buildDir}/${target}"; in
+	buildTargets = assert (target != "" && target != null); let build = target: "${buildDir}/${target}"; in
 		if target == "devel" then [ (build "all") ]
 		else if target == "client" then [ (build target) ]
 		else [ (build "www") (build target) ];

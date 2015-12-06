@@ -1,9 +1,13 @@
 {
 	pkgs ? import <nixpkgs> {},
 	defaultTarget ? null,
-	target ? let m = builtins.getEnv "PASSE_TARGET"; in if m == "" then defaultTarget else m,
+	target ? null,
 }:
 import ./nix/local.nix
 	{ inherit pkgs; }
-	{ inherit target; }
+	{
+		target = pkgs.lib.findFirst
+			(t: t != "" && t != null) defaultTarget
+			[target (builtins.getEnv "PASSE_TARGET")];
+	}
 

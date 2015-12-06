@@ -24,7 +24,7 @@ fi
 tools/bin/gup -u nix/local.tgz
 # first, run a nix-shell to check dependencies
 # (verbose; so we only log it if it fails)
-if ! nix-shell --run true >log 2>&1; then
+if ! nix-shell --show-trace --run true >log 2>&1; then
 	tail -n500 log
 	exit 1
 fi
