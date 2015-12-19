@@ -3,7 +3,7 @@
 	"cohttp"
 	"js_of_ocaml"
 	"lambda-term"
-	"lwt"
+	{"lwt" = ">=1.5.0"; }
 	"mirage"
 	"nocrypto"
 	"mirage-fs-unix"

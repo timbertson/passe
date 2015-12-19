@@ -1,6 +1,6 @@
 {
 	pkgs ? import <nixpkgs> {},
-	defaultTarget ? null,
+	defaultTarget ? "devel",
 	target ? null,
 }:
 import ./nix/local.nix

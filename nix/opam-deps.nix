@@ -2,10 +2,10 @@
 with pkgs;
 let
 	opam2nix-packages = import ./opam2nix-packages.nix { inherit pkgs; };
-	names = import "${./opam-deps}/${target}.nix";
+	names = import (./opam-deps + "/${target}.nix" );
 	selections = assert pkgs != null;
 		let
-			selections_file = opam2nix-packages.select {packages = names;};
+			selections_file = opam2nix-packages.select {packages = names; ocamlAttr = "ocaml_4_02"; };
 		in
 		opam2nix-packages.import selections_file {
 			overrides = {super, self}: if target == "mirage-xen" then
@@ -52,6 +52,6 @@ in
 	# (i.e the implementation of each named package in ./opam-deps-{target}.nix)
 	deps =
 		[selections.ocaml]
-		++ (map (name: builtins.getAttr name selections) names);
+		++ (opam2nix-packages.directDependencies names selections);
 }
 
