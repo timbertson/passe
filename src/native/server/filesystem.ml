@@ -90,7 +90,7 @@ module Make (Fs: FS)(Logging:Passe.Logging.Sig) = struct
 		write fs path 0 buf
 
 	let read_file_s fs path =
-		log#debug "Reading file stream: %s" path;
+		log#trace "Reading file stream: %s" path;
 		let offset = ref 0 in
 		let max_chunk_size = 4096 in
 		Lwt_stream.from (fun () ->
@@ -100,6 +100,7 @@ module Make (Fs: FS)(Logging:Passe.Logging.Sig) = struct
 			let () = match chunks with
 			(* TODO: mutate `rv` rather than allocating each chunk *)
 				| `Ok chunks ->
+					log#trace "read %d chunks from %s[%d]" (List.length chunks) path !offset;
 					chunks |> List.iter (fun chunk ->
 						let chunk = Cstruct.to_string chunk in
 						chunk_size := !chunk_size + String.length chunk;

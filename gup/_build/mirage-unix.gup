@@ -1,2 +1,3 @@
 #!bash -eu
-gup -u mirage-unix/main.native
+gup -u mirage-unix/main.native fat1.img
+touch "$2"

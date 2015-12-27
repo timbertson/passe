@@ -1,2 +1,2 @@
-true: debug, package(react, batteries, yojson, safepass, sha, lwt, lwt.syntax, mirage-console.unix, mirage-types.lwt, nocrypto, mirage-block-unix, fat-filesystem, mirage-console.unix, mirage-net-unix, mirage-types,cohttp,cohttp.lwt, mirage-http, lwt, mirage.runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix), syntax(camlp4o)
+true: debug, package(react, batteries, yojson, safepass, sha, lwt, lwt.syntax, mirage-console.unix, mirage-types.lwt, nocrypto, mirage-block-unix, fat-filesystem, mirage-console.unix, mirage-net-unix, mirage-types,cohttp,cohttp.lwt, mirage-http, lwt, mirage.runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix, astring, fileutils), syntax(camlp4o)
 <src>: include

@@ -1,0 +1,41 @@
+#!bash
+set -eux
+gup --always
+which fat
+
+dest="$1"
+
+fat create "$dest" 5MiB
+tmp="$(mktemp -d)"
+trap "rm -rf $tmp" EXIT
+
+build="$(pwd)"
+
+function add_in {
+  prefix="$1"
+  shift 1
+  mkdir -p "$prefix"
+  pushd "$prefix"
+    for f in "$@"; do
+      mkdir -p "$(dirname "$f")"
+      cp -rLv --no-preserve=mode "$build/$f" "$f"
+    done
+  popd
+  fat add "$dest" "$prefix"
+}
+
+function add_dir {
+  mkdir -p "$@"
+  fat add "$dest" "$@"
+}
+
+gup -u www
+
+cd ..
+
+fat add "$dest" data
+
+cd "$tmp"
+
+add_dir js
+add_in www index.html index.appcache js/main.js res/bootstrap/dist res/css res/fonts

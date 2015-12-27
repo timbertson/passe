@@ -1,12 +1,17 @@
 open Passe
 open Common
 open Lwt
+open Astring
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
-
+module Path = FilePath.UnixPath
 
 let slash = Str.regexp "/"
+
+let rec any pred lst = match lst with
+	| [] -> false
+	| hd::tail -> if pred hd then true else any pred tail
 
 let normpath p =
 	let parts = Str.split_delim slash p in
@@ -36,17 +41,7 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-module type SERVER = sig
-	include Cohttp_lwt.Server
-	(* these are conveniently provided by Cohttp_lwt_unix,
-	 * we'll need shims for them on Mirage *)
-	val resolve_file : docroot:string -> uri:Uri.t -> string
-	val respond_file :
-			?headers:Cohttp.Header.t ->
-			fname:string -> unit -> (Cohttp.Response.t * Cohttp_lwt_body.t) Lwt.t
-end
-
-module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
+module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
 	module Store = Store.Make(Re)(Logging)
 	let log = Logging.get_logger "service"
 
@@ -55,7 +50,7 @@ module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Au
 	let user_db_dir data_root = Filename.concat data_root "user_db"
 	let db_path_for data_root user = Filename.concat (user_db_dir data_root) (user ^ ".json")
 
-		module User = Auth.User
+	module User = Auth.User
 
 	let respond_json ~status ~body () =
 		Server.respond_string
@@ -98,6 +93,31 @@ module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Au
 				| `Error e -> Fs.fail "destroy" e
 		) in
 
+		let resolve_file path =
+			let docroot = Path.make_filename [document_root] in
+			log#debug "Normalizing path %s against %s" (String.concat ~sep:", " path) (Path.string_of_filename docroot);
+			assert (not (Path.is_relative docroot));
+			if path |> any (fun part -> String.is_prefix "." part)
+				then (
+					return `Invalid_path
+				) else (
+					let path = Path.make_filename path in
+					if Path.is_relative path
+						then (
+							let full = (Path.concat docroot path) in
+							lwt stat = Fs.stat fs full in
+							return (match stat with
+								| `Ok _ -> `Ok full
+								| `Error (`No_directory_entry (_,_)) -> `Not_found
+								| `Error _ -> `Internal_error
+							)
+						) else (
+							return `Invalid_path
+						)
+				)
+		in
+
+
 		let _serve_file fullpath =
 			let file_ext = Some (snd (BatString.rsplit fullpath ".")) (* with String.Invalid_string -> None *) in
 			let content_type = file_ext |> Option.map (function
@@ -131,19 +151,28 @@ module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Au
 					~body:Cohttp_lwt_body.empty
 					~headers
 					~status:`Not_modified ()
-			else
-				let headers = headers |> maybe_add_header "etag" latest_etag in
-				Server.respond_file ~fname:fullpath ~headers () in
+			else (
+				try_lwt
+					let headers = headers |> maybe_add_header "etag" latest_etag in
+					Server.respond
+						~headers
+						~status:`OK
+						~body:(Cohttp_lwt_body.of_stream (Fs.read_file_s fs fullpath)) ()
+				with Fs.Error (Fs.ENOENT _) ->
+					Server.respond
+						~body:Cohttp_lwt_body.empty
+						~status:`Not_found ()
+			)
+		in
 
-		let serve_static url = _serve_file (Server.resolve_file ~docroot:document_root ~uri:url) in
 		let serve_file relpath = _serve_file (Filename.concat document_root relpath) in
 		let maybe_read_file path = try_lwt
 				(* XXX streaming? *)
 				lwt contents = Fs.read_file fs path in
 				(* log#trace "read file contents: %s" contents; *)
 				return (Some contents)
-				with Fs.Error (Fs.ENOENT _) -> return_none
-			in
+			with Fs.Error (Fs.ENOENT _) -> return_none
+		in
 
 		try_lwt
 			let uri = Cohttp.Request.uri req in
@@ -165,7 +194,9 @@ module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Au
 								Str.string_match (Str.regexp "t=") tok 0
 							))
 						with Not_found -> None in
-					tok |> Option.map (fun t -> String.sub t 2 ((String.length t) - 2) |> Uri.pct_decode |> J.from_string)
+					tok |> Option.map (fun t ->
+						t|> String.drop ~min:2 |> Uri.pct_decode |> J.from_string
+					)
 				) in
 				validate_token tok
 			in
@@ -215,7 +246,12 @@ module Make (Logging:Logging.Sig) (Server: SERVER) (Fs: Filesystem.Sig) (Auth:Au
 									serve_file "index.html"
 							end
 						| ["hold"] -> Lwt.wait () |> Tuple.fst
-						| _ -> serve_static uri
+						| path -> begin match_lwt resolve_file path with
+							| `Ok path -> _serve_file path
+							| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()
+							| `Invalid_path -> Server.respond_error ~status:`Bad_request ~body:"invalid path" ()
+							| `Internal_error -> Server.respond_error ~status:(`Code 500) ~body:"internal error" ()
+							end
 					)
 				| `POST -> (
 					check_version ();

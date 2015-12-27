@@ -2,15 +2,16 @@ open Mirage
 
 let handler = foreign "Unikernel.Main" (console @-> conduit @-> fs @-> clock @-> job)
 
-(* let fs = fat_of_files ~dir:"./data" () *)
-(* XXX fat_of_files doesn't seem to work, because actual xen attaches devices with an aio: prefix. So we fake it a bit: *)
-let fs = fat (block_of_file "aio:fat1.img")
-
-
 let () =
   let console = default_console in
+
+  let fs = match get_mode() with
+    (* XXX fat_of_files doesn't seem to work on Xen, because actual xen attaches devices with an aio: prefix. So we fake it a bit: *)
+    | `Xen -> fat (block_of_file "aio:fat1.img")
+    | `Unix -> fat (block_of_file "_build/fat1.img")
+  in
   let stack = match get_mode() with
-    (* | `Xen -> socket_stackv4 default_console [Ipaddr.V4.any] *)
+    | `Unix -> socket_stackv4 default_console [Ipaddr.V4.any]
     | `Xen -> direct_stackv4_with_dhcp console tap0
     | _ -> direct_stackv4_with_default_ipv4 console tap0
   in
