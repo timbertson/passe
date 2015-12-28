@@ -97,7 +97,7 @@ let apply_verbosity verbosity =
 		| 3 -> Debug
 		| n -> if n <= 0 then Error else Trace
 	) in
-	Logging.current_level := ord new_level;
+	Logging.set_level new_level;
 	log#info "Log level: %s" (string_of_level new_level)
 
 let default_verbosity = 1 (* warnings only *)

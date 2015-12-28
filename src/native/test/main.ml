@@ -46,7 +46,7 @@ let await_tcp ~port ~pid =
 	done
 
 let () =
-	Logging.current_level := Logging.ord Logging.Debug;
+	Logging.set_level Logging.Debug;
 	Printexc.record_backtrace true;
 	Unix.putenv "PASSE_TEST_CTL" "1";
 

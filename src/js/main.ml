@@ -690,7 +690,7 @@ let main sync = Lwt.async (fun () ->
 
 let () =
 	log#info "passe %s" (Version.pretty ());
-	Logging.(current_level := ord (
+	Logging.(set_level (
 		let uri = !Server.root_url in
 		match Uri.fragment uri with
 		| Some "debug" -> Debug

@@ -74,17 +74,26 @@ module Make (Fs: FS)(Logging:Passe.Logging.Sig) = struct
 
 	let unwrap_lwt desc = Lwt.map (unwrap desc)
 
+	let ensure_file_exists fs path =
+		match_lwt stat fs path with
+			| `Ok _ -> return_unit
+			| `Error (`No_directory_entry (_,_)) -> create fs path |> unwrap_lwt "create"
+			| `Error e -> fail "stat" e
+
 	let write_file_s fs path stream =
 		log#debug "Writing file stream: %s" path;
+		lwt () = ensure_file_exists fs path in
 		let offset = ref 0 in
 		stream |> Lwt_stream.iter_s (fun chunk ->
 			let size = String.length chunk in
 			let prev_offset = !offset in
 			offset := !offset + size;
+			log#trace "writing chunk of len %d to %s at offset %d" size path prev_offset;
 			unwrap_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
 		)
 
 	let write_file fs path contents =
+		lwt () = ensure_file_exists fs path in
 		log#debug "Writing file: %s" path;
 		let buf = Cstruct.of_string contents in
 		write fs path 0 buf

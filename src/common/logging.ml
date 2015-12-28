@@ -38,6 +38,8 @@ module Static = struct
 
 	let current_level = ref (ord Debug)
 
+	let set_level lvl = current_level := ord lvl
+
 	let current_writer = ref (fun dest str -> output_string dest str; flush dest)
 end
 

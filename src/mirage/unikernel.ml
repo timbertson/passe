@@ -21,6 +21,8 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
   module Server = Passe_server.Service.Make(Logging)(Fs)(Cohttp_server)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =
+    let () = ignore @@ Nocrypto_entropy_lwt.initialize () in
+    Logging.set_level Logging.Trace;
     let data_root = "/data" in
     let http_callback = Server.handler
       ~document_root:"/www"

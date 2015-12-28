@@ -358,11 +358,18 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				lwt () = Lwt.join [
 					Fs.write_file_s fs tmp_name output_chunks;
 					(
-						lwt _mod = self#_read (fun users -> fn users write_user) in
-						modified := _mod;
-						(* XXX write_file_s never seems to terminate if you cancel it
-						 * before giving it any output. So give it some... *)
-						output#push "\n" >> return output#close
+						try_lwt
+							lwt _mod = self#_read (fun users -> fn users write_user) in
+							log#trace "modified=%b" _mod;
+							modified := _mod;
+							return_unit
+						finally (
+							(* XXX write_file_s never seems to terminate if you cancel it
+							 * before giving it any output. So give it some... *)
+							lwt () = output#push "\n" in
+							log#trace "closing outout";
+							return output#close
+						)
 					)
 				] in
 				if !modified
@@ -406,9 +413,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		lwt created = storage#modify (fun users write_user ->
 			try_lwt
 				lwt () = users |> Lwt_stream.iter_s (fun user ->
-					if user.User.name = username then
-						raise Conflict
-					;
+					if user.User.name = username then raise Conflict ;
 					write_user user
 				) in
 				lwt (new_user, token) = User.create ~username password in
@@ -419,7 +424,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				result := (match e with
 					| Conflict -> Some `Conflict
 					| Invalid_username -> Some `Invalid_username
-					| _ -> None
+					| e -> log#info "Unexpected error in account creation: %s" (Printexc.to_string e) ; None
 				);
 				return_false
 			end
