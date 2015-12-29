@@ -40,7 +40,7 @@ let
 		installPhase = "./install.sh ${buildDir} $out";
 
 		passthru = {
-			inherit opamSelections;
+			selections = opamSelections;
 			selectionNames = lib.attrNames opamSelections;
 		};
 		buildInputs = [

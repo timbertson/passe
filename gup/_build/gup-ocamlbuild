@@ -11,6 +11,7 @@ BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
 
 pushd "$here/../../src/common/" > /dev/null
+gup -u prebuild.targets
 gup -u $(cat prebuild.targets)
 popd > /dev/null
 

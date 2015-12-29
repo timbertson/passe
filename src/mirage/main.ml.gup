@@ -1,22 +1,4 @@
 #!bash -eu
-# `mirage configure` generates a bunch of
-# stuff I don't (yet) want, so do it somewhere else
-# and ignore the results.
-source="$(dirname "$(readlink -f "$2")")"
-conf="$source/.configure"
-mkdir -p "$conf"
-cd "$conf"
-rm -rf bin
-mkdir -p bin
-
-# mirage calls `opam` with `--no-opam`. Stub it out
-ln -sfn "$(which true)" bin/opam
-
-gup -u "$source/config.ml"
-ln -sfn "$source/config.ml" .
-target="$(basename "$source")"
-target="${target##mirage-}"
-env PATH="$PWD/bin:$PATH" mirage configure --target "$target" --no-opam --no-opam-version-check --no-depext
-cp main.ml "$1"
-touch "$1"
-cd - >/dev/null
+cd "$(dirname "$2")"
+gup -u .configure
+ln -s .configure/main.ml "$1"

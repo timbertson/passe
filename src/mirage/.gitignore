@@ -1,2 +1,3 @@
 /.configure
 /main.ml
+/build_env.sh

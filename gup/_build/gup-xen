@@ -1,5 +1,8 @@
 #!bash -eu
 
+here="$(dirname "$0")"
+. "$here/env.sh"
+
 builddir="$(dirname "$2")"
 obj="$builddir/main.native.o"
 
@@ -9,29 +12,31 @@ else
 	export PKG_CONFIG_PATH="$(opam config var prefix)/lib/pkgconfig"
 fi
 
-gup -u "$obj"
+# XXX this is a bit nuts
+gup -u "$obj" "../src/$compile_mode/build_env.sh"
+. "../src/$compile_mode/build_env.sh"
 
 # extracted from `mirage configure` makefile
 pkg-config --print-errors --exists mirage-xen
-LIB_DIRS="$(ocamlfind query tcpip.xen io-page.xen nocrypto sha zarith-xen zarith safepass)"
+LIB_DIRS="$(ocamlfind query -r $(echo $PASSE_PKGS | tr , ' '))"
 [ -n "$LIB_DIRS" ]
 OCAML_ROOT="$(ocamlc -where)"
 [ -n "$OCAML_ROOT" ]
 
-LD_FLAGS="$(echo -e "$LIB_DIRS\n$OCAML_ROOT" | sed -e 's/^/-L /')"
+LD_FLAGS="$(echo -e "$LIB_DIRS\n$OCAML_ROOT" | sed -e 's/^/-L /') $PASSE_LDFLAGS"
 
-set -x
+# XXX can't seem to get this information into mirage's build system,
+# even with `add_to_ocamlfind_libraries` - it may require changes to META files?
+LD_FLAGS="$LD_FLAGS \
+		-lnums \
+		-lsha256 \
+		-lzarith-xen \
+"
+
+# set -x
 ld -d -static -nostdlib \
 	"$obj" \
-	-L /usr/lib/debug/usr/lib64 \
 	$LD_FLAGS \
-	-ltcpip_xen_stubs \
-	-lio_page_xen_stubs \
-	-lnocrypto_stubs \
-	-lsha256 \
-	-lzarith-xen \
-	-lsafepass_stubs \
-	-lnums \
 	-L "$builddir/src" \
 	$(pkg-config --static --libs mirage-xen gmp-xen) \
 	$(gcc -print-libgcc-file-name) \

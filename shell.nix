@@ -3,7 +3,6 @@ with pkgs;
 lib.overrideDerivation (
 		callPackage ./default.nix {
 			inherit target;
-			defaultTarget = "devel";
 		}
 	) (orig: {
 	# add some dev utils

@@ -1,25 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 [ -n "$PASSE_TARGET" ]
-export NIX_CURL_FLAGS=-sS
-if [ ! -e /nix ]; then
-	if [ "${CI:-null}" != "true" ]; then
-		echo "It looks like you're not a CI server, and you don't have a /nix folder. Aborting."
-		exit 1
-	fi
-	echo "=== Installing Nix..."
-	# Install Nix
-	bash <(curl -sS https://nixos.org/nix/install)
-	source $HOME/.nix-profile/etc/profile.d/nix.sh
-
-	# Make sure we can use hydra's binary cache
-	sudo mkdir /etc/nix
-	sudo tee /etc/nix/nix.conf <<EOF >/dev/null
-binary-caches = http://cache.nixos.org http://hydra.nixos.org
-trusted-binary-caches = http://hydra.nixos.org
-build-max-jobs = 4
-EOF
-fi
+bash <(curl -sS https://gist.githubusercontent.com/timbertson/f643b8ae3a175ba8da7f/raw/travis-nix-bootstrap.sh)
 
 tools/bin/gup -u nix/local.tgz
 # first, run a nix-shell to check dependencies

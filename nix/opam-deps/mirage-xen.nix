@@ -4,4 +4,5 @@
 	"mirage-clock-xen"
 	"mirage-net-xen"
 	"mirage-xen"
+	"zarith-xen"
 ]

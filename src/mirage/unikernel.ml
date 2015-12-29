@@ -17,11 +17,11 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
       write_new >> destroy_old
   end
   module Cohttp_server = Cohttp
+  (* TODO: Hash_bcrypt once safepass compiles in xen *)
   module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash.Hash_sha256)(Fs)
   module Server = Passe_server.Service.Make(Logging)(Fs)(Cohttp_server)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =
-    let () = ignore @@ Nocrypto_entropy_lwt.initialize () in
     Logging.set_level Logging.Trace;
     let data_root = "/data" in
     let http_callback = Server.handler

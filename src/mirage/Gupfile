@@ -1,2 +1,6 @@
 ../mirage/main.ml.gup:
 	main.ml
+../mirage/build_env.sh.gup:
+	build_env.sh
+../mirage/.configure.gup:
+	.configure
