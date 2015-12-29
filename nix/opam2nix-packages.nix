@@ -12,8 +12,8 @@ let
 			src = fetchgit {
 				fetchSubmodules = false;
 				url = "https://github.com/timbertson/opam2nix-packages.git";
-				rev = "084393747baeaeb5dc24931d56671488e3660395";
-				sha256 = "c06cec4733347aa0fe927b0540eb11351da1dbcc8ecaeea5d489bfde694c076e";
+				rev = "40c1c73a0ec150e4b4cab03e1fa773e50230af5e";
+				sha256 = "ee2ade1eb70c378b449bea9f03896327408da93a9ecb290638fd87e7ea441fa6";
 			};
 
 			# We could leave this out and just use `fetchSubmodules` above,
