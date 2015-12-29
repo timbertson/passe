@@ -195,7 +195,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 							))
 						with Not_found -> None in
 					tok |> Option.map (fun t ->
-						t|> String.drop ~min:2 |> Uri.pct_decode |> J.from_string
+						t |> String.drop ~max:2 |> Uri.pct_decode |> J.from_string
 					)
 				) in
 				validate_token tok

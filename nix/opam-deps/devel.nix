@@ -3,5 +3,6 @@
 (import ./mirage-unix.nix) ++
 [
 	"labltk"
+	"utop"
 ]
 

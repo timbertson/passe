@@ -6,4 +6,5 @@ gup --always
 # doesn't compile.
 gup -u _build/native/bin/server.byte
 
+set -x
 ./tools/test
