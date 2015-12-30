@@ -12,9 +12,10 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
        * TODO: before relying on this server, figure out a better way to do this *)
       lwt contents = read_file fs a in
       let open Lwt in
-      let write_new : unit Lwt.t = (write_file fs b contents |> unwrap_lwt "write_file") in
-      let destroy_old : unit Lwt.t = (destroy fs a |> unwrap_lwt "destroy") in
-      write_new >> destroy_old
+      let destroy_new () : unit Lwt.t = (destroy fs b |> unwrap_lwt "destroy") in
+      let write_new () : unit Lwt.t = (write_file fs b contents |> unwrap_lwt "write_file") in
+      let destroy_old () : unit Lwt.t = (destroy fs a |> unwrap_lwt "destroy") in
+      destroy_new () >>= write_new >>= destroy_old
   end
   module Cohttp_server = Cohttp
   (* TODO: Hash_bcrypt once safepass compiles in xen *)

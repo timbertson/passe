@@ -373,8 +373,10 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					)
 				] in
 				if !modified
-					then Fs.rename fs tmp_name filename
-					else Lwt.return_unit
+					then (
+						log#trace "renaming %s -> %s" tmp_name filename;
+						Fs.rename fs tmp_name filename
+					) else Lwt.return_unit
 			)
 
 		method read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
