@@ -222,12 +222,21 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				meta.alg <> Hash_impl.alg
 			)
 
+		let hash_password ~salt ~iterations password =
+			Bytes.lift (fun seed ->
+				Hash_impl.hash ~count:iterations ~seed password
+			) salt |> Hash_impl.serialize
+
+		let verify stored password =
+			match stored with
+				| { stored_contents; stored_metadata = { iterations; salt; _; }} ->
+					let hashed = hash_password ~salt ~iterations password in
+					hashed = stored_contents
 
 		let latest_password_format password : stored_password Lwt.t =
 			lwt salt = random_bytes Password.salt_length in
 			let iterations = Password.iterations in
-			let crypt = fun seed -> Hash_impl.hash ~count:iterations ~seed password |> Hash_impl.to_hex in
-			let hashed_password = Bytes.lift crypt salt in
+			let hashed_password = hash_password ~salt ~iterations password in
 			return {
 				stored_contents = hashed_password;
 				stored_metadata = {
@@ -244,8 +253,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 			 * If it's an old algo, we'll update it (after validating)
 			 *)
 			let (module Hash_impl) = Hash.select token_alg in
-			let stored_hash = user.password.stored_contents in
-			if Hash_impl.verify ~expected:stored_hash password then (
+			if verify user.password password then (
 				lwt password = if outdated_password user.password then (
 					log#info "upgrading password for %s" user.name;
 					latest_password_format password
