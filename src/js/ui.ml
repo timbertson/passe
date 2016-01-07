@@ -108,10 +108,10 @@ end
 let effectful_stream_mechanism : 'a. 'a signal -> ('a -> unit) -> unit Lwt.t = fun signal fn ->
 	let effect = S.map fn signal in
 	try_lwt
-		(* log#info "starting effectful mechanism"; *)
+		(* log#trace "starting effectful mechanism"; *)
 		pause ()
 	finally
-		log#info "stopping effectful mechanism";
+		(* log#trace "stopping effectful mechanism"; *)
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
