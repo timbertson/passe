@@ -23,6 +23,7 @@ module type Sig = sig
 	(* shouldn't this be in the mirage FS signature? *)
 	val error_message : error -> string
 
+	val destroy_if_exists : t -> string -> unit result Lwt.t
 	val write_file_s : t -> string -> string Lwt_stream.t -> unit Lwt.t
 	val write_file : t -> string -> string -> unit result Lwt.t
 	val read_file_s : t -> string -> string Lwt_stream.t
@@ -79,6 +80,11 @@ module Make (Fs: FS)(Logging:Passe.Logging.Sig) = struct
 			| `Ok _ -> return_unit
 			| `Error (`No_directory_entry (_,_)) -> create fs path |> unwrap_lwt "create"
 			| `Error e -> fail "stat" e
+	
+	let destroy_if_exists fs path =
+		match_lwt destroy fs path with
+			| `Ok _ | `Error (`No_directory_entry (_,_)) -> return (`Ok ())
+			| `Error _ as e -> return e
 
 	let write_file_s fs path stream =
 		log#debug "Writing file stream: %s" path;

@@ -88,9 +88,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		let wipe_user_db = (fun username ->
 			log#warn "wiping user DB for %s" username;
 			let path = db_path_for username in
-			match_lwt Fs.destroy fs path with
-				| `Ok () | `Error `No_directory_entry (_,_) -> return_unit
-				| `Error e -> Fs.fail "destroy" e
+			Fs.destroy_if_exists fs path |> Fs.unwrap_lwt "destroy"
 		) in
 
 		let resolve_file path =
@@ -322,11 +320,9 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 									lwt deleted = Auth.delete_user ~storage:user_db user password in
 									if deleted then (
 										log#warn "deleted user %s" username;
-										lwt () = match_lwt Fs.destroy fs (db_path_for username) with
-											| `Ok _ -> return_unit
-											| `Error `No_directory_entry (_,_) -> return_unit
-											| e -> Fs.unwrap "destroy" e |> return
-										in
+										lwt () =
+											Fs.destroy_if_exists fs (db_path_for username)
+											|> Fs.unwrap_lwt "destroy" in
 										respond_json ~status:`OK ~body:(J.empty) ()
 									) else
 										respond_error "Couldn't delete user (wrong password?)"
