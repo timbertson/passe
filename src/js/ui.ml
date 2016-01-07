@@ -11,7 +11,7 @@ type mechanism_result =
 	| Complete
 	| Error of exn
 
-let pause _ = Lwt.wait () |> fst
+let pause _ = Lwt.task () |> fst
 
 (* pause forever upon successful completion,
  * but exit early on error *)
@@ -105,7 +105,8 @@ object (self)
 	method mechanism mech = mechanisms := mech::!mechanisms
 end
 
-let effectful_stream_mechanism effect : unit Lwt.t =
+let effectful_stream_mechanism : 'a. 'a signal -> ('a -> unit) -> unit Lwt.t = fun signal fn ->
+	let effect = S.map fn signal in
 	try_lwt
 		(* log#info "starting effectful mechanism"; *)
 		pause ()
@@ -113,12 +114,21 @@ let effectful_stream_mechanism effect : unit Lwt.t =
 		log#info "stopping effectful mechanism";
 		S.stop ~strong:true effect;
 		Lwt.return_unit
-	
+
+let effectful_stream_mechanism_s signal fn : unit Lwt.t =
+	let current_thread = ref None in
+	effectful_stream_mechanism signal (fun v ->
+		let () = match !current_thread with
+			| Some t -> Lwt.cancel t
+			| None -> ()
+		in
+		current_thread := Some (fn v);
+	)
 
 let stream_attribute_mechanism name value = fun elem ->
 	let name_js = Js.string name in
 	let set v = elem##setAttribute(name_js, Js.string v) in
-	effectful_stream_mechanism (value |> S.map set)
+	effectful_stream_mechanism value set
 
 let stream_class_mechanism name value = fun elem ->
 	let name_js = Js.string name in
@@ -127,7 +137,7 @@ let stream_class_mechanism name value = fun elem ->
 		let cls = elem##classList in
 		if v then cls##add(name_js) else cls##remove(name_js)
 	in
-	effectful_stream_mechanism (value |> S.map set)
+	effectful_stream_mechanism value set
 
 
 (* an Element based widget - can have attrs and children *)
@@ -332,11 +342,11 @@ let editable_of_signal : 'v 'elem.
 	in
 
 	let watch_loop elem =
-		effectful_stream_mechanism (source |> S.map (fun v ->
+		effectful_stream_mechanism source (fun v ->
 			clear_error elem;
 			(* only call `set` on actual changes; otherwise we can get feedback loops *)
 			if not (eq (get elem) v) then set elem v
-		))
+		)
 	in
 
 	widget#mechanism (fun elem -> watch_loop elem <&> update_loop elem);

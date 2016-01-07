@@ -355,6 +355,8 @@ let ui state =
 	in
 
 
+	let sync_debounce = ref return_unit in
+
 	state.auth_state |> S.map (fun auth ->
 	log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
 
@@ -414,7 +416,11 @@ let ui state =
 			] ()
 		]
 		~mechanism:(fun elem ->
-			let run_sync () = run_sync auth in
+			let run_sync () =
+				lwt () = !sync_debounce in
+				sync_debounce := (Lwt_js.sleep 5.0);
+				run_sync auth
+				in
 			lwt () = run_sync () in
 			while_lwt true do
 				log#info "sync loop running..";
@@ -422,10 +428,10 @@ let ui state =
 					(* every 30 minutes, attempt a sync *)
 					(Lwt_js.sleep 18000.0 >>= run_sync);
 					(* also sync shortly after making a change to the DB *)
-					(effectful_stream_mechanism (sync_state |> S.map (function
+					(effectful_stream_mechanism_s sync_state (function
 						| Local_changes _ -> Lwt_js.sleep 2.0 >>= run_sync
 						| _ -> return_unit
-					)));
+					));
 				]
 			done
 		) ()

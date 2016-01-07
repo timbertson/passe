@@ -372,7 +372,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 
 				select ();
 
-				effectful_stream_mechanism (show_plaintext_password |> S.map (fun _ -> select ())) <&>
+				effectful_stream_mechanism show_plaintext_password (fun _ -> select ()) <&>
 				Lwt_js_events.clicks ~use_capture:true document (fun e _ ->
 					update_highlight ();
 					Lwt.return_unit
