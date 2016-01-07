@@ -73,23 +73,40 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 		log#debug "using server root: %s" (!Server.root_url |> Uri.to_string);
 
 		let auth_state, set_auth_state =
+			let key_token = "token" in
+			let key_user = "user" in
 			let open Auth in
-			let source = stored_credentials_signal |> S.map ~eq:never_eq
-				(fun credentials ->
-					credentials
-					|> Option.map (fun token -> Saved_user (parse_credentials token))
-					|> Option.default Anonymous
-				) in
+			let source = stored_credentials_signal |> S.map ~eq:never_eq (function
+				| Some (`List [`String key; token]) when key = key_token ->
+						Saved_user (parse_credentials token)
+
+				| Some (`List [`String key; `String username]) when key = key_user ->
+						Failed_login username
+
+					(* backwards compat: assume a raw object is a token *)
+				| Some (`Assoc _ as token) -> Saved_user (parse_credentials token)
+
+				| Some(j) ->
+						log#error "Failed to deserialize credentials";
+						log#trace "Credentials: %s" (J.to_string j);
+						Anonymous
+
+				| None -> Anonymous
+			) in
 			let auth_state, _set_auth_state = editable_signal source in
 
 			let set_auth_state state =
 				log#debug "set_auth_state(%s)" (string_of_auth_state state);
 				let step = Step.create () in
 				begin match state with
-				| Anonymous -> (stored_credentials)#delete ~step ()
-				(* TODO: Failed_login & Saved_user *)
-				| Active_user (_, creds) -> stored_credentials#save ~step creds
-				| _ -> ()
+				| Anonymous ->
+						(stored_credentials)#delete ~step ()
+
+				| Failed_login (username) ->
+						stored_credentials#save ~step (`List [`String key_user; `String username])
+
+				| Saved_user (_, creds) | Active_user (_, creds)
+				-> stored_credentials#save ~step (`List [`String key_token; creds])
 				end;
 				_set_auth_state ~step state;
 				Step.execute step
