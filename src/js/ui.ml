@@ -115,7 +115,7 @@ let effectful_stream_mechanism : 'a. 'a signal -> ('a -> unit) -> unit Lwt.t = f
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
-let effectful_stream_mechanism_s signal fn : unit Lwt.t =
+let abortable_stream_mechanism signal fn : unit Lwt.t =
 	let current_thread = ref None in
 	effectful_stream_mechanism signal (fun v ->
 		let () = match !current_thread with
