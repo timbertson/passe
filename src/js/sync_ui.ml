@@ -55,7 +55,7 @@ let ui state =
 				error_widget;
 				child div ~cls:"form-group form-group-xs email" ~children:[
 					child label ~cls:"sr-only" ~text:"User" ();
-					child input ~cls:"form-control" ~attrs:[
+					child input ~cls:"form-control username-input" ~attrs:[
 						("name","user");
 						("placeholder","User");
 						("type","text");
@@ -81,7 +81,9 @@ let ui state =
 			] ~mechanism:(fun elem ->
 				let signup_button = elem##querySelector(Js.string ".signup") |> non_null in
 				let login_button = elem##querySelector(Js.string ".login") |> non_null in
+				(* XXX just search for any `input`, rather than binding events on each of these individually *)
 				let password_input = elem##querySelector(Js.string ".password-input") |> non_null in
+				let username_input = elem##querySelector(Js.string ".username-input") |> non_null in
 				let submit url =
 					log#info "form submitted";
 					let data = `Assoc (get_form_contents elem
@@ -100,6 +102,12 @@ let ui state =
 					in
 					return_unit
 				in
+				let submit_on_return event _ =
+					if event##keyCode = keycode_return then (
+						stop event;
+						submit Client_auth.login_url
+					) else return_unit
+				in
 
 				Lwt_js_events.clicks signup_button (fun event _ ->
 					stop event;
@@ -110,13 +118,8 @@ let ui state =
 					stop event;
 					submit Client_auth.login_url
 				)
-				<&>
-				Lwt_js_events.keydowns password_input (fun event _ ->
-					if event##keyCode = keycode_return then (
-						stop event;
-						submit Client_auth.login_url
-					) else return_unit
-				)
+				<&> Lwt_js_events.keydowns password_input submit_on_return
+				<&> Lwt_js_events.keydowns username_input submit_on_return
 			) ()
 		] ()
 	in
