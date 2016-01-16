@@ -2,23 +2,35 @@
 with pkgs;
 let
 	opam2nix-packages = import ./opam2nix-packages.nix { inherit pkgs; };
+	libc-null = import ./libc-null.nix { inherit pkgs; };
 	names = import (./opam-deps + "/${target}.nix" );
 	selections = assert pkgs != null;
 		let
 			selections_file = opam2nix-packages.select {packages = names; ocamlAttr = "ocaml_4_02"; };
 		in
 		opam2nix-packages.import selections_file {
-			overrides = {super, self}: if target == "mirage-xen" then
-			let
-				mirage-platform-src = fetchgit {
-					url = "https://github.com/timbertson/mirage-platform";
-					rev = "623d1184278e929e35efad2b4ab86fccceae20de";
-					sha256 = "d2a5427d2b9aeef236c1e4ce9ae0275c8e9db878ca202a93b8c4dd96598b3e50";
+			overrides = {super, self}: {
+				opamPackages = super.opamPackages // {
+					safepass."1.3" = let drv = import ./safepass self; in
+						lib.overrideDerivation drv (o: {
+							src = fetchgit {
+								url = "https://github.com/timbertson/ocaml-safepass.git";
+								rev = "07dcbb5838be6d687dff9627ac0144d45234e449";
+								sha256 = "4753c610f815dbc40d6eedafb2073b8054272eefa9ed4c68f15414b32501c901";
+							};
+							# src = ../safepass-xen/nix/local.tgz;
+							nativeBuildInputs = o.nativeBuildInputs ++ [ libc-null ];
+						});
 				};
-				sels = super.opamSelection;
-			in
-			{
-				opamSelection = super.opamSelection // {
+				opamSelection = let
+					mirage-platform-src = fetchgit {
+						url = "https://github.com/timbertson/mirage-platform";
+						rev = "623d1184278e929e35efad2b4ab86fccceae20de";
+						sha256 = "d2a5427d2b9aeef236c1e4ce9ae0275c8e9db878ca202a93b8c4dd96598b3e50";
+					};
+					sels = super.opamSelection;
+				in
+				sels // (if target != "mirage-xen" then {} else {
 					mirage-xen-posix = lib.overrideDerivation sels.mirage-xen-posix (o: {
 						src = mirage-platform-src;
 					});
@@ -42,8 +54,8 @@ let
 							sha256 = "0c70a6cf658eac0248cb345934384dc51149d0893ddbb00915968deced1c6ea0";
 						};
 					});
-				};
-			} else {};
+				});
+			};
 		};
 in
 {

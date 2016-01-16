@@ -19,7 +19,7 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
   end
   module Cohttp_server = Cohttp
   (* TODO: Hash_bcrypt once safepass compiles in xen *)
-  module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash.Hash_sha256)(Fs)
+  module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash_bcrypt)(Fs)
   module Server = Passe_server.Service.Make(Logging)(Fs)(Cohttp_server)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =

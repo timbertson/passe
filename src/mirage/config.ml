@@ -19,6 +19,7 @@ let () =
     (* XXX what's the logic of adding libraries here? I think it's only needed
      * when those libraries have stublibs or native c libs which are used during linking *)
     "nocrypto" ; (* triggers entropy initialization *)
+    "safepass" ;
     "sha";
   ] @ (match get_mode() with
     | `Xen -> [ "zarith-xen" ]
