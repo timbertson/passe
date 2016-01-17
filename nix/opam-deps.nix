@@ -13,13 +13,13 @@ let
 				opamPackages = super.opamPackages // {
 					safepass."1.3" = let drv = import ./safepass self; in
 						lib.overrideDerivation drv (o: {
-							src = fetchgit {
-								url = "https://github.com/timbertson/ocaml-safepass.git";
-								rev = "07dcbb5838be6d687dff9627ac0144d45234e449";
-								sha256 = "4753c610f815dbc40d6eedafb2073b8054272eefa9ed4c68f15414b32501c901";
-							};
-							# src = ../safepass-xen/nix/local.tgz;
-							nativeBuildInputs = o.nativeBuildInputs ++ [ libc-null ];
+							src = if builtins.pathExists ("${builtins.getEnv "PWD"}/safepass-xen/nix/local.tgz")
+								then ../safepass-xen/nix/local.tgz
+								else fetchgit {
+									url = "https://github.com/timbertson/ocaml-safepass.git";
+									rev = "cfa8f2277435f1d085cb437f99f928c93d0b2933";
+									sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
+								};
 						});
 				};
 				opamSelection = let
