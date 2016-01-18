@@ -7,6 +7,7 @@ lib.overrideDerivation (
 	) (orig: {
 	# add some dev utils
 	buildInputs = orig.buildInputs ++ [
+		orig.opam2nix
 		nodePackages.npm2nix
 		git
 	];

@@ -4,24 +4,11 @@ let
 	opam2nix-packages = import ./opam2nix-packages.nix { inherit pkgs; };
 	libc-null = import ./libc-null.nix { inherit pkgs; };
 	names = import (./opam-deps + "/${target}.nix" );
-	selections = assert pkgs != null;
-		let
-			selections_file = opam2nix-packages.select {packages = names; ocamlAttr = "ocaml_4_02"; };
-		in
+	selections_file = assert pkgs != null; opam2nix-packages.select {packages = names; ocamlAttr = "ocaml_4_02"; args = ["--repo" "${./safepass-repo}" ]; };
+	selections = 
 		opam2nix-packages.import selections_file {
+			extraRepos = [ (import ./safepass-repo/packages) ];
 			overrides = {super, self}: {
-				opamPackages = super.opamPackages // {
-					safepass."1.3" = let drv = import ./safepass self; in
-						lib.overrideDerivation drv (o: {
-							src = if builtins.pathExists ("${builtins.getEnv "PWD"}/safepass-xen/nix/local.tgz")
-								then ../safepass-xen/nix/local.tgz
-								else fetchgit {
-									url = "https://github.com/timbertson/ocaml-safepass.git";
-									rev = "cfa8f2277435f1d085cb437f99f928c93d0b2933";
-									sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
-								};
-						});
-				};
 				opamSelection = let
 					mirage-platform-src = fetchgit {
 						url = "https://github.com/timbertson/mirage-platform";
@@ -54,12 +41,24 @@ let
 							sha256 = "0c70a6cf658eac0248cb345934384dc51149d0893ddbb00915968deced1c6ea0";
 						};
 					});
+
+					safepass = lib.overrideDerivation sels.safepass (o: {
+						src = if builtins.pathExists ("${builtins.getEnv "PWD"}/safepass-xen/nix/local.tgz")
+							then ../safepass-xen/nix/local.tgz
+							else fetchgit {
+								url = "https://github.com/timbertson/ocaml-safepass.git";
+								rev = "cfa8f2277435f1d085cb437f99f928c93d0b2933";
+								sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
+							};
+					});
+
 				});
 			};
 		};
 in
 {
 	inherit names selections;
+	selectionsFile = selections_file;
 	# deps is just a flat list of every "root" package
 	# (i.e the implementation of each named package in ./opam-deps-{target}.nix)
 	deps =

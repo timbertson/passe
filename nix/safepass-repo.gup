@@ -1,0 +1,5 @@
+#!bash -eu
+gup --always
+mkdir -p "$1"
+opam2nix generate --src ../safepass-xen/opam-repo --dest "$1/packages"
+
