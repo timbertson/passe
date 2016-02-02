@@ -11,7 +11,8 @@ let () =
     | _ -> fat (block_of_file "_build/fat1.img")
   in
   let stack = match get_mode() with
-    | `Xen -> direct_stackv4_with_dhcp console tap0
+    (* | `Xen -> direct_stackv4_with_dhcp console tap0 *)
+    | `Xen -> direct_stackv4_with_default_ipv4 console tap0
     | _ -> socket_stackv4 default_console [Ipaddr.V4.any]
   in
   let conduit = conduit_direct ~tls:false stack in
