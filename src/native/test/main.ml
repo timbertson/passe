@@ -4,14 +4,6 @@ open OUnit2
 
 let log = Logging.get_logger "test"
 
-(* let finally_do : 'i 'o. (unit -> unit) -> ('i -> 'o) -> 'i -> 'o = fun cleanup fn res -> *)
-(* 	let rv = try *)
-(* 		fn res *)
-(* 	with e -> (cleanup (); raise e) in *)
-(* 	log#info "action ok, cleaning"; *)
-(* 	cleanup (); *)
-(* 	rv *)
-
 let mkdtemp () =
 	let d = Filename.temp_file "passe-test-" ".tmp" in
 	Unix.unlink d;

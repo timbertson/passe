@@ -5,22 +5,10 @@ open Printf
 module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) (C:V1.CLOCK) = struct
   module Cohttp   = Cohttp_mirage.Server(Conduit_mirage.Flow)
   module Logging = Passe.Logging.Make(Passe.Logging.Unix_output)
-  module Fs = struct
-    include Passe_server.Filesystem.Make(Fs)(Logging)
-    let rename fs a b =
-      (* XXX completely non-atomic, poorly-performant, and, may definitely fail halfway through.
-       * TODO: before relying on this server, figure out a better way to do this *)
-      lwt contents = read_file fs a in
-      let open Lwt in
-      let destroy_new () : unit Lwt.t = (destroy_if_exists fs b |> unwrap_lwt "destroy") in
-      let write_new () : unit Lwt.t = (write_file fs b contents |> unwrap_lwt "write_file") in
-      let destroy_old () : unit Lwt.t = (destroy fs a |> unwrap_lwt "destroy") in
-      destroy_new () >>= write_new >>= destroy_old
-  end
+  module PasseFS = Passe_server.Filesystem.Make(Fs)(Passe_server.Filesystem_xen.Atomic)(Logging)
   module Cohttp_server = Cohttp
-  (* TODO: Hash_bcrypt once safepass compiles in xen *)
-  module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash_bcrypt)(Fs)
-  module Server = Passe_server.Service.Make(Logging)(Fs)(Cohttp_server)(Auth)(Passe.Re_native)
+  module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash_bcrypt)(PasseFS)
+  module Server = Passe_server.Service.Make(Logging)(PasseFS)(Cohttp_server)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =
     Logging.set_level Logging.Trace;

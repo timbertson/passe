@@ -340,12 +340,10 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 	class storage fs filename =
 		let lock = Lwt_mutex.create () in
 		let () = log#info "storage located at %s" filename in
-		let tmp_name = filename ^ ".tmp" in
 
 		object (self)
 		method modify (fn:User.t Lwt_stream.t -> (User.t -> unit Lwt.t) -> bool Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
-				let modified = ref false in
 				let now = Clock.time () in
 				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
 
@@ -363,13 +361,12 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				in
 
 				(* stream output while processing input *)
-				lwt () = Lwt.join [
-					Fs.write_file_s fs tmp_name output_chunks;
+				Lwt.join [
+					Fs.write_file_s fs filename output_chunks;
 					(
 						try_lwt
 							lwt _mod = self#_read (fun users -> fn users write_user) in
 							log#trace "modified=%b" _mod;
-							modified := _mod;
 							return_unit
 						finally (
 							(* XXX write_file_s never seems to terminate if you cancel it
@@ -379,12 +376,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 							return output#close
 						)
 					)
-				] in
-				if !modified
-					then (
-						log#trace "renaming %s -> %s" tmp_name filename;
-						Fs.rename fs tmp_name filename
-					) else Lwt.return_unit
+				]
 			)
 
 		method read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
@@ -393,23 +385,25 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		(* NOTE: must only be called while holding `lock` *)
 		method private _read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
 			let opened = ref false in
-			let lines = lines_stream (Fs.read_file_s fs filename) in
-			let db_users = lines |> Lwt_stream.filter_map (fun line ->
-				Option.non_empty ~zero:"" line |>
-					Option.map (fun line -> J.from_string line |> User.of_json)
-			) in
-			lwt users =
-				try_lwt
-					(* force evaluation of the first line, so we get ENOENT immediately *)
-					lwt (_:string option) = Lwt_stream.peek lines in
-					opened := true;
-					return db_users
-				with Fs.Error (Fs.ENOENT _) when not !opened -> (
-					log#debug "Ignoring missing user DB";
-					return (Lwt_stream.of_list [])
-				)
-			in
-			fn users
+			(Fs.read_file_s fs filename) (fun s ->
+				let lines = lines_stream s in
+				let db_users = lines |> Lwt_stream.filter_map (fun line ->
+					Option.non_empty ~zero:"" line |>
+						Option.map (fun line -> J.from_string line |> User.of_json)
+				) in
+				lwt users =
+					try_lwt
+						(* force evaluation of the first line, so we get ENOENT immediately *)
+						lwt (_:string option) = Lwt_stream.peek lines in
+						opened := true;
+						return db_users
+					with Fs.Error (Fs.ENOENT _) when not !opened -> (
+						log#debug "Ignoring missing user DB";
+						return (Lwt_stream.of_list [])
+					)
+				in
+				fn users
+			)
 	end
 
 	type signup_result = [

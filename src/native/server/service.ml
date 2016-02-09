@@ -129,11 +129,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
 			lwt latest_etag =
 				try_lwt
-					let chunks = Fs.read_file_s fs fullpath in
-					let hash = Sha256.init () in
-					lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
-					let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
-					return (Some ("\"" ^ (digest ) ^ "\""))
+					Fs.read_file_s fs fullpath (fun chunks ->
+						let hash = Sha256.init () in
+						lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
+						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
+						return (Some ("\"" ^ (digest ) ^ "\""))
+					)
 				with Fs.Error (Fs.ENOENT _) -> return_none
 			in
 
@@ -152,10 +153,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			else (
 				try_lwt
 					let headers = headers |> maybe_add_header "etag" latest_etag in
-					Server.respond
-						~headers
-						~status:`OK
-						~body:(Cohttp_lwt_body.of_stream (Fs.read_file_s fs fullpath)) ()
+					Fs.read_file_s fs fullpath (fun contents ->
+						Server.respond
+							~headers
+							~status:`OK
+							~body:(Cohttp_lwt_body.of_stream contents) ()
+					)
 				with Fs.Error (Fs.ENOENT _) ->
 					Server.respond
 						~body:Cohttp_lwt_body.empty
@@ -361,10 +364,8 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 												Store.apply_changes core changes with
 												version = new_version;
 											} in
-											let tmp = (db_path ^ ".tmp") in
 											let payload = updated_core |> json_of_core |> J.to_string in
-											lwt () = Fs.unwrap_lwt "write" (Fs.write_file fs tmp payload) in
-											lwt () = Fs.rename fs tmp db_path in
+											lwt () = Fs.write_file fs db_path payload in
 											return updated_core
 										) in
 										respond_json ~status:`OK ~body:(

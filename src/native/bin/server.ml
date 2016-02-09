@@ -16,13 +16,14 @@ module Logging = Logging.Make(Logging.Unix_output)
 module HTTP = Cohttp_lwt_unix.Server
 
 module Fs = struct
-	include Passe_server.Filesystem.Make(FS_unix)(Logging)
-	let rename t a b =
-		(* XXX we can't get `base` out of FS_unix, because FS_unix.t is abstract.
-		 * So this code relies on us calling only connect "/" *)
-		Unix.rename a b;
-		Lwt.return ()
-	let connect path = FS_unix.connect path
+	include Passe_server.Filesystem.Make(FS_unix)(Passe_server.Filesystem_unix.Atomic)(Logging)
+	(* XXX it'd be nice to use unwrap_lwt, but trying to constraint the Filesystem
+	 * so that `error` = `Fs.error` runs afoul of something a lot like
+	 * https://blogs.janestreet.com/using-with-type-on-a-variant-type/
+	 *)
+	let connect () = match_lwt FS_unix.connect "/" with
+		| `Ok fs -> return fs
+		| _ -> failwith "fs.connect() failed"
 end
 
 module Auth = Passe_server.Auth.Make(Logging)(Clock)(Passe_server.Hash_bcrypt)(Fs)
@@ -40,7 +41,7 @@ let start_server ~host ~port ~document_root ~data_root () =
 	log#info "Data root: %s" data_root;
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then log#warn "Remote control enabled (for test use only)";
-	lwt fs = Fs.unwrap_lwt "fs.connect" (FS_unix.connect "/") in
+	lwt fs = Fs.connect () in
 	let user_db = make_db fs data_root in
 	let conn_closed (_ch, _conn) = log#trace "connection closed" in
 	let callback = Unix_server.handler
