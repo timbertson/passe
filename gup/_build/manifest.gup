@@ -23,7 +23,7 @@ function sources {
 		find_in "$build_dir/js/" -name '*.js'
 		find_in "$build_dir/res/" -name '*.css'
 		find_in "$build_dir/res/fonts/"
-		find "$build_dir/" -maxdepth 1 $filter
+		find "$build_dir" -maxdepth 1 -name "*.appcache" -o -name "*.html"
 	fi
 	find_in "$build_dir/bin"
 }
