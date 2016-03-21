@@ -44,6 +44,7 @@ let
 			selections = opamSelections;
 			selectionsFile = opamDepsFile.selectionsFile;
 			selectionNames = lib.attrNames opamSelections;
+			depNames = opamDepsFile.names;
 		};
 		buildInputs = [
 			coreutils

@@ -4,5 +4,6 @@
 	"mirage-console"
 	"mirage-dns"
 	"mirage-http"
-	"tcpip"
+	{ "tcpip" = ">=2.6.1"; }
+	{ "mirage-net-unix" = ">=2.2.0"; }
 ]
