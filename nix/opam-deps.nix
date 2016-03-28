@@ -1,7 +1,16 @@
 {target, pkgs ? null}:
 with pkgs;
 let
-	opam2nix-packages = import ./opam2nix-packages.nix { inherit pkgs; };
+	opam2nix-packages =
+		let
+			dev_repo = builtins.getEnv "OPAM2NIX_DEVEL";
+			toPath = s: /. + s;
+			in if dev_repo != ""
+				then callPackage "${dev_repo}/nix" {} {
+						src = toPath "${dev_repo}/nix/local.tgz";
+						opam2nix = toPath "${dev_repo}/opam2nix/nix/local.tgz";
+					}
+				else callPackage ./opam2nix-packages.nix {};
 	libc-null = import ./libc-null.nix { inherit pkgs; };
 	names = import (./opam-deps + "/${target}.nix" );
 	selections_file = assert pkgs != null; opam2nix-packages.select {
@@ -62,7 +71,7 @@ let
 		};
 in
 {
-	inherit names selections;
+	inherit names selections opam2nix-packages;
 	selectionsFile = selections_file;
 	# deps is just a flat list of every "root" package
 	# (i.e the implementation of each named package in ./opam-deps-{target}.nix)

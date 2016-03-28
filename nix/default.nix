@@ -40,7 +40,7 @@ let
 		installPhase = "./install.sh ${buildDir} $out";
 
 		passthru = {
-			opam2nix = (callPackage ./opam2nix-packages.nix {});
+			opam2nix = opamDepsFile.opam2nix-packages;
 			selections = opamSelections;
 			selectionsFile = opamDepsFile.selectionsFile;
 			selectionNames = lib.attrNames opamSelections;

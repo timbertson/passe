@@ -8,7 +8,6 @@
 	"mirage"
 	"mirage-clock-unix"
 	"mirage-fs-unix"
-	{ "mirage-net-unix" = ">=2.2.0"; }
 	"mirage-types"
 	"ocamlfind"
 	"ounit"

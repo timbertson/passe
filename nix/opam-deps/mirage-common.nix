@@ -3,6 +3,5 @@
 	"io-page"
 	"mirage-console"
 	"mirage-dns"
-	"mirage-http"
-	{ "tcpip" = ">=2.6.1"; }
+	"tcpip"
 ]
