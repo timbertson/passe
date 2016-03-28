@@ -14,3 +14,4 @@
 /openshift/lib
 /nix/opam2nix-packages
 /nix/opam2nix
+/.sandstorm

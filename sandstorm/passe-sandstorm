@@ -1,0 +1,7 @@
+#!/bin/bash
+echo "============================="
+set -eux
+date
+DATA_DIR="/var/passe"
+mkdir -p "$DATA_DIR"
+"$APP_ROOT/bin/passe-server" --data "$DATA_DIR" --root "$APP_ROOT" "$@"

@@ -1,0 +1,10 @@
+#!bash -eu
+build="../_build.prod"
+src="$build/bin/passe-server"
+gup -u "$build/www" "$build/bin" "$build/server"
+gup -u "$build/manifest"
+sed -e 's|^|../|' "$build/manifest" > "$1"
+ldd "$src" | grep -o '/[^ ]*' | sed -e 's|^/||' >> "$1"
+cat >> "$1" <<EOF
+passe-sandstorm
+EOF
