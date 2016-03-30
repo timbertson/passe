@@ -43,14 +43,59 @@ let maybe_add_header k v headers =
 
 module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
 	module Store = Store.Make(Re)(Logging)
+	module User = Auth.User
+
+	module type AuthContext = sig
+		val validate_user : Auth.storage -> Cohttp.Request.t -> Auth.User.t option Lwt.t
+	end
+
+	module SandstormAuth = struct
+		let validate_user _db = fun req ->
+			let headers = Cohttp.Request.headers req in
+			return (Header.get headers "X-Sandstorm-User-Id" |> Option.map (fun (id:string) ->
+				let name: string = Header.get headers "X-Sandstorm-Username" |> Option.force in
+				`Sandstorm_user (User.sandstorm_user ~id ~name ())
+			))
+	end
+
+	module StandaloneAuth = struct
+		let validate_user user_db = fun req ->
+			let validate_token token = match token with
+				| Some token ->
+						let token = Auth.Token.of_json token in
+						Auth.validate ~storage:user_db token
+				| None -> return_none
+			in
+
+			let tok = Header.get (Cohttp.Request.headers req) "Authorization" |> Option.bind (fun tok ->
+				let tok =
+					try Some (Str.split (Str.regexp " ") tok |> List.find (fun tok ->
+							Str.string_match (Str.regexp "t=") tok 0
+						))
+					with Not_found -> None in
+				tok |> Option.map (fun t ->
+					t |> String.drop ~max:2 |> Uri.pct_decode |> J.from_string
+				)
+			) in
+			lwt user = validate_token tok in
+			return (user |> Option.map (fun user -> `DB_user user))
+	end
+
 	let log = Logging.get_logger "service"
+	let auth_context : (module AuthContext) =
+		if (try Unix.getenv "SANDSTORM" = "1" with Not_found -> false) then
+			(module SandstormAuth)
+		else
+			(module StandaloneAuth)
+
+	let string_of_uid = Auth.User.string_of_uid
 
 	let empty_user_db = (Store.empty_core |> Store.Format.json_of_core |> J.to_string)
 
 	let user_db_dir data_root = Filename.concat data_root "user_db"
-	let db_path_for data_root user = Filename.concat (user_db_dir data_root) (user ^ ".json")
-
-	module User = Auth.User
+	let db_path_for data_root uid = Filename.concat
+		(user_db_dir data_root)
+		((string_of_uid uid) ^ ".json")
 
 	let respond_json ~status ~body () =
 		Server.respond_string
@@ -65,15 +110,20 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 	let respond_unauthorized () =
 		respond_json ~status:`Unauthorized ~body:(`Assoc [("reason",`String "Permission denied")]) ()
 
+	let respond_forbidden () =
+		respond_json ~status:`Forbidden ~body:(`Assoc [("reason",`String "Request forbidden")]) ()
+
 	let make_db fs data_root = new Auth.storage fs (Filename.concat data_root "users.db.json")
 
 	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc sock req body =
+		let module AuthContext = (val auth_context) in
+
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot ->
 			log#warn "setting data_root = %s" newroot;
 			data_root := newroot;
 			user_db := make_db fs newroot;
-			let dbdir = Filename.dirname (db_path_for newroot "null") in
+			let dbdir = Filename.dirname (db_path_for newroot (Auth.User.uid_of_string "null")) in
 			match_lwt Fs.stat fs dbdir with
 				| `Ok _ -> return_unit
 				| `Error `No_directory_entry (_,_) -> begin
@@ -85,9 +135,9 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		let data_root = !data_root and user_db = !user_db in
 		let db_path_for = db_path_for data_root in
 
-		let wipe_user_db = (fun username ->
-			log#warn "wiping user DB for %s" username;
-			let path = db_path_for username in
+		let wipe_user_db = (fun uid ->
+			log#warn "wiping user DB for %s" (string_of_uid uid);
+			let path = db_path_for uid in
 			Fs.destroy_if_exists fs path |> Fs.unwrap_lwt "destroy"
 		) in
 
@@ -180,32 +230,18 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			let path = Uri.path uri in
 			log#debug "%s: %s" (string_of_method (Cohttp.Request.meth req)) path;
 			let path = normpath path in
-
-			let validate_token token = match token with
-				| Some token ->
-						let token = Auth.Token.of_json token in
-						Auth.validate ~storage:user_db token
-				| None -> return_none
-			in
-
-			let validate_user () =
-				let tok = Header.get (Cohttp.Request.headers req) "Authorization" |> Option.bind (fun tok ->
-					let tok =
-						try Some (Str.split (Str.regexp " ") tok |> List.find (fun tok ->
-								Str.string_match (Str.regexp "t=") tok 0
-							))
-						with Not_found -> None in
-					tok |> Option.map (fun t ->
-						t |> String.drop ~max:2 |> Uri.pct_decode |> J.from_string
-					)
-				) in
-				validate_token tok
-			in
-
+			let validate_user () = AuthContext.validate_user user_db req in
 			let authorized fn =
 				match_lwt validate_user () with
 					| None -> respond_unauthorized ()
 					| Some u -> fn u
+			in
+			let authorized_db fn =
+				let open Auth.User in
+				authorized (function
+					| `DB_user u -> fn u
+					| `Sandstorm_user _ -> respond_forbidden ()
+				)
 			in
 
 			let check_version () =
@@ -223,12 +259,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 						| ["db"] ->
 								check_version ();
 								authorized (fun user ->
-									let username = User.name user in
-									log#debug "serving db for user: %s" username;
+									let uid = User.uid user in
+									log#debug "serving db for user: %s" (string_of_uid uid);
 
-									lwt body = maybe_read_file (db_path_for username) in
+									lwt body = maybe_read_file (db_path_for uid) in
 									let body = body |> Option.default_fn (fun () ->
-										log#warn "no stored db found for %s" username;
+										log#warn "no stored db found for %s" (string_of_uid uid);
 										empty_user_db
 									) in
 
@@ -277,7 +313,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 									lwt () = params |> mandatory J.string_field "data" |> override_data_root in
 									respond_ok ()
 							| ["reset_db"] ->
-									lwt () = params |> mandatory J.string_field "user" |> wipe_user_db in
+									lwt () = params |> mandatory J.string_field "user" |> Auth.User.uid_of_string |> wipe_user_db in
 									respond_ok ()
 							| _ -> Server.respond_not_found ~uri ()
 						end
@@ -304,7 +340,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 							respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 						)
 						| ["auth"; "change-password"] -> (
-								authorized (fun user ->
+								authorized_db (fun user ->
 									let old = params |> J.mandatory J.string_field "old" in
 									let new_password = params |> J.mandatory J.string_field "new" in
 									lwt new_token = Auth.change_password ~storage:user_db user old new_password in
@@ -316,15 +352,15 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 								)
 							)
 						| ["auth"; "delete"] -> (
-								authorized (fun user ->
-									let username = User.name user in
+								authorized_db (fun user ->
+									let uid = User.uid_db user in
 									let password = params |> J.mandatory J.string_field "password" in
 									(* delete user from DB, and also delete their DB *)
 									lwt deleted = Auth.delete_user ~storage:user_db user password in
 									if deleted then (
-										log#warn "deleted user %s" username;
+										log#warn "deleted user %s" (User.string_of_uid uid);
 										lwt () =
-											Fs.destroy_if_exists fs (db_path_for username)
+											Fs.destroy_if_exists fs (db_path_for uid)
 											|> Fs.unwrap_lwt "destroy" in
 										respond_json ~status:`OK ~body:(J.empty) ()
 									) else
@@ -333,9 +369,9 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 							)
 						| ["db"] ->
 								authorized (fun user ->
-									let username = User.name user in
-									let db_path = db_path_for username in
-									log#debug "saving db for user: %s" username;
+									let uid = User.uid user in
+									let db_path = db_path_for uid in
+									log#debug "saving db for user: %s" (string_of_uid uid);
 									(* XXX locking *)
 									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									lwt db_file_contents = maybe_read_file db_path in

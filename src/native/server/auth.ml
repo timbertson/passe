@@ -56,20 +56,31 @@ module type Sig = sig
 		val to_json : sensitive_token -> J.json
 	end
 	module User : sig
-		type t
-		val name : t -> string
+		type sandstorm_user
+		type db_user
+		type uid
+		type t = [
+			| `Sandstorm_user of sandstorm_user
+			| `DB_user of db_user
+		]
+		val display_name : t -> string
+		val uid : t -> uid
+		val uid_db : db_user -> uid
+		val string_of_uid : uid -> string
+		val uid_of_string : string -> uid
+		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 	end
 	class storage : Fs.t -> string -> object
-		method modify : (User.t Lwt_stream.t -> (User.t -> unit Lwt.t) -> bool Lwt.t) -> unit Lwt.t
-		method read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
+		method modify : (User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) -> unit Lwt.t
+		method read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
 	end
 	val signup : storage:storage -> string -> string -> Token.sensitive_token either Lwt.t
 	val login : storage:storage -> string -> string -> Token.sensitive_token either Lwt.t
 
-	val validate : storage:storage -> Token.sensitive_token -> User.t option Lwt.t
+	val validate : storage:storage -> Token.sensitive_token -> User.db_user option Lwt.t
 	val logout : storage:storage -> Token.sensitive_token -> unit Lwt.t
-	val change_password : storage:storage -> User.t -> string -> string -> Token.sensitive_token option Lwt.t
-	val delete_user : storage:storage -> User.t -> string -> bool Lwt.t
+	val change_password : storage:storage -> User.db_user -> string -> string -> Token.sensitive_token option Lwt.t
+	val delete_user : storage:storage -> User.db_user -> string -> bool Lwt.t
 end
 
 module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
@@ -199,6 +210,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 
 	module User = struct
 		let max_tokens = 10
+		type uid = string
 		type password_info = {
 			salt:Bytes.t;
 			iterations:int;
@@ -206,13 +218,38 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		}
 		type stored_password = (string, password_info) stored
 
-		type t = {
+		type db_user = {
 			name: string;
 			password: stored_password;
 			active_tokens: Token.stored_token list;
 		}
 
-		let name t = t.name
+		type sandstorm_user = {
+			id: string;
+			display_name: string;
+		}
+
+		type t = [
+			| `Sandstorm_user of sandstorm_user
+			| `DB_user of db_user
+		]
+
+		let display_name t = t.display_name
+
+		let uid_of_string x = x
+		let string_of_uid x = x
+
+		let uid_db u = u.name
+		let uid = function
+			| `DB_user u -> uid_db u
+			| `Sandstorm_user u -> u.id
+
+		let display_name = function
+			| `DB_user u -> u.name
+			| `Sandstorm_user u -> u.display_name
+
+		let sandstorm_user ~name ~id () =
+			{ display_name=name; id=id }
 
 		let outdated_password p =
 			let meta = p.stored_metadata in
@@ -246,8 +283,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				}
 			}
 
-
-		let gen_token user password : (t * Token.sensitive_token) option Lwt.t =
+		let gen_token user password : (db_user * Token.sensitive_token) option Lwt.t =
 			let token_alg = user.password.stored_metadata.alg in
 			(* Important: use the hash algorithm corresponding to the _stored_ password.
 			 * If it's an old algo, we'll update it (after validating)
@@ -269,7 +305,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				let user = { user with active_tokens = tokens; password = password } in
 				return (Some (user, new_token))
 			) else return_none
-		
+
 		let password_of_json j = {
 			stored_metadata = {
 				salt = mandatory Bytes.field "salt" j;
@@ -297,7 +333,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				active_tokens = mandatory J.list_field "tokens" j |> List.map (Token.of_stored_json ~username:name);
 			}
 
-		let to_json (u:t) =
+		let to_json (u:db_user) =
 			`Assoc [
 				("name", `String u.name);
 				("password", json_of_password u.password);
@@ -330,7 +366,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				| None -> false
 				| Some _ -> true
 
-		let remove_token user (token:Token.sensitive_token) : t option =
+		let remove_token user (token:Token.sensitive_token) : db_user option =
 			_find_token user token |> Option.map (fun tok ->
 				{ user with active_tokens = user.active_tokens |> List.filter (fun t -> t != tok) }
 			)
@@ -342,7 +378,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		let () = log#info "storage located at %s" filename in
 
 		object (self)
-		method modify (fn:User.t Lwt_stream.t -> (User.t -> unit Lwt.t) -> bool Lwt.t) =
+		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
 				let now = Clock.time () in
 				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
@@ -356,7 +392,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					} in
 					let json = User.to_json user in
 					let line = J.to_single_line_string json in
-					log#debug "writing output user... %s" (User.name user);
+					log#debug "writing output user... %s" (user.User.name);
 					output#push (line^"\n")
 				in
 
@@ -379,11 +415,11 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				]
 			)
 
-		method read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
+		method read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
 			Lwt_mutex.with_lock lock (fun () -> self#_read fn)
 
 		(* NOTE: must only be called while holding `lock` *)
-		method private _read : 'a. (User.t Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
+		method private _read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
 			let opened = ref false in
 			(Fs.read_file_s fs filename) (fun s ->
 				let lines = lines_stream s in
@@ -440,7 +476,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		)
 
 
-	let get_user ~(storage:storage) username : User.t option Lwt.t =
+	let get_user ~(storage:storage) username : User.db_user option Lwt.t =
 		storage#read (fun users ->
 			users |> Lwt_stream.find (fun user -> user.User.name = username)
 		)
@@ -469,7 +505,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 			| Some rv -> `Success rv
 			| None -> `Failed "Authentication failed")
 
-	let validate ~(storage:storage) token : User.t option Lwt.t =
+	let validate ~(storage:storage) token : User.db_user option Lwt.t =
 		let info = token.sensitive_metadata in
 		let expires = info.Token.expires in
 		if expires < Clock.time () then
