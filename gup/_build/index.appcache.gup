@@ -5,12 +5,13 @@ import subprocess
 
 try:
 
-	sources = [
-		"index.html",
+	listed_sources = [
 		"js/main.js",
 		"res/css/style.css",
-		# "res/incognito.png",
 		"res/fonts/glyphicons-halflings-regular.woff",
+	]
+	sources = listed_sources + [
+		"../src/native/server/index.ml",
 	]
 
 	subprocess.check_call(["gup", "-u", 'res/fonts'])
@@ -19,7 +20,7 @@ try:
 	import hashlib
 	digest = hashlib.md5()
 
-	for fname in sources:
+	for fname in (sources):
 		print("reading " + fname)
 		with open(fname) as input:
 			while True:
@@ -31,7 +32,7 @@ try:
 	with open(sys.argv[1], 'w') as output:
 		output.write("CACHE MANIFEST\n")
 		output.write("# md5: " + digest.hexdigest() + "\n")
-		for fname in sources:
+		for fname in listed_sources:
 			output.write(fname + "\n")
 		output.write("\n".join([
 			"NETWORK:",

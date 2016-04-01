@@ -3,5 +3,6 @@
 	"conduit"
 	"fileutils"
 	"safepass"
+	"tyxml"
 	"tcpip"
 ]

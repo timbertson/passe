@@ -27,6 +27,10 @@ let normpath p =
 	);
 	List.rev !rv
 
+type file_response = [
+	| `File of string
+	| `Dynamic of string * string
+]
 
 let content_type_key = "Content-Type"
 let content_type_header v = Header.init_with content_type_key v
@@ -47,9 +51,13 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Cohttp.Request.t -> Auth.User.t option Lwt.t
+		val offline_access : bool
+		val implicit_auth : bool
 	end
 
 	module SandstormAuth = struct
+		let offline_access = false
+		let implicit_auth = true
 		let validate_user _db = fun req ->
 			let headers = Cohttp.Request.headers req in
 			return (Header.get headers "X-Sandstorm-User-Id" |> Option.map (fun (id:string) ->
@@ -59,6 +67,8 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 	end
 
 	module StandaloneAuth = struct
+		let offline_access = true
+		let implicit_auth = false
 		let validate_user user_db = fun req ->
 			let validate_token token = match token with
 				| Some token ->
@@ -165,9 +175,11 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 				)
 		in
 
-
-		let _serve_file fullpath =
-			let file_ext = Some (snd (BatString.rsplit fullpath ".")) (* with String.Invalid_string -> None *) in
+		let _serve_file ?headers contents =
+			let file_ext = match contents with
+				| `File fullpath -> Some (snd (BatString.rsplit fullpath "."))
+				| `Dynamic (ext, _) -> Some ext
+			in
 			let content_type = file_ext |> Option.map (function
 				| ("html" | "css") as t -> "text/" ^ t
 				| ("png" | "ico") as t -> "image/" ^ t
@@ -177,9 +189,14 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 				| ext -> log#warn "Unknown static file type: %s" ext; "application/octet-stream"
 			) in
 			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
+			let iter_file_chunks fn =
+				match contents with
+					| `File fullpath -> Fs.read_file_s fs fullpath fn
+					| `Dynamic (_ext, contents) -> fn (Lwt_stream.of_list [ contents ])
+			in
 			lwt latest_etag =
 				try_lwt
-					Fs.read_file_s fs fullpath (fun chunks ->
+					iter_file_chunks (fun chunks ->
 						let hash = Sha256.init () in
 						lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
 						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
@@ -188,7 +205,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 				with Fs.Error (Fs.ENOENT _) -> return_none
 			in
 
-			let headers = Header.init ()
+			let headers = headers |> Option.default_fn Header.init
 				|> no_cache
 				|> maybe_add_header content_type_key content_type in
 
@@ -203,7 +220,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			else (
 				try_lwt
 					let headers = headers |> maybe_add_header "etag" latest_etag in
-					Fs.read_file_s fs fullpath (fun contents ->
+					iter_file_chunks (fun contents ->
 						Server.respond
 							~headers
 							~status:`OK
@@ -216,7 +233,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			)
 		in
 
-		let serve_file relpath = _serve_file (Filename.concat document_root relpath) in
+		let serve_file ?headers contents = let contents = match contents with
+			| `File relpath -> `File (Filename.concat document_root relpath)
+			| `Dynamic _ -> contents
+			in _serve_file ?headers contents
+		in
+
 		let maybe_read_file path = try_lwt
 				(* XXX streaming? *)
 				lwt contents = Fs.read_file fs path in
@@ -280,11 +302,17 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 									let dest = Uri.with_scheme uri (Some "https") in
 									Server.respond_redirect dest ()
 								| _ ->
-									serve_file "index.html"
+									let contents = Index.html
+										~offline_access:AuthContext.offline_access
+										~implicit_auth:AuthContext.implicit_auth
+										() |> Index.string_of_html in
+									serve_file
+										~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
+										(`Dynamic ("html", contents))
 							end
 						| ["hold"] -> Lwt.wait () |> Tuple.fst
 						| path -> begin match_lwt resolve_file path with
-							| `Ok path -> _serve_file path
+							| `Ok path -> _serve_file (`File path)
 							| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()
 							| `Invalid_path -> Server.respond_error ~status:`Bad_request ~body:"invalid path" ()
 							| `Internal_error -> Server.respond_error ~status:(`Code 500) ~body:"internal error" ()

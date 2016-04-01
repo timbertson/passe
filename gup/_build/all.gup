@@ -1,7 +1,6 @@
 #!bash -eu
 gup -u \
 	res/all \
-	index.html \
 	index.appcache \
 	js/all \
 	native/all \

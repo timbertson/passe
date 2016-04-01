@@ -53,4 +53,4 @@ class type console = object
   method timeEnd : js_string t -> unit meth
 end
 
-let console : console t = Js.Unsafe.variable "console"
+let console : console t = Js.Unsafe.get (Js.Unsafe.global) "console"
