@@ -5,6 +5,10 @@ open Lwt
 open React
 let log = Logging.get_logger "ui"
 
+let keycode_tab = 9
+let keycode_esc = 27
+let keycode_return = 13
+
 (* FIXME: only required because raised exceptions don't seem to propagate properly
  * between #attach and withContent *)
 type mechanism_result =
@@ -435,9 +439,19 @@ let overlay content =
 	let overlay = div ~cls:"overlay" ~children:[
 		frag main
 	] () in
-	withContent Dom_html.document##documentElement overlay (fun _ ->
-		(* todo: listen for `esc` *)
-		hold
+	let document = Dom_html.document##documentElement in
+	withContent document overlay (fun _ ->
+		Lwt.pick [
+			hold;
+			Lwt_js_events.keydowns ~use_capture:true document (fun event _ ->
+				(* Console.console##log(event); *)
+				if (event##keyCode == keycode_esc) then (
+					stop event;
+					wake ()
+				);
+				return_unit
+			)
+		]
 	)
 
 let panel ~title ?close ~children () =
@@ -544,7 +558,3 @@ let get_form_contents (elem:Dom_html.htmlElement Js.t) =
 		let input = Opt.get input (fun () -> failwith "failed to cast input element") in
 		(input##name |> to_string, input##value |> to_string)
 	)
-
-let keycode_tab = 9
-let keycode_esc = 27
-let keycode_return = 13
