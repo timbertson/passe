@@ -35,7 +35,7 @@ let html ~implicit_auth ~offline_access () =
 		<body>
 			<div id="main">
 				<div class="container">
-					<h1>Loading...</h1>
+					<h4 class="text-center text-muted">Loading...</h4>
 				</div>
 			</div>
 			<script>
@@ -62,9 +62,4 @@ let html ~implicit_auth ~offline_access () =
 	>> in
 
 	Html5.html ~a:([a_lang "en"] @ html_attrs) head body
-	(* << <html lang="en"> *)
-	(* 	</head> *)
-	(* </html> *)
-	(* </html> >> *)
-
 

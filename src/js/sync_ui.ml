@@ -164,9 +164,8 @@ let ui state =
 	) in
 
 	let account_settings_button user = (
-		let username = Client_auth.name_of_authenticated user in
 
-		let preferences_section ~close elem = (
+		let preferences_section ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
 				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
@@ -198,7 +197,7 @@ let ui state =
 					];
 				];
 			] ~mechanism:(fun form ->
-				let submit_button = elem##querySelector(Js.string ".save") |> non_null in
+				let submit_button = form##querySelector(Js.string ".save") |> non_null in
 				Lwt_js_events.clicks submit_button (fun event _ ->
 					stop event;
 					let length = S.value length in
@@ -217,7 +216,7 @@ let ui state =
 			) ();
 		) in
 
-		let password_change_section ~token ~close elem = (
+		let password_change_section ~token ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
 				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
@@ -244,7 +243,8 @@ let ui state =
 					]
 				];
 			] ~mechanism:(fun form ->
-				let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
+				let username = Client_auth.name_of_authenticated user in
+				let submit_button = form##querySelector(Js.string ".submit") |> non_null in
 				Lwt_js_events.clicks submit_button (fun event _ ->
 					stop event;
 					let pairs = get_form_contents form in
@@ -273,7 +273,7 @@ let ui state =
 			) ()
 		) in
 
-		let user_delete_section ~token ~close elem = (
+		let user_delete_section ~token ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
 				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
@@ -336,13 +336,13 @@ let ui state =
 				Ui.overlay (fun close ->
 					Ui.panel ~close ~title:"Account settings" ~children:[
 						child div ~children:([
-								preferences_section ~close elem;
+								preferences_section ~close ();
 								child hr ()
 							] @ (match user with
 								| `Active_user (_, token)  | `Saved_user (_, token) -> [
-									password_change_section ~close ~token elem;
+									password_change_section ~close ~token ();
 									child hr ();
-									user_delete_section ~close ~token elem;
+									user_delete_section ~close ~token ();
 								]
 								| `Implicit_user _ | `Saved_implicit_user _ -> []
 							)
