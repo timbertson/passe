@@ -165,30 +165,40 @@ let sync_ui state =
 	in
 
 	try_lwt
-		lwt credentials =
-			let rec loop auth_state =
-				let open Client_auth in
+		lwt authenticated_user =
+			let open Client_auth in
+			let validate_implicit_user () =
+				lwt u = validate_implicit_auth state in
+				return (match u with
+					| `Implicit_user _ as u -> u
+					| `Anonymous -> failwith "Server is not authenticated"
+				)
+			in
+
+			let rec loop (auth_state:auth_state) : authenticated_user_state Lwt.t =
 				match auth_state with
-					| Active_user creds -> return creds
-					| Saved_user creds ->
-							validate_credentials state creds >>= loop
-					| Anonymous ->
-							login_prompt None >>= loop
-					| Failed_login username ->
-							login_prompt (Some username) >>= loop
+					| `Active_user _ as u -> return u
+					| `Saved_user _ as u -> validate_explicit_auth state u >>= loop
+					| `Logged_out -> login_prompt None >>= loop
+					| `Failed_login username -> login_prompt (Some username) >>= loop
+
+					(* Note: implicit auth types never loop, as there's nothing the
+					 * user can do to incluence their result *)
+					| `Implicit_user _ as u -> return u
+					| `Saved_implicit_user _  | `Anonymous -> validate_implicit_user ()
 			in
 			loop (S.value state.auth_state)
 		in
 
-		lwt () = state.Sync.run_sync credentials in
+		lwt () = state.Sync.run_sync authenticated_user in
 		log#log "Sync completed successfully";
 		return_unit
 	with e -> (
 		raise @@ SafeError ("Sync failed: " ^ (Printexc.to_string e))
 	)
 
-let main ~domain ~edit ~quiet ~use_clipboard ~config () =
-	let sync_state = Sync.build config in
+let main ~domain ~edit ~quiet ~use_clipboard ~env () =
+	let sync_state = Sync.build env in
 	lwt term = Lazy.force LTerm.stderr in
 	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
 	let user_db () = S.value (sync_state.Sync.db_signal) in
@@ -313,8 +323,8 @@ let main ~domain ~edit ~quiet ~use_clipboard ~config () =
 	finally
 		LTerm.flush term
 
-let list_domains config domain =
-	let sync_state = Sync.build config in
+let list_domains env domain =
+	let sync_state = Sync.build env in
 	let db = S.value (sync_state.Sync.db_fallback) in
 	begin match domain with
 		| Some domain -> (match Store.lookup domain db with

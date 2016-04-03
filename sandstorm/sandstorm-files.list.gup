@@ -1,5 +1,5 @@
 #!bash -eu
-build="../_build.prod"
+build="../_build"
 src="$build/bin/passe-server"
 gup -u "$build/www" "$build/bin" "$build/server"
 gup -u "$build/manifest"

@@ -440,7 +440,7 @@ let password_form sync : #Dom_html.element Ui.widget =
 		domain_panel#class_s "unknown" domain_is_unknown;
 		domain_panel#class_s "hidden" empty_domain;
 
-		let no_user = sync.Sync.current_username |> S.map Option.is_none in
+		let no_user = sync.Sync.current_uid |> S.map Option.is_none in
 		let save_button = input ~attrs:[("type","button");("value","save");("title","(ctrl+s)")] () in
 		save_button#class_s "hidden" (S.l2 (||) no_user unchanged_domain);
 
@@ -655,40 +655,42 @@ let print_exc context e =
 
 let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
-let main sync = Lwt.async (fun () ->
+let main sync = (
 	try_lwt (
 		let main_elem = (document##getElementById (s"main")) in
 		check (Opt.test main_elem) "main_elem not found!";
 		let main_elem = Opt.get main_elem (fun _ -> raise Fail) in
-		lwt () =
-			show_form sync main_elem
-			<&>
-			App_cache.update_monitor (fun () ->
-				log#info("appcache update ready");
-				let busy = document##body##querySelector(Js.string"input:focus")
-					|> Opt.to_option
-					|> Option.map (fun elem ->
-							let value = (Js.Unsafe.get elem (Js.string"value")) in
-							value##length > 0
-					) |> Option.default false
-				in
-				begin if busy then
-					log#warn "Not reloading; active input is nonempty"
-				else
-					Dom_html.window##location##reload()
-				end;
-				return_unit)
-			<&>
-			App_cache.poll_server ()
+		let offline_actions =
+			if Lazy.force Passe_env_js.offline_access then [
+				App_cache.update_monitor (fun () ->
+					log#info("appcache update ready");
+					let busy = document##body##querySelector(Js.string"input:focus")
+						|> Opt.to_option
+						|> Option.map (fun elem ->
+								let value = (Js.Unsafe.get elem (Js.string"value")) in
+								value##length > 0
+						) |> Option.default false
+					in
+					begin if busy then
+						log#warn "Not reloading; active input is nonempty"
+					else
+						Dom_html.window##location##reload()
+					end;
+					return_unit);
+				App_cache.poll_server ()
+			] else (
+				log#info "Offline access disabled";
+				[]
+			)
 		in
-		return_unit
+		Lwt.join ([ show_form sync main_elem ] @ offline_actions)
 	) with e -> (
 		print_exc "Toplevel" e;
 		return_unit
 	)
 )
 
-let () =
+let () = (
 	log#info "passe %s" (Version.pretty ());
 	Logging.(set_level (
 		let uri = !Server.root_url in
@@ -704,7 +706,7 @@ let () =
 	let storage_provider = (new Local_storage.provider (true)) in
 	let config_provider = Config.build storage_provider in
 	let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v)) in
-	let sync = Sync.build config_provider in
+	let initial_auth = Sync.initial_auth_state (Lazy.force Passe_env_js.auth_mode) in
 
 	let listener = ref null in
 	listener := Opt.return @@ Dom_events.listen
@@ -712,7 +714,14 @@ let () =
 		(Event.make "DOMContentLoaded")
 		(fun _ _ ->
 			Opt.iter !listener Dom_events.stop_listen;
-			main sync;
+			Lwt.async (fun () ->
+				initial_auth >>= fun initial_auth ->
+				main Sync.(build {
+					env_initial_auth = initial_auth;
+					env_config_provider = config_provider
+				})
+			);
 			false
 		)
+)
 

@@ -1,6 +1,6 @@
 let map f opt = match opt with Some x -> Some (f x) | None -> None
 let may f opt = match opt with
-	| Some x -> (f x); ()
+	| Some x -> (f x)
 	| None -> ()
 
 let default_fn f opt = match opt with

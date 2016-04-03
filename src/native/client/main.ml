@@ -11,10 +11,6 @@ open Common
 
 let log = Logging.get_logger "passe"
 
-type env = {
-	config : Config.t;
-}
-
 let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
@@ -25,14 +21,14 @@ module Actions = struct
 			| [d] -> Some d
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.main ~domain ~edit ~quiet ~use_clipboard ~config:(env.config) ())
+		Lwt_main.run (Ui.main ~domain ~edit ~quiet ~use_clipboard ~env ())
 
 	let sync env args =
 		let () = match args with
 			| [] -> ()
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.sync_ui (Sync.build env.config))
+		Lwt_main.run (Ui.sync_ui (Sync.build env))
 
 	let list_domains env args =
 		let domain = match args with
@@ -40,7 +36,7 @@ module Actions = struct
 			| [domain] -> Some domain
 			| _ -> too_many_args ()
 		in
-		let ok = Ui.list_domains env.config domain in
+		let ok = Ui.list_domains env domain in
 		exit (if ok then 0 else 1)
 	
 	type config_field = {
@@ -50,7 +46,7 @@ module Actions = struct
 	}
 	
 	let config env args =
-		let state = Sync.build env.config in
+		let state = Sync.build env in
 		let open Store in
 		match S.value (state.Sync.db_signal) with
 		| None -> raise @@ SafeError "No current user; try --sync first"
@@ -70,7 +66,7 @@ module Actions = struct
 
 			match args with
 				| [] ->
-					log#log "# Current config for %s:" (state.Sync.current_username |> S.value |> Option.get);
+					log#log "# Current config for %s:" (state.Sync.current_uid |> S.value |> Option.get);
 					fields |> List.iter print_field
 
 				| [key] ->
@@ -162,8 +158,9 @@ let main () =
 			let path = Filename.concat config_dir "passe/db.json" in
 			new Config_storage.provider path
 		in
-		let env = {
-			config = Config.build storage_provider;
+		let env = Sync.{
+			env_config_provider = Config.build storage_provider;
+			env_initial_auth = `Explicit; (* TODO: support implicit in native client *)
 		} in
 		Options.action env posargs
 	with SafeError e -> (prerr_endline e; exit 1)

@@ -69,6 +69,7 @@ module type Sig = sig
 		val string_of_uid : uid -> string
 		val uid_of_string : string -> uid
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
+		val json_of_sandstorm : sandstorm_user -> J.json
 	end
 	class storage : Fs.t -> string -> object
 		method modify : (User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) -> unit Lwt.t
@@ -243,6 +244,9 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		let uid = function
 			| `DB_user u -> uid_db u
 			| `Sandstorm_user u -> u.id
+
+		let json_of_sandstorm u : J.json =
+			`Assoc [ "name", `String u.display_name; "id", `String u.id ]
 
 		let display_name = function
 			| `DB_user u -> u.name

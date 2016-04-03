@@ -51,6 +51,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Cohttp.Request.t -> Auth.User.t option Lwt.t
+		val implicit_user : Cohttp.Request.t -> [`Anonymous | `Sandstorm_user of User.sandstorm_user] option
 		val offline_access : bool
 		val implicit_auth : bool
 	end
@@ -58,17 +59,24 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 	module SandstormAuth = struct
 		let offline_access = false
 		let implicit_auth = true
-		let validate_user _db = fun req ->
+		let _validate_user req =
 			let headers = Cohttp.Request.headers req in
-			return (Header.get headers "X-Sandstorm-User-Id" |> Option.map (fun (id:string) ->
-				let name: string = Header.get headers "X-Sandstorm-Username" |> Option.force in
+			Header.get headers "X-Sandstorm-User-Id" |> Option.map (fun (id:string) ->
+				let name: string = Header.get headers "X-Sandstorm-Username" |> Option.force |> Uri.pct_decode in
 				`Sandstorm_user (User.sandstorm_user ~id ~name ())
-			))
+			)
+
+		let validate_user _db req = return (_validate_user req)
+		let implicit_user req = Some (match _validate_user req with
+			| Some user -> user
+			| None -> `Anonymous
+		)
 	end
 
 	module StandaloneAuth = struct
 		let offline_access = true
 		let implicit_auth = false
+		let implicit_user _req = None
 		let validate_user user_db = fun req ->
 			let validate_token token = match token with
 				| Some token ->
@@ -93,10 +101,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 	let log = Logging.get_logger "service"
 	let auth_context : (module AuthContext) =
-		if (try Unix.getenv "SANDSTORM" = "1" with Not_found -> false) then
+		if (try Unix.getenv "SANDSTORM" = "1" with Not_found -> false) then (
+			log#info "SANDSTORM=1; using sandstorm auth mode";
 			(module SandstormAuth)
-		else
+		) else (
 			(module StandaloneAuth)
+		)
 
 	let string_of_uid = Auth.User.string_of_uid
 
@@ -320,11 +330,12 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 					)
 				| `POST -> (
 					check_version ();
-					lwt params = (
+					let _params = lazy (
 						lwt json = (Cohttp_lwt_body.to_string body) in
 						(* log#trace "got body: %s" json; *)
 						return (J.from_string json)
 					) in
+					let params () = Lazy.force _params in
 
 					let respond_token token =
 						respond_json ~status:`OK ~body:(match token with
@@ -338,36 +349,55 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 						| "ctl" :: path when enable_rc -> begin
 							match path with
 							| ["init"] ->
+									lwt params = params () in
 									lwt () = params |> mandatory J.string_field "data" |> override_data_root in
 									respond_ok ()
 							| ["reset_db"] ->
+									lwt params = params () in
 									lwt () = params |> mandatory J.string_field "user" |> Auth.User.uid_of_string |> wipe_user_db in
 									respond_ok ()
 							| _ -> Server.respond_not_found ~uri ()
 						end
 						| ["auth"; "signup"] -> (
+								lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
 								lwt token = Auth.signup ~storage:user_db user password in
 								respond_token token
 						)
 						| ["auth"; "login"] -> (
+								lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
 								lwt token = Auth.login ~storage:user_db user password in
 								respond_token token
 							)
+						| ["auth"; "state"] -> (
+								match AuthContext.implicit_user req with
+									| None ->
+										log#debug "auth/state requested, but there is no implicit user state";
+										Server.respond_not_found ~uri ()
+									| Some auth ->
+										let response = (match auth with
+											| `Anonymous -> `Assoc []
+											| `Sandstorm_user u -> User.json_of_sandstorm u
+										) in
+										respond_json ~status:`OK ~body:response ()
+							)
 						| ["auth"; "logout"] -> (
+								lwt params = params () in
 								let token = Auth.Token.of_json params in
 								lwt () = Auth.logout ~storage:user_db token in
 								respond_json ~status:`OK ~body:(`Assoc []) ()
 							)
 						| ["auth"; "validate"] -> (
-							let token = Auth.Token.of_json params in
-							lwt user = Auth.validate ~storage:user_db token in
-							respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
+								lwt params = params () in
+								let token = Auth.Token.of_json params in
+								lwt user = Auth.validate ~storage:user_db token in
+								respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 						)
 						| ["auth"; "change-password"] -> (
+								lwt params = params () in
 								authorized_db (fun user ->
 									let old = params |> J.mandatory J.string_field "old" in
 									let new_password = params |> J.mandatory J.string_field "new" in
@@ -380,6 +410,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 								)
 							)
 						| ["auth"; "delete"] -> (
+								lwt params = params () in
 								authorized_db (fun user ->
 									let uid = User.uid_db user in
 									let password = params |> J.mandatory J.string_field "password" in
@@ -396,6 +427,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 								)
 							)
 						| ["db"] ->
+								lwt params = params () in
 								authorized (fun user ->
 									let uid = User.uid user in
 									let db_path = db_path_for uid in

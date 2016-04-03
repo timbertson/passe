@@ -18,8 +18,8 @@ let html ~implicit_auth ~offline_access () =
 	in
 
 	let passe_env_json = `Assoc [
-		Passe_env_keys.offline_access, `Bool offline_access;
-		Passe_env_keys.implicit_auth, `Bool implicit_auth;
+		Passe_env.offline_access_key, `Bool offline_access;
+		Passe_env.implicit_auth_key, `Bool implicit_auth;
 	] |> safe_string_of_json in
 
 	let head = <:html5<

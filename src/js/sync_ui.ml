@@ -9,7 +9,6 @@ module Xhr = XmlHttpRequest
 open Sync
 
 let ui state =
-	(* let config_provider, set_config_provider = S.create (Lazy.force ephemeral_config) in *)
 	let last_sync_signal = state.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
@@ -38,10 +37,10 @@ let ui state =
 					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
 				else Local_changes len
 			) state.db_fallback last_sync_time
-		)) in
+		)
+	) in
 
-
-	let login_form (username:string option) =
+	let login_form (username:string option) = (
 		let error, set_error = S.create None in
 
 		let error_widget = error
@@ -95,7 +94,7 @@ let ui state =
 					let open Server in
 					let () = match response with
 						| OK response ->
-							set_auth_state (Auth.Active_user (Auth.get_response_credentials response))
+							set_auth_state (`Active_user (Auth.get_response_credentials response))
 						| Failed (_, message, _) ->
 								set_error (Some message)
 						| Unauthorized _ -> assert false
@@ -122,12 +121,18 @@ let ui state =
 				<&> Lwt_js_events.keydowns username_input submit_on_return
 			) ()
 		] ()
+	) in
+
+	let anonymous_ui () =
+		div ~cls:"account-status login alert alert-danger" ~children:[
+			child span ~cls:"user" ~text:"Anonymous" ();
+		] ()
 	in
 
-	let sync_state_widget auth =
+	let sync_state_widget auth = (
 		let open Ui in
 		let _node w = (w:>Dom.node widget_t) in
-		let sync_mech = (fun elem ->
+		let sync_mechanism = (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
 				lwt () = run_sync auth in
 				return (App_cache.update ())
@@ -141,7 +146,7 @@ let ui state =
 					_node @@ a ~cls:"link has-tooltip"
 						~attrs:[("title", "Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago")]
 						~children:[icon "refresh"]
-						~mechanism:sync_mech ()
+						~mechanism:sync_mechanism ()
 			| Syncing ->
 				_node @@ span
 					~cls:"syncing"
@@ -153,30 +158,176 @@ let ui state =
 					child a
 						~cls:"link"
 						~children:[icon "upload"]
-						~mechanism:sync_mech ()
+						~mechanism:sync_mechanism ()
 				] ()
 		) |> stream
-	in
+	) in
 
-	let logout_button tooltip creds = child a
-		~cls:"hover-reveal link"
-		~attrs:["title",tooltip]
-		~children:[icon "remove"]
-		~mechanism:(fun elem ->
-			Lwt_js_events.clicks elem (fun evt _ ->
-				let open Server in
-				match_lwt post_json ~data:creds Client_auth.logout_url with
-					| OK _ | Unauthorized _ ->
-						set_auth_state Client_auth.Anonymous;
-						return_unit;
-					| Failed (_, msg,_) ->
-						log#error "Can't log out: %s" msg;
+	let account_settings_button user = (
+		let username = Client_auth.name_of_authenticated user in
+
+		let preferences_section ~close elem = (
+			let error, set_error = S.create None in
+			let error_widget = error
+				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+					icon "remove";
+				] ())
+				|> Ui.stream in
+			let db = S.value state.db_fallback in
+			let current_length = Store.((get_defaults db).default_length) in
+			let length, set_length = S.create current_length in
+			let set_length str =
+				match (try Some (int_of_string str) with _ -> None) with
+					| Some len -> set_length len
+					| None -> set_error (Some "Not a number")
+			in
+			let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in
+			length_field#attr "class" "form-control";
+
+			child div ~cls:"form-horizontal" ~children:[
+				error_widget;
+
+				row `XS ~cls:"form-group" [
+					col ~size:4 [control_label "Default password length"];
+					col [frag length_field];
+				];
+
+				row `XS [
+					col ~size:8 ~offset:4 [
+						child input ~cls:"btn btn-primary save" ~attrs:[("type","submit"); ("value","Save defaults")] ();
+					];
+				];
+			] ~mechanism:(fun form ->
+				let submit_button = elem##querySelector(Js.string ".save") |> non_null in
+				Lwt_js_events.clicks submit_button (fun event _ ->
+					stop event;
+					let length = S.value length in
+					let saved = if length = current_length
+						then true
+						else Sync.save_default ~state (`Length length)
+					in
+					if saved then (
+						Dom_html.window##alert (Js.string "Defaults saved");
+						close ();
+					) else (
+						Dom_html.window##alert (Js.string "Unable to save DB");
+					);
+					return_unit
+				)
+			) ();
+		) in
+
+		let password_change_section ~token ~close elem = (
+			let error, set_error = S.create None in
+			let error_widget = error
+				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+					child i ~cls:"glyphicon glyphicon-remove" ();
+				] ())
+				|> Ui.stream in
+			let password_input ~label name =
+				let attrs = ["name",name; "type","password"] in
+				row `XS ~cls:"form-group" [
+					col ~size:4 [control_label label];
+					col [child input ~cls:"form-control" ~attrs:attrs ()];
+				]
+			in
+
+			child div ~cls:"form-horizontal" ~children:[
+				error_widget;
+				password_input ~label:"Old password" "new";
+				password_input ~label:"New password" "new";
+				password_input ~label:"New password (again)" "new2";
+
+				row `XS [
+					col ~size:8 ~offset:4 [
+						child input ~cls:"btn btn-primary submit" ~attrs:[("type","submit"); ("value","Change password")] ();
+					]
+				];
+			] ~mechanism:(fun form ->
+				let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
+				Lwt_js_events.clicks submit_button (fun event _ ->
+					stop event;
+					let pairs = get_form_contents form in
+					let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
+					let new1 = data |> J.mandatory J.string_field "new"
+					and new2 = data |> J.mandatory J.string_field "new2" in
+					if new1 <> new2 then (
+						set_error (Some "Passwords don't match");
 						return_unit
-			)
-		) ()
-	in
+					) else (
+						let open Server in
+						match_lwt post_json ~token ~data Client_auth.change_password_url with
+							| OK creds ->
+								Dom_html.window##alert (Js.string "Password changed.");
+								set_auth_state (`Active_user (username, creds));
+								close ();
+								return_unit
+							| Unauthorized msg ->
+								set_error (Some (msg |> Option.default "Unauthorized"));
+								return_unit;
+							| Failed (_, msg,_) ->
+								set_error (Some msg);
+								return_unit
+					)
+				)
+			) ()
+		) in
 
-	let account_settings_button username creds = child a
+		let user_delete_section ~token ~close elem = (
+			let error, set_error = S.create None in
+			let error_widget = error
+				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+					child i ~cls:"glyphicon glyphicon-remove" ();
+				] ())
+				|> Ui.stream in
+			let password, set_password = S.create "" in
+			let password_field = input_of_signal ~update:set_password password in
+			let () = (
+				password_field#attr "type" "password";
+				password_field#attr "class" "form-control";
+			) in
+
+			child div ~cls:"form-horizontal" ~children:[
+				error_widget;
+				row `XS ~cls:"form-group" [
+					col ~size:4 [control_label "Password"];
+					col [frag password_field ];
+				];
+
+				row `XS ~collapse:true [
+					col ~size:8 ~offset:4 ~cls:"text-right" [
+						child span ~cls:"text-muted" ~text:"Careful now... " ();
+						child input ~cls:"btn btn-danger submit" ~attrs:[("type","submit"); ("value","Delete account")] ();
+					];
+				];
+			] ~mechanism:(fun form ->
+				let submit_button = form##querySelector(Js.string ".submit") |> non_null in
+				Lwt_js_events.clicks submit_button (fun event _ ->
+					stop event;
+					if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
+						set_error None;
+						let open Server in
+						match_lwt post_json
+							~token
+							~data:(`Assoc ["password", `String (S.value password)])
+							Client_auth.delete_user_url
+						with
+							| OK _ ->
+								set_auth_state `Logged_out;
+								close ();
+								return_unit;
+							| Unauthorized msg ->
+								set_error (Some (msg |> Option.default "Unauthorized"));
+								return_unit;
+							| Failed (_, msg,_) ->
+								set_error (Some msg);
+								return_unit
+					end else return_unit
+				)
+			) ();
+		) in
+
+		child a
 		~cls:"hover-reveal link settings-button"
 		~attrs:["title", "Settings"]
 		~children:[icon "cog"]
@@ -184,241 +335,31 @@ let ui state =
 			Lwt_js_events.clicks elem (fun evt _ ->
 				Ui.overlay (fun close ->
 					Ui.panel ~close ~title:"Account settings" ~children:[
-						child div ~children:[
-							(
-								let error, set_error = S.create None in
-								let error_widget = error
-									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-										icon "remove";
-									] ())
-									|> Ui.stream in
-								let db = S.value state.db_fallback in
-								let current_length = Store.((get_defaults db).default_length) in
-								let length, set_length = S.create current_length in
-								let set_length str =
-									match (try Some (int_of_string str) with _ -> None) with
-										| Some len -> set_length len
-										| None -> set_error (Some "Not a number")
-								in
-								let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in
-								length_field#attr "class" "form-control";
-
-								child div ~cls:"form-horizontal" ~children:[
-									error_widget;
-
-									row `XS ~cls:"form-group" [
-										col ~size:4 [control_label "Default password length"];
-										col [frag length_field];
-									];
-
-									row `XS [
-										col ~size:8 ~offset:4 [
-											child input ~cls:"btn btn-primary save" ~attrs:[("type","submit"); ("value","Save defaults")] ();
-										];
-									];
-								] ~mechanism:(fun form ->
-									let submit_button = elem##querySelector(Js.string ".save") |> non_null in
-									Lwt_js_events.clicks submit_button (fun event _ ->
-										stop event;
-										let length = S.value length in
-										let saved = if length = current_length
-											then true
-											else Sync.save_default ~state (`Length length)
-										in
-										if saved then (
-											Dom_html.window##alert (Js.string "Defaults saved");
-											close ();
-										) else (
-											Dom_html.window##alert (Js.string "Unable to save DB");
-										);
-										return_unit
-									)
-								) ();
-
-							);
-
-							child hr ();
-
-							(
-								let error, set_error = S.create None in
-								let error_widget = error
-									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-										child i ~cls:"glyphicon glyphicon-remove" ();
-									] ())
-									|> Ui.stream in
-								let password_input ~label name =
-									let attrs = ["name",name; "type","password"] in
-									row `XS ~cls:"form-group" [
-										col ~size:4 [control_label label];
-										col [child input ~cls:"form-control" ~attrs:attrs ()];
-									]
-								in
-
-								child div ~cls:"form-horizontal" ~children:[
-									error_widget;
-									password_input ~label:"Old password" "new";
-									password_input ~label:"New password" "new";
-									password_input ~label:"New password (again)" "new2";
-
-									row `XS [
-										col ~size:8 ~offset:4 [
-											child input ~cls:"btn btn-primary submit" ~attrs:[("type","submit"); ("value","Change password")] ();
-										]
-									];
-								] ~mechanism:(fun form ->
-									let submit_button = elem##querySelector(Js.string ".submit") |> non_null in
-									Lwt_js_events.clicks submit_button (fun event _ ->
-										stop event;
-										let pairs = get_form_contents form in
-										let data = `Assoc (pairs |> List.map (fun (a, b) -> a, `String b)) in
-										let new1 = data |> J.mandatory J.string_field "new"
-										and new2 = data |> J.mandatory J.string_field "new2" in
-										if new1 <> new2 then (
-											set_error (Some "Passwords don't match");
-											return_unit
-										) else (
-											let open Server in
-											match_lwt post_json ~token:creds ~data Client_auth.change_password_url with
-												| OK creds ->
-													Dom_html.window##alert (Js.string "Password changed.");
-													set_auth_state (Auth.Active_user (username, creds));
-													close ();
-													return_unit
-												| Unauthorized msg ->
-													set_error (Some (msg |> Option.default "Unauthorized"));
-													return_unit;
-												| Failed (_, msg,_) ->
-													set_error (Some msg);
-													return_unit
-										)
-									)
-								) ()
-							);
-
-							child hr ();
-
-							(
-								let error, set_error = S.create None in
-								let error_widget = error
-									|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
-										child i ~cls:"glyphicon glyphicon-remove" ();
-									] ())
-									|> Ui.stream in
-								let password, set_password = S.create "" in
-								let password_field = input_of_signal ~update:set_password password in
-								let () = (
-									password_field#attr "type" "password";
-									password_field#attr "class" "form-control";
-								) in
-
-								child div ~cls:"form-horizontal" ~children:[
-									error_widget;
-									row `XS ~cls:"form-group" [
-										col ~size:4 [control_label "Password"];
-										col [frag password_field ];
-									];
-
-									row `XS ~collapse:true [
-										col ~size:8 ~offset:4 ~cls:"text-right" [
-											child span ~cls:"text-muted" ~text:"Careful now... " ();
-											child input ~cls:"btn btn-danger submit" ~attrs:[("type","submit"); ("value","Delete account")] ();
-										];
-									];
-								] ~mechanism:(fun form ->
-									let submit_button = form##querySelector(Js.string ".submit") |> non_null in
-									Lwt_js_events.clicks submit_button (fun event _ ->
-										stop event;
-										if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin
-											set_error None;
-											let open Server in
-											match_lwt post_json
-												~token:creds
-												~data:(`Assoc ["password", `String (S.value password)])
-												Client_auth.delete_user_url
-											with
-												| OK _ ->
-													set_auth_state Auth.Anonymous;
-													close ();
-													return_unit;
-												| Unauthorized msg ->
-													set_error (Some (msg |> Option.default "Unauthorized"));
-													return_unit;
-												| Failed (_, msg,_) ->
-													set_error (Some msg);
-													return_unit
-										end else return_unit
-									)
-								) ();
+						child div ~children:([
+								preferences_section ~close elem;
+								child hr ()
+							] @ (match user with
+								| `Active_user (_, token)  | `Saved_user (_, token) -> [
+									password_change_section ~close ~token elem;
+									child hr ();
+									user_delete_section ~close ~token elem;
+								]
+								| `Implicit_user _ | `Saved_implicit_user _ -> []
 							)
-						] ()
+						) ()
 					] ()
 				)
 			)
 		) ()
-	in
+	) in
 
 
 	let sync_debounce = ref return_unit in
 
-	state.auth_state |> S.map (fun auth ->
-	log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
+	let auth_ui (auth: Client_auth.auth_state) =
+		log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
 
-	match auth with
-	| Client_auth.Anonymous -> login_form None
-	| Client_auth.Failed_login username -> login_form (Some username)
-	| Client_auth.Saved_user (username, creds) -> (
-		let busy, set_busy = S.create true in
-
-		let offline_message = span ~text:"offline " () in
-		offline_message#class_s "hidden" busy;
-
-		let sync_button = a ~children:[icon "refresh"] () in
-		sync_button#class_s "syncing" busy;
-		sync_button#class_s "link" (S.map not busy);
-
-		div ~cls:"account-status alert alert-warning" ~children:[
-			child span ~cls:"user" ~text:username ();
-			logout_button "Log out" creds;
-			child span ~cls:"offline" ~children:[
-				frag offline_message;
-				frag sync_button;
-			] ~mechanism:(fun elem ->
-				let continue = ref true in
-				while_lwt !continue do
-					set_busy true;
-					continue := false;
-					let open Server in
-					match_lwt Server.post_json ~data:creds Client_auth.token_validate_url with
-					| OK _ -> set_auth_state (Client_auth.Active_user (username, creds)); return_unit
-					| Unauthorized msg ->
-						log#warn "failed auth: %a" (Option.print print_string) msg;
-						set_auth_state (Client_auth.Failed_login username);
-						return_unit
-					| Failed (_, msg, _) ->
-						log#warn "unknown failure: %s" msg;
-						continue := true;
-						set_busy false;
-						Lwt.pick [
-							(
-								lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
-								return_unit
-							);
-							(Lwt_js.sleep 60.0);
-						]
-				done
-			) ()
-		] ()
-	)
-	| Client_auth.Active_user ((username, creds) as auth) -> (
-		div ~cls:"account-status alert alert-success" ~children:[
-			child span ~cls:"user" ~text:username ();
-			logout_button "Log out" creds;
-			child span ~cls:"online" ~children:[
-				account_settings_button username creds;
-				sync_state_widget auth;
-			] ()
-		]
-		~mechanism:(fun elem ->
+		let sync_mechanism auth = fun elem ->
 			let run_sync () =
 				lwt () = !sync_debounce in
 				sync_debounce := (Lwt_js.sleep 5.0);
@@ -437,6 +378,112 @@ let ui state =
 					));
 				]
 			done
-		) ()
-	)
-) |> Ui.stream
+		in
+
+		let optional_logout_ui (auth:Client_auth.authenticated_user_state) =
+			let logout_button tooltip token = (child a
+				~cls:"hover-reveal link"
+				~attrs:["title",tooltip]
+				~children:[icon "remove"]
+				~mechanism:(fun elem ->
+					Lwt_js_events.clicks elem (fun evt _ ->
+						let open Server in
+						match_lwt post_json ~data:token Client_auth.logout_url with
+							| OK _ | Unauthorized _ ->
+								set_auth_state `Logged_out;
+								return_unit;
+							| Failed (_, msg,_) ->
+								log#error "Can't log out: %s" msg;
+								return_unit
+					)
+				) ()
+			) in
+			match Client_auth.token_of_authenticated auth with
+			| Some token -> [ logout_button "Log out" token ]
+			| None -> []
+		in
+
+		let logged_in_ui (auth:Client_auth.authenticated_user_state) =
+			let username = Client_auth.name_of_authenticated auth in
+			div ~cls:"account-status alert alert-success" ~children:([
+				child span ~cls:"user" ~text:username ();
+			] @ (optional_logout_ui auth) @ [
+				child span ~cls:"online" ~children:[
+					account_settings_button auth;
+					sync_state_widget auth;
+				] ()
+			]) ~mechanism:(sync_mechanism auth) ()
+		in
+
+		let saved_user_ui (auth: Auth.saved_auth_state) = (
+			let username = Auth.name_of_saved auth in
+			let busy, set_busy = S.create true in
+			let mechanism = (fun elem ->
+				let continue = ref true in
+				while_lwt !continue do
+					set_busy true;
+					continue := false;
+					let open Server in
+					let response = match auth with
+						| `Saved_user (username, creds) ->
+							Server.post_json ~data:creds Client_auth.token_validate_url
+						| `Saved_implicit_user _ ->
+							Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
+					in
+
+					match_lwt response with
+					| OK json -> return (match auth with
+						| `Saved_user u -> set_auth_state (`Active_user u)
+						| `Saved_implicit_user _ ->
+							set_auth_state (match Client_auth.parse_implicit_user json with
+								| Some u -> `Implicit_user u
+								| None -> `Anonymous
+							)
+						)
+					| Unauthorized msg ->
+						log#warn "failed auth: %a" (Option.print print_string) msg;
+						let auth = (auth:>Client_auth.authenticated_user_state) in
+						set_auth_state (Auth.failed_login_of_authenticated auth);
+						return_unit
+					| Failed (_, msg, _) ->
+						log#warn "unknown failure: %s" msg;
+						continue := true;
+						set_busy false;
+						Lwt.pick [
+							(
+								lwt (_:Dom_html.mouseEvent Js.t) = Lwt_js_events.click elem in
+								return_unit
+							);
+							(Lwt_js.sleep 60.0);
+						]
+				done
+			) in
+
+			let offline_message = span ~text:"offline " () in
+			offline_message#class_s "hidden" busy;
+
+			let sync_button = a ~children:[icon "refresh"] () in
+			sync_button#class_s "syncing" busy;
+			sync_button#class_s "link" (S.map not busy);
+
+			div ~cls:"account-status alert alert-warning" ~children:([
+				child span ~cls:"user" ~text:username ();
+			] @ (optional_logout_ui (auth:>Client_auth.authenticated_user_state)) @ [
+				child span ~cls:"offline" ~children:[
+					frag offline_message;
+					frag sync_button;
+				] ~mechanism ()
+			]) ()
+		) in
+
+		match auth with
+			| `Logged_out -> login_form None
+			| `Failed_login username -> login_form (Some username)
+			| `Anonymous -> anonymous_ui ()
+			| `Saved_user _ as auth -> saved_user_ui auth
+			| `Saved_implicit_user _ as auth -> saved_user_ui auth
+			| `Implicit_user _ as auth -> logged_in_ui auth
+			| `Active_user _ as auth -> logged_in_ui auth
+	in
+
+	state.auth_state |> S.map auth_ui |> Ui.stream

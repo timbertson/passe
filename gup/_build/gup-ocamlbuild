@@ -27,6 +27,8 @@ gup --always
 FLAGS=""
 if [ "$compile_mode" = 'mirage-xen' ]; then
 	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"
+elif [ "$build_type" = dev ]; then
+	FLAGS="$FLAGS -lflags -g"
 fi
 
 rainbow="$(which rainbow 2>/dev/null || true)"

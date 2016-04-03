@@ -50,7 +50,7 @@ const startPasse :Spk.Manifest.Command = (
   argv = ["/sandstorm-http-bridge", "8080", "--", "/opt/app/sandstorm/passe-sandstorm", "--port", "8080", "-vvv"],
   environ = [
     (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin"),
-    (key = "APP_ROOT", value = "/opt/app/_build.prod"),
+    (key = "APP_ROOT", value = "/opt/app/_build"),
     (key = "SANDSTORM", value = "1"),
   ]
 );
