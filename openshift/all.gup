@@ -7,8 +7,7 @@ gup -u "../$build_type/all"
 rm -rf "./app"
 ../install.sh "$build_type" ./app
 
-# remove client binaries
-rm -r "app/$build_type/native/bin/client.native"
+# remove client binary
 rm -r app/bin/passe
 
 # copy dependencies (so we can run on old RHEL)

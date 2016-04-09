@@ -19,7 +19,7 @@ if [ "$#" -gt 1 ]; then
 	shift 1
 fi
 
-gup -u "$build_dir/manifest"
+gup -u "$base/$build_dir/manifest"
 
 if [ "$#" -eq 0 ]; then
 	echo ""
@@ -50,7 +50,7 @@ else
 	}
 
 	function link_build_file {
-		if [ -e "$build_dir/$1" ]; then
+		if [ -e "$base/$build_dir/$1" ]; then
 			ln -sfn "$build_dir/$1" "$dest/$1"
 		fi
 	}
