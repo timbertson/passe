@@ -1,15 +1,19 @@
 #!python
 from __future__ import print_function
-import sys
+import os, sys
 import subprocess
 
 try:
+
+	def paths_in(dir):
+		filenames = os.listdir(dir)
+		return [ os.path.join(dir, fname) for fname in filenames ]
 
 	listed_sources = [
 		"js/main.js",
 		"res/css/style.css",
 		"res/fonts/glyphicons-halflings-regular.woff",
-	]
+	] + paths_in('res/images')
 	sources = listed_sources + [
 		"../src/native/server/index.ml",
 	]

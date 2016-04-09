@@ -23,6 +23,10 @@ let within min max i = Pervasives.min (Pervasives.max i min) max
 
 let incognito, set_incognito = S.create false
 
+let logo () : #Dom_html.element Ui.widget = (
+	Ui.img ~cls:("footer-logo") ~attrs:["src", "/res/images/footer.png"] ()
+)
+
 let db_display sync : #Dom_html.element Ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
@@ -81,7 +85,7 @@ let footer () =
 		];
 	]
 
-let password_form sync : #Dom_html.element Ui.widget =
+let password_form sync : #Dom_html.element Ui.widget = (
 	let db_fallback = sync.Sync.db_fallback in
 	let open Ui in
 
@@ -496,9 +500,9 @@ let password_form sync : #Dom_html.element Ui.widget =
 		];
 	in
 
-	let form = Ui.div ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
+	let form =
 		let left elem = col ~size:2 [elem] in
-
+		Ui.div ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
 		row `Sml [
 			col ~size:7 ~cls:"password-form" [
 				row `XS ~collapse:true ~cls:"form-group" [
@@ -627,19 +631,23 @@ let password_form sync : #Dom_html.element Ui.widget =
 
 	);
 	form
+)
 
 let show_form sync (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Ui.div
 		~children:[
-			Ui.child Ui.div ~cls:"container" ~children:[
+			Ui.child Ui.div ~cls:"container main" ~children:[
 				Ui.frag @@ Sync_ui.ui sync;
 				Ui.frag @@ password_form sync;
 			] ();
 			Ui.child Ui.div ~cls:"container footer" ~children:[
 				Ui.frag @@ footer ();
-			]()
+			] ();
+			Ui.child Ui.div ~cls:"container" ~children:[
+				Ui.frag (logo ());
+			] ();
 		] () in
 	(* all_content#append @@ db_display sync; *)
 	Ui.withContent container all_content (fun _ ->

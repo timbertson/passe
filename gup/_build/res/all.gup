@@ -1,2 +1,2 @@
 #!bash -eu
-gup -u css/style.css fonts
+gup -u css/style.css fonts images

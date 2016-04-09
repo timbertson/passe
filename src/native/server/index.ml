@@ -26,6 +26,9 @@ let html ~implicit_auth ~offline_access () =
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+			<link rel="icon" href="/res/images/16.png"/>
+			<link rel="icon" href="/res/images/32.png" sizes="32x32"/>
+			<link rel="icon" href="/res/images/128.png" sizes="128x128"/>
 			<link href="res/css/style.css" rel="stylesheet"/>
 			<title>Passé</title>
 		</head>
@@ -34,7 +37,7 @@ let html ~implicit_auth ~offline_access () =
 	let body = <:html5<
 		<body>
 			<div id="main">
-				<div class="container">
+				<div class="container main">
 					<h4 class="text-center text-muted">Loading...</h4>
 				</div>
 			</div>

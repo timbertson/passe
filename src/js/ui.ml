@@ -237,6 +237,7 @@ let td = wrap Dom_html.createTd
 let input = wrap Dom_html.createInput
 let button = wrap Dom_html.createButton
 let i = wrap Dom_html.createI
+let img = wrap Dom_html.createImg
 
 let stop event =
 	Dom.preventDefault event;
