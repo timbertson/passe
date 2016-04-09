@@ -19,7 +19,6 @@ function find_in {
 }
 function sources {
 	if [ -e "$build_dir/js" ]; then
-		find_in html/
 		find_in "$build_dir/js/" -name '*.js'
 		find_in "$build_dir/res/" -name '*.css'
 		find_in "$build_dir/res/fonts/"

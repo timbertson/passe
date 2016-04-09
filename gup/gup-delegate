@@ -1,2 +1,5 @@
 #!bash -eu
 gup -u _build/"$2"
+if [ -e "$2" ]; then
+	touch "$2"
+fi

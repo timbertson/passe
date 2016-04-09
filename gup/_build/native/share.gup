@@ -1,0 +1,6 @@
+#!bash -eu
+prefix="$1/www"
+mkdir -p "$prefix"
+for f in res js index.appcache; do
+	ln -s "../../../$f" "$prefix/$f"
+done

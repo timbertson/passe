@@ -55,7 +55,7 @@ else
 		fi
 	}
 fi
-cat "$base/$build_dir/manifest" | while read f; do
+(cat "$base/$build_dir/manifest" && find share -type f) | while read f; do
 	if [ -e "$base/$f" ]; then
 		# chop builddir prefix, if present
 		d="${f#$build_dir/}"
@@ -63,8 +63,8 @@ cat "$base/$build_dir/manifest" | while read f; do
 			bin/*) ;;
 			share/*) ;;
 			*)
-				# put misc files into share/
-				d="share/$d";;
+				# put misc built files into share/www
+				d="share/www/$d";;
 		esac
 		copy_relative "$f" "$d"
 	fi

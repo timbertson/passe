@@ -64,9 +64,11 @@ let main () =
 	let open OptParse in
 	let open OptParser in
 
+	let program_root = Filename.dirname (Filename.dirname (Sys.executable_name)) in
+
 	let port = StdOpt.int_option ~default:2055 () in
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
-	let document_root = StdOpt.str_option ~default:"_build" () in
+	let document_root = StdOpt.str_option ~default:(Filename.concat program_root "share/www") () in
 	let data_root = StdOpt.str_option ~default:"data" () in
 	let show_version = StdOpt.store_true () in
 	let default_verbosity = Logging.ord Logging.Info in
