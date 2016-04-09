@@ -1,5 +1,7 @@
 # Passé
 
+<img alt="logo" src="/art/logo-circle.png?raw=true">
+
 There is a public instance running at [https://passe-gfxmonk.rhcloud.com/](https://passe-gfxmonk.rhcloud.com/),
 but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
@@ -105,20 +107,38 @@ If you don't have `nix`, you'll need:
  - [nodejs](https://nodejs.org/) (for the less compiler + twitter bootstrap sources)
  - then run: `opam install camlp4 batteries yojson ssl cohttp lambda-term uri lwt sha safepass js_of_ocaml`
 
-### Building / running:
+### Building:
 
-To build for development (in _build):
+**Note:*** Building Passé requires [nix](http://nixos.org/nix/)
 
-	$ make
+To just build everything, run:
 
-	# run the server
-	$ ./_build/bin/passe-server
+	$ make result
 
+This will build your current workspace from scratch.
+
+For development, you can build incrementally instead. Get into a shell with:
+
+	$ nix-shell
+
+Then build with:
+
+	$ gup all
+
+This will build into `./_build`, listing individual targets that can be built (with `gup`) as it goes.
+
+### Running:
+
+	$ ./result/bin/passe-server
+	# (replace `./result` with `./_build` if required)
 	# You can now hit up http://localhost:8080/ in a browser,
 	# or run the CLI with:
-	$ env PASSE_SERVER="http://localhost:8080" ./_build/bin/passe
+	$ env PASSE_SERVER="http://localhost:8080" ./result/bin/passe
 
-To install (this will build the production version, without debug info):
+###### Installing system-wide:
+
+This is not really recommended (because it there is no uninstall)
+but if you're cool with that, run:
 
 	./install.sh <destination>
 
@@ -126,7 +146,7 @@ To install (this will build the production version, without debug info):
 
 # Run your own openshift instance:
 
-To build a portable image, run `make openshift/all`. That'll make a self-contained
+To build a portable image, run `gup openshift/all` from a nix shell. That'll make a self-contained
 installation including all required libraries, as long as you're building on an x86_64 machine.
 
 # Licence
