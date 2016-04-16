@@ -2,6 +2,8 @@
 
 <img alt="logo" src="/art/logo-circle.png?raw=true">
 
+<img src="http://gfxmonk.net/dist/status/project/passe.png">
+
 There is a public instance running at [https://passe-gfxmonk.rhcloud.com/](https://passe-gfxmonk.rhcloud.com/),
 but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
