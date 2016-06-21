@@ -39,3 +39,8 @@ let select node =
 	range##selectNodeContents(node);
 	sel##removeAllRanges();
 	sel##addRange(range)
+
+let deselect () =
+	let sel = doc##getSelection() in
+	sel##removeAllRanges()
+

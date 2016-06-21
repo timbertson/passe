@@ -90,6 +90,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 	let open Ui in
 
 	let domain, set_domain = S.create "" in
+	let clipboard_supported, set_clipboard_supported = S.create true in
 
 	let domain_is_active, set_domain_is_active = S.create false in
 	let domain_input = Ui.input_of_signal ~update:set_domain domain in
@@ -332,24 +333,47 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		~set:(fun v -> {S.value saved_domain_info with suffix=non_empty_string v}) in
 
 	let show_plaintext_password, set_show_plaintext_password = S.create false in
-	let plaintext_toggle_mech = (fun elem ->
+
+	let is_selected, set_is_selected = S.create true in
+	let deselect () = Selection.deselect (); set_is_selected false in
+
+	let select_generated_password, set_select_generated_password = S.create (fun () ->
+		raise (AssertionError "select_generated_password not yet set")
+	) in
+
+	let click_action fn = (fun elem ->
 		Lwt_js_events.clicks ~use_capture:true elem (fun e _ ->
 			Ui.stop e;
-			set_show_plaintext_password (not @@ S.value show_plaintext_password);
-			return_unit
-		)
-	) in
-	let clear_generated_password_mech = (fun elem ->
-		Lwt_js_events.clicks elem (fun e _ ->
-			Ui.stop e;
-			clear_generated_password ();
+			fn elem e;
 			return_unit
 		)
 	) in
 
+	let plaintext_toggle_mech = click_action (fun _ _ ->
+		set_show_plaintext_password (not @@ S.value show_plaintext_password);
+	) in
+
+	let clear_generated_password_mech = click_action (fun _ _ ->
+		clear_generated_password ();
+	) in
+
+	let copy_generated_password_mech = click_action (fun _ _ ->
+		(S.value select_generated_password) ();
+		match Clipboard.triggerCopy () with
+			| Some error ->
+				log#error "%s" error;
+				set_clipboard_supported false
+			| None ->
+				(* give a bit of UI feedback in the default case that the
+				 * selection has been copied *)
+				deselect ()
+	) in
+
 	let password_display = current_password |> Ui.optional_signal_content (fun (p:string) ->
+		(* every time we display a new password, default to hidden *)
+		set_show_plaintext_password false;
+
 		let length = String.length p in
-		let is_selected, set_is_selected = S.create true in
 
 		let string_repeat s n = Array.fold_left (^) "" (Array.make n s) in
 		let dummy_text = (string_repeat "•" length) in
@@ -374,6 +398,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 					set_is_selected @@ Selection.is_fully_selected ~length child;
 				in
 
+				set_select_generated_password select;
 				select ();
 
 				effectful_stream_mechanism show_plaintext_password (fun _ -> select ()) <&>
@@ -400,12 +425,9 @@ let password_form sync : #Dom_html.element Ui.widget = (
 			child div ~cls:"popover-content" ~children:[
 				child table ~children:[
 					child tr ~children:[
+
 						child td ~children:[
 							child h4 ~cls:"title visible-lg visible-md" ~text:"Generated: " ();
-						] ();
-
-						child td ~attrs:["width","*"] ~children:[
-							frag display;
 						] ();
 
 						child td ~cls:"controls" ~children:[
@@ -413,6 +435,22 @@ let password_form sync : #Dom_html.element Ui.widget = (
 								~mechanism:plaintext_toggle_mech
 								~children:[icon "eye-open"] ();
 						] ();
+
+						child td ~attrs:["width","*"] ~children:[
+							frag display;
+						] ();
+
+						(clipboard_supported |> S.map (fun supported ->
+							if supported then
+								Some (td ~cls:"controls" ~children:[
+									child span ~cls:"toggle"
+										~mechanism:copy_generated_password_mech
+										~children:[icon "paperclip"] ();
+								] ())
+							else
+								None
+						) |> Ui.option_stream);
+
 						child td ~cls:"controls" ~children:[
 							child span ~cls:"toggle"
 								~mechanism:clear_generated_password_mech
@@ -603,7 +641,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 						lwt _ = evt subject in
 						return_unit
 					in
-					let blur_timeout = 5.0 in
+					let blur_timeout = 10.0 in
 					while_lwt true do
 						log#info "awaiting window blur";
 						lwt () = await Lwt_js_events.blur window in
