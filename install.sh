@@ -55,7 +55,7 @@ else
 		fi
 	}
 fi
-(cat "$base/$build_dir/manifest" && find share -type f) | while read f; do
+(cat "$base/$build_dir/manifest") | while read f; do
 	if [ -e "$base/$f" ]; then
 		# chop builddir prefix, if present
 		d="${f#$build_dir/}"
