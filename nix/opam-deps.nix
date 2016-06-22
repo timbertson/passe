@@ -39,6 +39,11 @@ let
 									sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
 								};
 						});
+
+						lwt = lib.overrideDerivation sels.lwt (o: {
+							# TODO: remove ncurses hack when https://github.com/ocaml/opam-repository/pull/6773 is resolved
+							nativeBuildInputs = o.nativeBuildInputs ++ [ ncurses ];
+						});
 					};
 					xenOverrides = {
 						mirage-xen-posix = lib.overrideDerivation sels.mirage-xen-posix (o: {
