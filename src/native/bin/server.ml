@@ -83,7 +83,7 @@ let main () =
 	add options ~long_name:"host" host;
 	add options ~long_name:"root" document_root;
 	add options ~long_name:"data" data_root;
-	add options ~long_name:"development" development;
+	add options ~long_name:"development" ~help:"disable appcache" development;
 	add options ~long_name:"version" show_version;
 	add options ~short_name:'v' ~long_name:"verbose" louder;
 	add options ~short_name:'q' ~long_name:"quiet" quieter;

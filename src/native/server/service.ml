@@ -147,6 +147,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc ~development = fun sock req body ->
 		let module AuthContext = (val auth_context) in
+		let offline_access = if development then false else AuthContext.offline_access in
 
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot ->
@@ -323,13 +324,15 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 									Server.respond_redirect dest ()
 								| _ ->
 									let contents = Index.html
-										~offline_access:AuthContext.offline_access
+										~offline_access
 										~implicit_auth:AuthContext.implicit_auth
 										() |> Index.string_of_html in
 									serve_file
 										~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
 										(`Dynamic ("html", contents))
 							end
+						| ["index.appcache"] when not offline_access
+								-> Server.respond_error ~status:`Not_found ~body:"not found" ()
 						| ["hold"] when development -> Lwt.wait () |> Tuple.fst
 						| path -> begin match_lwt resolve_file path with
 							| `Ok path -> _serve_file (`File path)

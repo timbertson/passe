@@ -722,8 +722,7 @@ let main sync = (
 					else
 						Dom_html.window##location##reload()
 					end;
-					return_unit);
-				App_cache.poll_server ()
+					return_unit)
 			] else (
 				log#info "Offline access disabled";
 				[]
