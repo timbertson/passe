@@ -72,7 +72,9 @@ module type Sig = sig
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
 	class storage : Fs.t -> string -> object
-		method modify : (User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) -> unit Lwt.t
+		method modify :
+			(User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t)
+			-> unit Lwt.t
 		method read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
 	end
 	val signup : storage:storage -> string -> string -> Token.sensitive_token either Lwt.t
@@ -382,7 +384,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		let () = log#info "storage located at %s" filename in
 
 		object (self)
-		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) =
+		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
 				let now = Clock.time () in
 				let num_written = ref 0 in
@@ -399,7 +401,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					let line = J.to_single_line_string json in
 					log#debug "writing output user... %s" (user.User.name);
 					num_written := !num_written + 1;
-					output#push (line^"\n")
+					output#push (`Output (line^"\n"))
 				in
 
 				(* stream output while processing input *)
@@ -407,13 +409,21 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					Fs.write_file_s fs filename output_chunks;
 					(
 						try_lwt
-							lwt _mod = self#_read (fun users -> fn users write_user) in
-							log#trace "modified=%b, num_written=%d" _mod !num_written;
-							return_unit
+							lwt commit = self#_read (fun users -> fn users write_user) in
+							match commit with
+								| `Rollback ->
+										log#debug "discarding changes";
+										output#push `Rollback
+								| `Commit ->
+										log#debug "committing changes";
+										return_unit
+						with e ->
+							(* write_file_s never seems to terminate if it is cancelled
+							 * before seeing any output. The exception should cancel
+							 * the writing _anyway_, but ths can't hurt *)
+							lwt () = output#push `Rollback in
+							raise e
 						finally (
-							(* XXX write_file_s never seems to terminate if you cancel it
-							 * before giving it any output. So give it some... *)
-							lwt () = output#push "\n" in
 							log#trace "closing output";
 							return output#close
 						)
@@ -456,7 +466,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 
 	let signup ~(storage:storage) username password : Token.sensitive_token either Lwt.t =
 		let result = ref None in
-		lwt created = storage#modify (fun users write_user ->
+		lwt () = storage#modify (fun users write_user ->
 			try_lwt
 				lwt () = users |> Lwt_stream.iter_s (fun user ->
 					if user.User.name = username then raise Conflict ;
@@ -465,14 +475,14 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				lwt (new_user, token) = User.create ~username password in
 				lwt () = write_user new_user in
 				result := Some (`Created token);
-				return_true
+				return `Commit
 			with e -> begin
 				result := (match e with
 					| Conflict -> Some `Conflict
 					| Invalid_username -> Some `Invalid_username
 					| e -> log#info "Unexpected error in account creation: %s" (Printexc.to_string e) ; None
 				);
-				return_false
+				return `Rollback
 			end
 		) in
 		return (match !result with
@@ -504,8 +514,9 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 						write_user user
 					;
 				) in
-				return (Option.is_some !created)
-			with Invalid_credentials -> return_false
+				(* don't bother writing unless we've added a token *)
+				return (match !created with Some _ -> `Commit | None -> `Rollback)
+			with Invalid_credentials -> return `Rollback
 		) in
 		return (match !created with
 			| Some rv -> `Success rv
@@ -543,8 +554,8 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 							write_user user
 						;
 					) in
-					return_true
-				with Invalid_credentials -> return_false
+					return `Commit
+				with Invalid_credentials -> return `Rollback
 			)
 		)
 
@@ -570,7 +581,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 						) else return db_user in
 						write_user db_user
 					) in
-					return (!ret |> Option.is_some)
+					return (match !ret with Some _ -> `Commit | None -> `Rollback)
 				) in
 				return !ret
 
@@ -578,17 +589,17 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		match_lwt User.gen_token user password with
 			| None -> return false
 			| Some _ ->
-				let ret = ref false in
+				let deleted = ref false in
 				lwt () = storage#modify (fun users write_user ->
 					lwt () = users |> Lwt_stream.iter_s (fun db_user ->
 						if db_user.User.name = user.User.name then (
-							ret := true;
+							deleted := true;
 							return_unit
 						) else
 							write_user db_user
 					) in
-					return !ret
+					return (if !deleted then `Commit else `Rollback)
 				) in
-				return !ret
+				return !deleted
 
 end

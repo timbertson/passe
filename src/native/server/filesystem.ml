@@ -6,7 +6,8 @@ end
 module type FSCommonSig = sig
 	include FS
 	type 'a result = [ `Ok of 'a | `Error of error ]
-
+	type write_instruction = [ `Output of string | `Rollback ]
+	type write_commit = [ `Commit | `Rollback ]
 	type exception_reason =
 		| ENOENT of string
 		| FS_ERROR of string
@@ -40,14 +41,15 @@ module type Sig = sig
 	(* TODO expose only a subset *)
 	include FSCommonSig
 
-	val write_file_s : t -> string -> string Lwt_stream.t -> unit Lwt.t
+	val write_file_s : t -> string -> write_instruction Lwt_stream.t -> unit Lwt.t
 	val write_file : t -> string -> string -> unit Lwt.t
 	val read_file_s : t -> string -> (string Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
 	val read_file : t -> string -> string Lwt.t
 end
 
 module type AtomicSig = functor(Fs:FSCommonSig) -> sig
-	val with_writable: Fs.t -> string -> (string -> 'a Lwt.t) -> 'a Lwt.t
+	type write_commit = Fs.write_commit
+	val with_writable: Fs.t -> string -> (string -> write_commit Lwt.t) -> unit Lwt.t
 	val readable:  Fs.t -> string -> string Lwt.t
 end
 
@@ -55,6 +57,8 @@ module MakeCommon (Fs:FS)(Logging:Passe.Logging.Sig) : (FSCommonSig with type t 
 	include Fs
 	let log = Logging.get_logger "fs"
 
+	type write_instruction = [ `Output of string | `Rollback ]
+	type write_commit = [ `Commit | `Rollback ]
 	type 'a result = [ `Ok of 'a | `Error of error ]
 	type exception_reason =
 		| ENOENT of string
@@ -164,17 +168,28 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 		locked_atomic_write_exn fs path (fun path ->
 			log#debug "Writing file stream: %s" path;
 			let offset = ref 0 in
-			stream |> Lwt_stream.iter_s (fun chunk ->
-				let size = String.length chunk in
-				let prev_offset = !offset in
-				offset := !offset + size;
-				log#trace "writing chunk of len %d to %s at offset %d" size path prev_offset;
-				unwrap_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
-			)
+			let result = ref `Commit in
+			lwt () = stream |> Lwt_stream.iter_s (fun instruction ->
+				match instruction with
+					| `Rollback ->
+						result := `Rollback;
+						log#trace "aborted write at offset %d" !offset;
+						return_unit
+					| `Output chunk ->
+						let size = String.length chunk in
+						let prev_offset = !offset in
+						offset := !offset + size;
+						log#trace "writing chunk of len %d to %s at offset %d" size path prev_offset;
+						unwrap_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
+			) in
+			let () = match !result with
+				| `Commit -> log#trace "comitting file write: %s" path
+				| _ -> () in
+			return !result
 		)
 
 	let write_file fs path contents =
-		write_file_s fs path (Lwt_stream.of_list [contents])
+		write_file_s fs path (Lwt_stream.of_list [`Output contents])
 
 	let read_file_s = fun fs path consumer ->
 		locked_atomic_read_exn fs path (fun path ->
