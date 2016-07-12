@@ -18,6 +18,7 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
       ~data_root:(ref data_root)
       ~user_db:(ref (Server.make_db fs data_root))
       ~fs
+      ~development:false
       ~enable_rc:false
     in
 

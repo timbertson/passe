@@ -38,7 +38,17 @@ let json_content_type = content_type_header "application/json"
 let no_cache h = Header.add h "Cache-control" "no-cache"
 
 
-let string_of_method = function `GET -> "GET" | `POST -> "POST" | _ -> "[UNKNOWN METHOD]"
+let string_of_method = function
+	| `GET -> "GET"
+	| `POST -> "POST"
+	| `PUT -> "PUT"
+	| `DELETE -> "DELETE"
+	| `PATCH -> "PATCH"
+	| `HEAD -> "HEAD"
+	| `TRACE -> "TRACE"
+	| `OPTIONS -> "OPTIONS"
+	| `CONNECT -> "CONNECT"
+	| `Other s -> s
 
 let maybe_add_header k v headers =
 	match v with
@@ -135,7 +145,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 	let make_db fs data_root = new Auth.storage fs (Filename.concat data_root "users.db.json")
 
-	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc sock req body =
+	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc ~development = fun sock req body ->
 		let module AuthContext = (val auth_context) in
 
 		(* hooks for unit test controlling *)
@@ -260,7 +270,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		try_lwt
 			let uri = Cohttp.Request.uri req in
 			let path = Uri.path uri in
-			log#debug "%s: %s" (string_of_method (Cohttp.Request.meth req)) path;
+			log#debug "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path;
 			let path = normpath path in
 			let validate_user () = AuthContext.validate_user user_db req in
 			let authorized fn =
@@ -320,7 +330,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 										~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
 										(`Dynamic ("html", contents))
 							end
-						| ["hold"] -> Lwt.wait () |> Tuple.fst
+						| ["hold"] when development -> Lwt.wait () |> Tuple.fst
 						| path -> begin match_lwt resolve_file path with
 							| `Ok path -> _serve_file (`File path)
 							| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()

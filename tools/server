@@ -4,4 +4,4 @@ here="$(dirname "$0")"
 export OCAMLRUNPARAM=b
 s="$here/../_build/native/bin/server.byte"
 gup -u "$s"
-exec "$s" "$@"
+exec "$s" --development "$@"

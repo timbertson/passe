@@ -385,6 +385,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> bool Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
 				let now = Clock.time () in
+				let num_written = ref 0 in
 				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
 
 				let write_user user =
@@ -397,6 +398,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					let json = User.to_json user in
 					let line = J.to_single_line_string json in
 					log#debug "writing output user... %s" (user.User.name);
+					num_written := !num_written + 1;
 					output#push (line^"\n")
 				in
 
@@ -406,13 +408,13 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					(
 						try_lwt
 							lwt _mod = self#_read (fun users -> fn users write_user) in
-							log#trace "modified=%b" _mod;
+							log#trace "modified=%b, num_written=%d" _mod !num_written;
 							return_unit
 						finally (
 							(* XXX write_file_s never seems to terminate if you cancel it
 							 * before giving it any output. So give it some... *)
 							lwt () = output#push "\n" in
-							log#trace "closing outout";
+							log#trace "closing output";
 							return output#close
 						)
 					)

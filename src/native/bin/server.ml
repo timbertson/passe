@@ -32,7 +32,7 @@ open Unix_server
 module Version = Version.Make(Re_native)
 let log = Logging.get_logger "service"
 
-let start_server ~host ~port ~document_root ~data_root () =
+let start_server ~host ~port ~development ~document_root ~data_root () =
 	let open Cohttp_lwt_unix in
 	log#info "Listening on: %s %d" host port;
 	let document_root = abs document_root
@@ -50,6 +50,7 @@ let start_server ~host ~port ~document_root ~data_root () =
 		~user_db:(ref user_db)
 		~fs
 		~enable_rc
+		~development
 	in
 	lwt () = Nocrypto_entropy_lwt.initialize () in
 	let config = HTTP.make ~callback ~conn_closed () in
@@ -69,6 +70,7 @@ let main () =
 	let port = StdOpt.int_option ~default:2055 () in
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
 	let document_root = StdOpt.str_option ~default:(Filename.concat program_root "share/www") () in
+	let development = StdOpt.store_true () in
 	let data_root = StdOpt.str_option ~default:"data" () in
 	let show_version = StdOpt.store_true () in
 	let default_verbosity = Logging.ord Logging.Info in
@@ -81,6 +83,7 @@ let main () =
 	add options ~long_name:"host" host;
 	add options ~long_name:"root" document_root;
 	add options ~long_name:"data" data_root;
+	add options ~long_name:"development" development;
 	add options ~long_name:"version" show_version;
 	add options ~short_name:'v' ~long_name:"verbose" louder;
 	add options ~short_name:'q' ~long_name:"quiet" quieter;
@@ -116,6 +119,7 @@ let main () =
 	Lwt_unix.run (start_server
 		~port:(Opt.get port)
 		~host
+		~development:(Opt.get development)
 		~data_root
 		~document_root
 	())

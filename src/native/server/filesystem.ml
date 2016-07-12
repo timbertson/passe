@@ -143,7 +143,7 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 		try_lwt
 			fn ()
 		finally begin
-			log#trace "finished with mutex %s; empty = %b" path (Lwt_mutex.is_empty lock);
+			log#trace "finished with mutex %s; no_open_locks = %b" path (Lwt_mutex.is_empty lock);
 			if (Lwt_mutex.is_empty lock) then (
 				locks := StringMap.remove path !locks
 			);
@@ -188,12 +188,12 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 				let () = match chunks with
 				(* TODO: mutate `rv` rather than allocating each chunk *)
 					| `Ok chunks ->
-						log#trace "read %d chunks from %s[%d]" (List.length chunks) path !offset;
 						chunks |> List.iter (fun chunk ->
 							let chunk = Cstruct.to_string chunk in
 							chunk_size := !chunk_size + String.length chunk;
 							rv := (!rv ^ chunk)
 						);
+						log#trace "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset !chunk_size;
 						offset := !offset + !chunk_size
 					| `Error e -> fail "read" e
 				in
