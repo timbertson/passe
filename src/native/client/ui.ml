@@ -32,18 +32,14 @@ let copy_to_clipboard text =
 	| Unix.WEXITED 0 -> return_true
 	| _ -> return_false
 
-let output_password ~use_clipboard ~term ~quiet ~domain text =
+let output_password ~use_clipboard ~term ~domain text =
 	lwt () = LTerm.flush term in
-
 	lwt copied = if use_clipboard then copy_to_clipboard text else return false in
 	if copied then (
-		if quiet then return_unit else
-			LTerm.fprintlf term "  (copied to clipboard)"
+		Logs.warn (fun m->m "  (copied to clipboard)");
+		Lwt.return_unit
 	) else (
-		lwt () =
-			if quiet then return_unit else
-				LTerm.fprintf term "  Generated password for %s:\n  " domain
-		in
+		Logs.warn (fun m->m "  Generated password for %s:\n  " domain);
 		LTerm.printl text
 	)
 
@@ -220,7 +216,7 @@ let lterm_reporter term =
 	in
 	Lwt.return Logs.({ report = lterm_print })
 
-let main ~domain ~edit ~quiet ~use_clipboard ~env () =
+let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 	let sync_state = Sync.build env in
 	lwt term = Lazy.force LTerm.stderr in
 	lwt reporter = lterm_reporter term in
@@ -333,8 +329,10 @@ let main ~domain ~edit ~quiet ~use_clipboard ~env () =
 
 			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 			let generated = Password.generate ~domain password in
-			lwt () = output_password ~use_clipboard ~quiet ~term ~domain:domain_text generated in
-			post_generate_actions stored_domain
+			lwt () = output_password ~use_clipboard ~term ~domain:domain_text generated in
+			if one_time
+				then Lwt.return_unit
+				else post_generate_actions stored_domain
 		end
 	in
 

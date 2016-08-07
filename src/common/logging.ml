@@ -2,9 +2,10 @@ let default_verbosity = 1 (* Warn *)
 
 let tagging_reporter reporter =
 	{ Logs.report = (fun src level ~over k user_msgf ->
-		match level with
-			| Logs.App -> reporter.Logs.report src level ~over k user_msgf
-			| _ -> reporter.Logs.report src level ~over k (fun outer_msgf ->
+		if (Logs.Src.equal src Logs.default || level = Logs.App) then
+			reporter.Logs.report src level ~over k user_msgf
+		else
+			reporter.Logs.report src level ~over k (fun outer_msgf ->
 				user_msgf (fun ?header ?tags fmt ->
 					outer_msgf ?header ?tags ("[%a %s] @[" ^^ fmt ^^ "@]")
 						Logs.pp_level level

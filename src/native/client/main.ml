@@ -15,13 +15,13 @@ let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
 	open OptParse
-	let generate ~use_clipboard ~edit ~quiet env args =
+	let generate ~use_clipboard ~one_time ~edit env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.main ~domain ~edit ~quiet ~use_clipboard ~env ())
+		Lwt_main.run (Ui.main ~domain ~edit ~one_time ~use_clipboard ~env ())
 
 	let sync env args =
 		let () = match args with
@@ -87,6 +87,7 @@ module Options =
 struct
 	open OptParse
 	let use_clipboard = StdOpt.store_false ()
+	let one_time = StdOpt.store_true ()
 	let sync = StdOpt.store_true ()
 	let verbosity = ref Logging.default_verbosity
 	let quiet = StdOpt.decr_option   ~dest:verbosity ()
@@ -105,14 +106,17 @@ struct
 		else if Opt.get config then
 			Actions.config env posargs
 		else
-			(* XXX remove `quiet` argument *)
-			Actions.generate ~use_clipboard:(Opt.get use_clipboard) ~quiet:(!verbosity <=0) ~edit:(Opt.get edit) env posargs
+			Actions.generate
+				~use_clipboard:(Opt.get use_clipboard)
+				~one_time:(Opt.get one_time)
+				~edit:(Opt.get edit) env posargs
 
 	open OptParser
 
 	let main () =
 		let options = OptParser.make ~usage: ("Usage: passe [OPTIONS] [domain]") () in
 		add options ~short_name:'p' ~long_name:"plain" ~help:"print password (don't copy to clipboard)" use_clipboard;
+		add options ~short_name:'1' ~long_name:"single" ~help:"stop after first action" one_time;
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;
 		add options ~short_name:'l' ~long_name:"list" list_only;
