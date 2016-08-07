@@ -3,10 +3,9 @@ module Xhr = XmlHttpRequest
 module J = Json_ext
 module Version = Version.Make(Re_js)
 module Server_common = Server_common.Make(Version)
-module Logging = Logging.Make(Logging.Js_output)
 include Server_common
 
-let log = Logging.get_logger "sync"
+module Log = (val Logging.log_module "sync")
 exception Unsupported_protocol
 
 let root_url =
@@ -26,18 +25,18 @@ let json_payload frame =
 			try
 				Some (J.from_string frame.Xhr.content)
 			with e -> (
-				log#error "Failed to parse JSON: %s\n%s"
+				Log.err (fun m->m "Failed to parse JSON: %s\n%s"
 					frame.Xhr.content
-					(Printexc.to_string e);
+					(Printexc.to_string e));
 				None)
 		)
 
 	| Some other ->
-			log#debug "Unexpected content-type: %s" other;
+			Log.debug (fun m->m "Unexpected content-type: %s" other);
 			None
 
 	| None ->
-			log#debug "No content-type given";
+			Log.debug (fun m->m "No content-type given");
 			None
 
 let request ?content_type ?token ~meth ?data url =
@@ -97,10 +96,10 @@ let request ?content_type ?token ~meth ?data url =
 
 
 let handle_json_response frame =
-	log#info "got http response %d, content %s"
+	Log.info (fun m->m "got http response %d, content %s"
 		frame.Xhr.code
 		frame.Xhr.content
-	;
+	);
 
 	let payload = json_payload frame in
 	let error = payload |> Option.bind (J.string_field "error") in

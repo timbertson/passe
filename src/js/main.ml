@@ -6,9 +6,9 @@ open Dom_html
 open Common
 open React_ext
 module J = Json_ext
+module Log = (val Logging.log_module "main")
 
 let s = Js.string
-let log = Logging.get_logger "main"
 let non_empty_string : string -> string option = Option.non_empty ~zero:""
 let default_empty_string : string option -> string = Option.default ""
 
@@ -116,7 +116,8 @@ let password_form sync : #Dom_html.element Ui.widget = (
 
 	let domain_info, update_domain_info = editable_signal saved_domain_info in
 	let update_domain_info = fun v ->
-		log#info "updating domain info to %s" (Store.json_string_of_domain v); update_domain_info v in
+		Log.info (fun m->m "updating domain info to %s" (Store.json_string_of_domain v));
+		update_domain_info v in
 
 
 	(* build up the generated password.
@@ -231,7 +232,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		let input = Opt.bind input Dom_html.CoerceTo.input in
 		match input |> Opt.to_option with
 			| Some input -> input##focus()
-			| None -> log#error "can't find input for clear_button"
+			| None -> Log.err (fun m->m "can't find input for clear_button")
 	in
 
 	domain_input#class_s "suggestions" (S.map Option.is_some domain_suggestions);
@@ -263,10 +264,10 @@ let password_form sync : #Dom_html.element Ui.widget = (
 							S.value _domain_suggestions |> Option.may (fun l ->
 								try (
 									accept_suggestion (List.nth l idx) elem;
-									log#debug "selected item %d" idx;
+									Log.debug (fun m->m "selected item %d" idx);
 									selected := true
 								) with Not_found -> (
-									log#debug "can't select (no such item): %d" idx;
+									Log.debug (fun m->m "can't select (no such item): %d" idx);
 									()
 								)
 							)
@@ -274,11 +275,11 @@ let password_form sync : #Dom_html.element Ui.widget = (
 						!selected
 					in
 
-					log#debug "Processing key code %d" which;
+					Log.debug (fun m->m "Processing key code %d" which);
 					begin match which with
 						| k when k = keycode_tab -> if (select_current ()) then stop e
 						| k when k = keycode_return -> if (select_current ()) then stop e
-						| k -> log#debug "ignoring unknown key code %d" k
+						| k -> Log.debug (fun m->m "ignoring unknown key code %d" k)
 					end
 					(* Console.console##log(e); *)
 				);
@@ -361,7 +362,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		(S.value select_generated_password) ();
 		match Clipboard.triggerCopy () with
 			| Some error ->
-				log#error "%s" error;
+				Log.err (fun m->m "%s" error);
 				set_clipboard_supported false
 			| None ->
 				(* give a bit of UI feedback in the default case that the
@@ -587,7 +588,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 
 		let submit_form event =
 			Ui.stop event;
-			log#info "form submitted";
+			Log.info (fun m->m "form submitted");
 			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList
 				|> List.iter (fun elem ->
 						let input = CoerceTo.input(elem) |> non_null in
@@ -628,7 +629,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 			Lwt.pick [
 				(
 					lwt _ = Lwt_react.E.next (S.changes password_input_data) in
-					log#debug "input changed; cancelling timeout";
+					Log.debug (fun m->m "input changed; cancelling timeout");
 					return_unit
 				);
 				(
@@ -643,19 +644,19 @@ let password_form sync : #Dom_html.element Ui.widget = (
 					in
 					let blur_timeout = 10.0 in
 					while_lwt true do
-						log#info "awaiting window blur";
+						Log.info (fun m->m "awaiting window blur");
 						lwt () = await Lwt_js_events.blur window in
 						Lwt.pick [
 							(
 								lwt () = await Lwt_js_events.focus window in
-								log#info "window back in focus";
+								Log.info (fun m->m "window back in focus");
 								(* continue loop, waiting until next blur *)
 								return_unit
 							);
 							(
-								log#info "window blurred; clearing pwd in %fs" blur_timeout;
+								Log.info (fun m->m "window blurred; clearing pwd in %fs" blur_timeout);
 								lwt () = Lwt_js.sleep blur_timeout in
-								log#info "clearing generated password";
+								Log.info (fun m->m "clearing generated password");
 								(* cancels this branch because the other one is waiting
 								 * on `password_input_data` changes *)
 								clear_password ();
@@ -694,10 +695,11 @@ let show_form sync (container:Dom_html.element Js.t) =
 	)
 
 let print_exc context e =
-	log#error "Uncaught %s Error: %s\n%s"
+	Log.err (fun m->m "Uncaught %s Error: %s\n%s"
 		context
 		(Printexc.to_string e)
 		(Printexc.get_callstack 20 |> Printexc.raw_backtrace_to_string)
+	)
 
 let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
@@ -709,7 +711,7 @@ let main sync = (
 		let offline_actions =
 			if Lazy.force Passe_env_js.offline_access then [
 				App_cache.update_monitor (fun () ->
-					log#info("appcache update ready");
+					Log.info (fun m->m "appcache update ready");
 					let busy = document##body##querySelector(Js.string"input:focus")
 						|> Opt.to_option
 						|> Option.map (fun elem ->
@@ -718,13 +720,13 @@ let main sync = (
 						) |> Option.default false
 					in
 					begin if busy then
-						log#warn "Not reloading; active input is nonempty"
+						Log.warn (fun m->m "Not reloading; active input is nonempty")
 					else
 						Dom_html.window##location##reload()
 					end;
 					return_unit)
 			] else (
-				log#info "Offline access disabled";
+				Log.info (fun m->m "Offline access disabled");
 				[]
 			)
 		in
@@ -736,17 +738,18 @@ let main sync = (
 )
 
 let () = (
-	log#info "passe %s" (Version.pretty ());
-	Logging.(set_level (
+	Logging.set_reporter (Logs_browser.console_reporter ());
+	Log.app (fun m->m "passe %s" (Version.pretty ()));
+	Logs.(set_level ~all:true (Some (
 		let uri = !Server.root_url in
 		match Uri.fragment uri with
 		| Some "debug" -> Debug
 		| Some "info" -> Info
 		| _ -> (match Uri.host uri with
 			| Some "localhost" -> Info
-			| _ -> Warn
+			| _ -> Warning
 		)
-	));
+	)));
 
 	let storage_provider = (new Local_storage.provider (true)) in
 	let config_provider = Config.build storage_provider in

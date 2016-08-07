@@ -1,10 +1,9 @@
 open Common
 
-module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
-
-	let log = Logging.get_logger "password"
-	module Store = Store.Make(Re)(Logging)
+module Make (Re:Re_ext.Sig) = struct
+	module Store = Store.Make(Re)
 	open Store
+	module Log = (val Logging.log_module "password")
 
 	let rec foldi i f acc =
 		if i <= 0 then acc else foldi (pred i) f (f acc)
@@ -33,11 +32,11 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 		let count = ref 0 in
 		let iter = (fun input ->
 			count := succ !count;
-			(* log#info "input: %s (%d)" input !count; *)
+			(* Log.info (fun m->m "input: %s (%d)" input !count); *)
 			let result = Digest.string input
 			|> Base64.encode ~tbl:sgp_alphabet ~pad:'A' in
-			(* log#info "result: %s" result; *)
-			log#debug "hashed -> %s" result;
+			(* Log.info (fun m->m "result: %s" result); *)
+			Log.debug (fun m->m "hashed -> %s" result);
 			result
 		) in
 
@@ -49,7 +48,7 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 			| None -> password
 		in
 		let input = (password^":"^domain.domain) in
-		log#debug "password input: %s" input;
+		Log.debug (fun m->m "password input: %s" input);
 		let generated = input
 			|> foldi 10 iter
 			|> fold_until (valid_password % trim) iter

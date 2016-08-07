@@ -24,7 +24,7 @@ let ui state =
 		try_lwt
 			state.run_sync auth
 		with e -> begin
-			log#error "%s" (Printexc.to_string e);
+			Log.err (fun m->m "%s" (Printexc.to_string e));
 			return ()
 		end
 	in
@@ -84,7 +84,7 @@ let ui state =
 				let password_input = elem##querySelector(Js.string ".password-input") |> non_null in
 				let username_input = elem##querySelector(Js.string ".username-input") |> non_null in
 				let submit url =
-					log#info "form submitted";
+					Log.info (fun m->m "form submitted");
 					let data = `Assoc (get_form_contents elem
 						|> List.map (fun (name, value) -> (name, `String value))) in
 					let open Server in
@@ -357,7 +357,7 @@ let ui state =
 	let sync_debounce = ref return_unit in
 
 	let auth_ui (auth: Client_auth.auth_state) =
-		log#info "Auth state: %s" (Client_auth.string_of_auth_state auth);
+		Log.info (fun m->m "Auth state: %s" (Client_auth.string_of_auth_state auth));
 
 		let sync_mechanism auth = fun elem ->
 			let run_sync () =
@@ -367,7 +367,7 @@ let ui state =
 				in
 			lwt () = run_sync () in
 			while_lwt true do
-				log#info "sync loop running..";
+				Log.info (fun m->m "sync loop running..");
 				Lwt.pick [
 					(* every 30 minutes, attempt a sync *)
 					(Lwt_js.sleep 18000.0 >>= run_sync);
@@ -393,7 +393,7 @@ let ui state =
 								set_auth_state `Logged_out;
 								return_unit;
 							| Failed (_, msg,_) ->
-								log#error "Can't log out: %s" msg;
+								Log.err (fun m->m "Can't log out: %s" msg);
 								return_unit
 					)
 				) ()
@@ -441,12 +441,12 @@ let ui state =
 							)
 						)
 					| Unauthorized msg ->
-						log#warn "failed auth: %a" (Option.print print_string) msg;
+						Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
 						let auth = (auth:>Client_auth.authenticated_user_state) in
 						set_auth_state (Auth.failed_login_of_authenticated auth);
 						return_unit
 					| Failed (_, msg, _) ->
-						log#warn "unknown failure: %s" msg;
+						Log.warn (fun m->m "unknown failure: %s" msg);
 						continue := true;
 						set_busy false;
 						Lwt.pick [

@@ -55,8 +55,8 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
-	module Store = Store.Make(Re)(Logging)
+module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
+	module Store = Store.Make(Re)
 	module User = Auth.User
 
 	module type AuthContext = sig
@@ -109,10 +109,10 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 			return (user |> Option.map (fun user -> `DB_user user))
 	end
 
-	let log = Logging.get_logger "service"
+	module Log = (val Logging.log_module "service")
 	let auth_context : (module AuthContext) =
 		if (try Unix.getenv "SANDSTORM" = "1" with Not_found -> false) then (
-			log#info "SANDSTORM=1; using sandstorm auth mode";
+			Log.info (fun m->m "SANDSTORM=1; using sandstorm auth mode");
 			(module SandstormAuth)
 		) else (
 			(module StandaloneAuth)
@@ -151,7 +151,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot ->
-			log#warn "setting data_root = %s" newroot;
+			Log.warn (fun m->m "setting data_root = %s" newroot);
 			data_root := newroot;
 			user_db := make_db fs newroot;
 			let dbdir = Filename.dirname (db_path_for newroot (Auth.User.uid_of_string "null")) in
@@ -167,14 +167,14 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		let db_path_for = db_path_for data_root in
 
 		let wipe_user_db = (fun uid ->
-			log#warn "wiping user DB for %s" (string_of_uid uid);
+			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
 			let path = db_path_for uid in
 			Fs.destroy_if_exists fs path |> Fs.unwrap_lwt "destroy"
 		) in
 
 		let resolve_file path =
 			let docroot = Path.make_filename [document_root] in
-			log#debug "Normalizing path %s against %s" (String.concat ~sep:", " path) (Path.string_of_filename docroot);
+			Log.debug (fun m->m "Normalizing path %s against %s" (String.concat ~sep:", " path) (Path.string_of_filename docroot));
 			assert (not (Path.is_relative docroot));
 			if path |> any (fun part -> String.is_prefix "." part)
 				then (
@@ -207,7 +207,9 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 				| "js" -> "application/javascript"
 				| "appcache" -> "text/plain"
 				| "woff" -> "application/octet-stream"
-				| ext -> log#warn "Unknown static file type: %s" ext; "application/octet-stream"
+				| ext ->
+					Log.warn (fun m->m "Unknown static file type: %s" ext);
+					"application/octet-stream"
 			) in
 			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
 			let iter_file_chunks fn =
@@ -263,7 +265,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		let maybe_read_file path = try_lwt
 				(* XXX streaming? *)
 				lwt contents = Fs.read_file fs path in
-				(* log#trace "read file contents: %s" contents; *)
+				(* Log.debug (fun m->m "read file contents: %s" contents); *)
 				return (Some contents)
 			with Fs.Error (Fs.ENOENT _) -> return_none
 		in
@@ -271,7 +273,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 		try_lwt
 			let uri = Cohttp.Request.uri req in
 			let path = Uri.path uri in
-			log#debug "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path;
+			Log.debug (fun m->m "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path);
 			let path = normpath path in
 			let validate_user () = AuthContext.validate_user user_db req in
 			let authorized fn =
@@ -289,10 +291,10 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 
 			let check_version () =
 				match Header.get (Cohttp.Request.headers req) "x-passe-version" with
-					| None -> log#debug "client did not provide a version - good luck!"
+					| None -> Log.debug (fun m->m "client did not provide a version - good luck!")
 					| Some client_version ->
 						(* this will be used when breaking format changes *)
-						log#debug "Client version: %s" client_version;
+						Log.debug (fun m->m "Client version: %s" client_version);
 						()
 			in
 
@@ -303,11 +305,11 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 								check_version ();
 								authorized (fun user ->
 									let uid = User.uid user in
-									log#debug "serving db for user: %s" (string_of_uid uid);
+									Log.debug (fun m->m "serving db for user: %s" (string_of_uid uid));
 
 									lwt body = maybe_read_file (db_path_for uid) in
 									let body = body |> Option.default_fn (fun () ->
-										log#warn "no stored db found for %s" (string_of_uid uid);
+										Log.warn (fun m->m "no stored db found for %s" (string_of_uid uid));
 										empty_user_db
 									) in
 
@@ -345,7 +347,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 					check_version ();
 					let _params = lazy (
 						lwt json = (Cohttp_lwt_body.to_string body) in
-						(* log#trace "got body: %s" json; *)
+						(* Log.debug (fun m->m "got body: %s" json); *)
 						return (J.from_string json)
 					) in
 					let params () = Lazy.force _params in
@@ -388,7 +390,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 						| ["auth"; "state"] -> (
 								match AuthContext.implicit_user req with
 									| None ->
-										log#debug "auth/state requested, but there is no implicit user state";
+										Log.debug (fun m->m "auth/state requested, but there is no implicit user state");
 										Server.respond_not_found ~uri ()
 									| Some auth ->
 										let response = (match auth with
@@ -430,7 +432,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 									(* delete user from DB, and also delete their DB *)
 									lwt deleted = Auth.delete_user ~storage:user_db user password in
 									if deleted then (
-										log#warn "deleted user %s" (User.string_of_uid uid);
+										Log.warn (fun m->m "deleted user %s" (User.string_of_uid uid));
 										lwt () =
 											Fs.destroy_if_exists fs (db_path_for uid)
 											|> Fs.unwrap_lwt "destroy" in
@@ -444,7 +446,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 								authorized (fun user ->
 									let uid = User.uid user in
 									let db_path = db_path_for uid in
-									log#debug "saving db for user: %s" (string_of_uid uid);
+									Log.debug (fun m->m "saving db for user: %s" (string_of_uid uid));
 									(* XXX locking *)
 									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									lwt db_file_contents = maybe_read_file db_path in
@@ -466,7 +468,7 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 										(* note that stored_core.version may be < core.version even when there are no changes,
 											* if the client submitted a core db that's newer than ours *)
 										lwt core = if new_version = stored_core.version then (
-											log#debug "not updating db; already at latest version";
+											Log.debug (fun m->m "not updating db; already at latest version");
 											return core
 										) else (
 											let updated_core = {
@@ -504,11 +506,11 @@ module Make (Logging:Logging.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server
 						| _ -> Server.respond_not_found ~uri ()
 					)
 				| _ ->
-					log#debug "unknown method; sending 500";
+					Log.debug (fun m->m "unknown method; sending 500");
 					Server.respond_error ~status:`Bad_request ~body:"unsupported method" ()
 		with e ->
 			let bt = Printexc.get_backtrace () in
-			log#error "Error handling request: %s\n%s" (Printexc.to_string e) bt;
+			Log.err (fun m->m "Error handling request: %s\n%s" (Printexc.to_string e) bt);
 			raise e
 
 end

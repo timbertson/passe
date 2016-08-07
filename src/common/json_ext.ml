@@ -3,6 +3,7 @@ let to_string = pretty_to_string ~std:true
 let print_chan = Yojson.Safe.pretty_to_channel ~std:true
 let print_str () = to_string
 let print = print_str
+let fmt formatter obj = Format.pp_print_string formatter (to_string obj)
 
 let to_single_line_string j =
 	let rv = Yojson.Safe.to_string j in

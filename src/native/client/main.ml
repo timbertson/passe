@@ -9,7 +9,7 @@ open React_ext
 module Json = Yojson.Safe
 open Common
 
-let log = Logging.get_logger "passe"
+module Log = (val Logging.log_module "passe")
 
 let too_many_args () = raise @@ SafeError "too many arguments"
 
@@ -62,16 +62,16 @@ module Actions = struct
 				try List.find (fun f -> f.key = key) fields
 				with Not_found -> raise @@ SafeError ("Unknown config key: "^key)
 			in
-			let print_field field = log#log "%s: %s" (field.key) (field.get db) in
+			let print_field field = Log.app (fun m->m "%s: %s" (field.key) (field.get db)) in
 
 			match args with
 				| [] ->
-					log#log "# Current config for %s:" (state.Sync.current_uid |> S.value |> Option.get);
+					Log.app (fun m->m "# Current config for %s:" (state.Sync.current_uid |> S.value |> Option.get));
 					fields |> List.iter print_field
 
 				| [key] ->
 					let field = lookup key in
-					log#log "%s" (field.get db)
+					Log.app (fun m->m "%s" (field.get db))
 
 				| [key; value] ->
 					let field = lookup key in
@@ -83,40 +83,21 @@ module Actions = struct
 			end
 end
 
-let apply_verbosity verbosity =
-	let open Logging in
-	(* enable backtraces if at least one -v is given *)
-	if verbosity > 1 then Printexc.record_backtrace true;
-	let new_level = (match verbosity with
-		| 1 -> Warn
-		| 2 -> Info
-		| 3 -> Debug
-		| n -> if n <= 0 then Error else Trace
-	) in
-	Logging.set_level new_level;
-	log#info "Log level: %s" (string_of_level new_level)
-
-let default_verbosity = 1 (* warnings only *)
-
 module Options =
 struct
 	open OptParse
-	(* let update = StdOpt.store_true () *)
 	let use_clipboard = StdOpt.store_false ()
 	let sync = StdOpt.store_true ()
-	(* let trace = StdOpt.store_true () *)
-	let verbosity = ref default_verbosity
+	let verbosity = ref Logging.default_verbosity
 	let quiet = StdOpt.decr_option   ~dest:verbosity ()
 	let verbose = StdOpt.incr_option ~dest:verbosity ()
 	let list_only = StdOpt.store_true ()
 	let config = StdOpt.store_true ()
 	let edit = StdOpt.store_true ()
-	(* let interactive = StdOpt.store_true () *)
-	(* let dry_run = StdOpt.store_true () *)
-	(* let force = StdOpt.store_true () *)
-	(* let metadata = StdOpt.store_true () *)
 	let action env posargs =
-		apply_verbosity !verbosity;
+		let log_level = Logging.apply_verbosity !verbosity in
+		Logs.(info (fun m -> m "Log level: %a" pp_level log_level));
+
 		if Opt.get sync then
 			Actions.sync env posargs
 		else if Opt.get list_only then

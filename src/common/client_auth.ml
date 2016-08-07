@@ -5,8 +5,8 @@ module J = Json_ext
 
 (* TODO: hide these type implementations behind signature *)
 
-module Make (Server:Server.Sig)(Logging:Logging.Sig) = struct
-	let log = Logging.get_logger "client_auth"
+module Make (Server:Server.Sig) = struct
+	module Log = (val Logging.log_module "client_auth")
 
 	type username = string
 	type uid = string
@@ -162,7 +162,7 @@ module Make (Server:Server.Sig)(Logging:Logging.Sig) = struct
 			| (Some name, Some uid) -> Some (name, uid)
 			| (None, None) -> None
 			| _mixed ->
-					log#warn "Unable to parse auth state JSON: %s" (J.to_string json);
+					Log.warn (fun m->m "Unable to parse auth state JSON: %s" (J.to_string json));
 				None
 
 	let get_response_credentials response =

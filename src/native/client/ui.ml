@@ -5,7 +5,7 @@ open Lwt
 open Lwt_react
 open LTerm_style
 
-let log = Logging.get_logger "ui"
+module Log = (val Logging.log_module "ui")
 
 class password_prompt term text = object(self)
 	inherit LTerm_read_line.read_password () as super
@@ -97,7 +97,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 		| LTerm_event.Key { LTerm_key.control = true; meta = false; shift = false; code = LTerm_key.Char ch } when ch = UChar.of_char 'c' -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Enter } ->
 			begin
-			log#debug "Saving changes";
+			Log.debug (fun m->m "Saving changes");
 			try
 				edited := Some (Store.({
 					domain = e_domain#text;
@@ -191,16 +191,40 @@ let sync_ui state =
 		in
 
 		lwt () = state.Sync.run_sync authenticated_user in
-		log#log "Sync completed successfully";
+		Log.app (fun m->m "Sync completed successfully");
 		return_unit
 	with e -> (
 		raise @@ SafeError ("Sync failed: " ^ (Printexc.to_string e))
 	)
 
+let lterm_reporter term =
+	let ppf, flush =
+		let b = Buffer.create 255 in
+		let flush () = let s = Buffer.contents b in Buffer.clear b; s in
+		Format.formatter_of_buffer b, flush
+	in
+
+	let lterm_print src level ~over k msgf =
+		let k _ =
+			Lwt_main.run (
+				let contents = flush () in
+				LTerm.fprint term contents >> LTerm.flush term
+			);
+			over ();
+			k ()
+		in
+		msgf @@ fun ?header ?tags fmt ->
+		match header with
+		| None -> Format.kfprintf k ppf ("@[" ^^ fmt ^^ "@]@.")
+		| Some h -> Format.kfprintf k ppf ("[%s] @[" ^^ fmt ^^ "@]@.") h
+	in
+	Lwt.return Logs.({ report = lterm_print })
+
 let main ~domain ~edit ~quiet ~use_clipboard ~env () =
 	let sync_state = Sync.build env in
 	lwt term = Lazy.force LTerm.stderr in
-	Logging.current_writer := (fun dest str -> Lwt_main.run (LTerm.fprint term str >> LTerm.flush term));
+	lwt reporter = lterm_reporter term in
+	Logging.set_reporter reporter;
 	let user_db () = S.value (sync_state.Sync.db_signal) in
 	let db_fallback () = S.value (sync_state.Sync.db_fallback) in
 
@@ -240,7 +264,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~env () =
 			in
 			let try_sync () =
 				lwt () = try_lwt sync_ui sync_state with SafeError e -> begin
-					log#error "%s" e;
+					Log.err (fun m->m "%s" e);
 					return_unit
 				end in
 				continue ()
@@ -274,7 +298,7 @@ let main ~domain ~edit ~quiet ~use_clipboard ~env () =
 							|> String.concat "\n")
 						^ "\n -- What next? [c] "))#run in
 				let response = if response = "" then "c" else response in
-				log#debug "response: [%s]" response;
+				Log.debug (fun m->m "response: [%s]" response);
 				lwt () = LTerm.fprintlf term "" in
 				let action =
 					try actions
@@ -298,13 +322,13 @@ let main ~domain ~edit ~quiet ~use_clipboard ~env () =
 			if edited then return ()
 			else exit 1
 		else begin
-			log#log " - Length: %d" domain.length;
+			Log.app (fun m->m " - Length: %d" domain.length);
 			begin match stored_domain with
 				| None ->
-						log#log " - This is a new domain."
+						Log.app (fun m->m " - This is a new domain.")
 				| Some domain ->
-						domain.suffix |> Option.may (log#log " - Suffix: %s");
-						domain.note |> Option.may (log#log " - Note: %s");
+						domain.suffix |> Option.may (fun suffix -> (Log.app (fun m->m " - Suffix: %s" suffix)));
+						domain.note |> Option.may (fun note -> (Log.app (fun m->m " - Note: %s" note)));
 			end;
 
 			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in

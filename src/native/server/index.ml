@@ -1,17 +1,18 @@
 open Passe
+open Tyxml
 module J = Json_ext
 
 let string_of_html h = 
-	let b = Buffer.create 16 in
-	Html5.P.print ~output:(Buffer.add_string b) h;
+	let b = Buffer.create 255 in
+	let fmt = Format.formatter_of_buffer b in
+	Html.pp () fmt h;
+	Format.pp_print_flush fmt ();
 	Buffer.contents b
 
 let safe_string_of_json o = o |> J.to_string |> Str.global_replace (Str.regexp "/") "\\u003c"
 
 let html ~implicit_auth ~offline_access () =
-	let open Html5.M in
-	let module Html5 = Html5.M in
-
+	let open Html in
 	let html_attrs = if offline_access
 		then [ a_manifest "index.appcache" ]
 		else []
@@ -22,7 +23,7 @@ let html ~implicit_auth ~offline_access () =
 		Passe_env.implicit_auth_key, `Bool implicit_auth;
 	] |> safe_string_of_json in
 
-	let head = <:html5<
+	let head = <:html<
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
@@ -34,7 +35,7 @@ let html ~implicit_auth ~offline_access () =
 		</head>
 	>> in
 
-	let body = <:html5<
+	let body = <:html<
 		<body>
 			<div id="main">
 				<div class="container main">
@@ -64,5 +65,5 @@ let html ~implicit_auth ~offline_access () =
 		</body>
 	>> in
 
-	Html5.html ~a:([a_lang "en"] @ html_attrs) head body
+	Html.html ~a:([a_lang "en"] @ html_attrs) head body
 

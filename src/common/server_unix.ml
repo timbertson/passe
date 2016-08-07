@@ -1,5 +1,4 @@
 open Lwt
-module Logging = Logging.Make(Logging.Unix_output)
 module J = Json_ext
 module Client = Cohttp_lwt_unix.Client
 module Response = Cohttp_lwt_unix.Response
@@ -10,7 +9,7 @@ module Version = Version.Make(Re)
 module Server_common = Server_common.Make(Version)
 include Server_common
 
-let log = Logging.get_logger "sync"
+module Log = (val Logging.log_module "sync")
 exception Unsupported_protocol
 
 let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-gfxmonk.rhcloud.com/"
@@ -27,18 +26,18 @@ let json_payload (response, body) =
 			try
 				return (Some (J.from_string body))
 			with e -> (
-				log#error "Failed to parse JSON: %s\n%s"
+				Log.err (fun m->m "Failed to parse JSON: %s\n%s"
 					body
-					(Printexc.to_string e);
+					(Printexc.to_string e));
 				return None)
 		)
 
 	| Some other ->
-			log#debug "Unexpected content-type: %s" other;
+			Log.debug (fun m->m "Unexpected content-type: %s" other);
 			return None
 
 	| None ->
-			log#debug "No content-type given";
+			Log.debug (fun m->m "No content-type given");
 			return None
 
 let request ?content_type ?token ~meth ?data url =
@@ -58,15 +57,15 @@ let request ?content_type ?token ~meth ?data url =
 	let headers = !headers in
 
 	let url = canonicalize ~root:!root_url url in
-	log#info "Requesting: %s" (Uri.to_string url);
+	Log.info (fun m->m "Requesting: %s" (Uri.to_string url));
 	Client.call ~headers ?body meth url
 
 let handle_json_response (response, body) =
 	let code = Response.status response |> Cohttp.Code.code_of_status in
-	log#trace "got http response %d" code;
+	Log.debug (fun m->m "got http response %d" code);
 
 	lwt content = Body.to_string body in
-	log#trace "got http body %s" content;
+	Log.debug (fun m->m "got http body %s" content);
 	lwt payload = json_payload (response, content) in
 	let error = payload |> Option.bind (J.string_field "error") in
 	return (match (code, payload) with

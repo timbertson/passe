@@ -19,8 +19,6 @@ let
 		else [ (build "www") (build target) ];
 
 	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs;});
-	opamDeps = opamDepsFile.deps;
-	opamSelections = opamDepsFile.selections;
 
 	commonAttrs = {
 		inherit src;
@@ -39,12 +37,9 @@ let
 		stripDebugList = [ "_build.prod" ];
 		installPhase = "./install.sh ${buildDir} $out";
 
-		passthru = {
-			opam2nix = opamDepsFile.opam2nix-packages;
-			selections = opamSelections;
-			selectionsFile = opamDepsFile.selectionsFile;
-			selectionNames = lib.attrNames opamSelections;
-			depNames = opamDepsFile.names;
+		passthru = rec {
+			inherit (opamDepsFile) opam2nix-packages names selections selectionsFile ;
+			selectionNames = lib.attrNames selections;
 		};
 		buildInputs = [
 			coreutils
@@ -52,14 +47,14 @@ let
 			openssl
 			which
 		]
-		++ opamDeps;
+		++ opamDepsFile.deps;
 
 		# # XXX this seems to be necessary for .byte targets only
 		# # (but we like those during development / testing).
 		# # Seems very fragile though.
 		LD_LIBRARY_PATH = lib.concatStringsSep ":" (lib.remove null (lib.mapAttrsToList (name: loc:
 			if builtins.isAttrs loc then "${loc}/lib/${name}" else null
-		) opamSelections));
+		) opamDepsFile.selections));
 	};
 
 in

@@ -4,14 +4,13 @@ open Printf
 
 module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) (C:V1.CLOCK) = struct
   module Cohttp   = Cohttp_mirage.Server(Conduit_mirage.Flow)
-  module Logging = Passe.Logging.Make(Passe.Logging.Unix_output)
-  module PasseFS = Passe_server.Filesystem.Make(Fs)(Passe_server.Filesystem_xen.Atomic)(Logging)
+  module PasseFS = Passe_server.Filesystem.Make(Fs)(Passe_server.Filesystem_xen.Atomic)
   module Cohttp_server = Cohttp
-  module Auth = Passe_server.Auth.Make(Logging)(C)(Passe_server.Hash_bcrypt)(PasseFS)
-  module Server = Passe_server.Service.Make(Logging)(PasseFS)(Cohttp_server)(Auth)(Passe.Re_native)
+  module Auth = Passe_server.Auth.Make(C)(Passe_server.Hash_bcrypt)(PasseFS)
+  module Server = Passe_server.Service.Make(PasseFS)(Cohttp_server)(Auth)(Passe.Re_native)
 
   let start console conduit fs clock =
-    Logging.set_level Logging.Trace;
+    Logs.(set_level ~all:true Debug);
     let data_root = "/data" in
     let http_callback = Server.handler
       ~document_root:"/www"

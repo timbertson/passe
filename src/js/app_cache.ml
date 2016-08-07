@@ -30,6 +30,3 @@ let update () =
 	try
 		application_cache##update()
 	with _ -> ()
-
-let log = Logging.get_logger "app_cache"
-

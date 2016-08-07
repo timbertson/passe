@@ -3,6 +3,7 @@
 	"cohttp"
 	"js_of_ocaml"
 	"lambda-term"
+	"logs"
 	{"lwt" = ">=1.5.0"; }
 	"nocrypto"
 	"mirage"

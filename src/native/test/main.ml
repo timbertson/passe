@@ -2,7 +2,7 @@ open Passe
 open Test_common
 open OUnit2
 
-let log = Logging.get_logger "test"
+module Log = (val Logging.log_module "test")
 
 let mkdtemp () =
 	let d = Filename.temp_file "passe-test-" ".tmp" in
@@ -33,41 +33,41 @@ let await_tcp ~port ~pid =
 			true
 		)
 	) do
-		log#info "Awaiting port %d ..." port;
+		Log.info (fun m->m "Awaiting port %d ..." port);
 		Unix.sleep 1
 	done
 
 let () =
-	Logging.set_level Logging.Debug;
+	Logs.(set_level ~all:true Debug);
 	Printexc.record_backtrace true;
 	Unix.putenv "PASSE_TEST_CTL" "1";
 
 	let server = ref None in
 	let temp_root = mkdtemp () in
 	let cleanup () =
-		log#info "deleting %s" temp_root;
+		Log.info (fun m->m "deleting %s" temp_root);
 		let open Unix in
 		let kill pid =
 			let signal = ref Sys.sigterm in
 			let status : (int * process_status) option ref = ref None in
-			log#info "Killing pid %d" pid;
+			Log.info (fun m->m "Killing pid %d" pid);
 			kill pid !signal;
 			Lwt_main.run (while_lwt (Option.is_none !status) do
 				(* on each loop iteration, either sleep for 3 seconds and kill, or
 				 * wait for the proc to end *)
-				log#debug "Waiting for pid %d" pid;
+				Log.debug (fun m->m "Waiting for pid %d" pid);
 				let open Lwt in
 				pick [
 					(
 						lwt () = Lwt_unix.sleep 3.0 in
-						log#info "re-killing...";
+						Log.info (fun m->m "re-killing...");
 						kill pid !signal;
 						return_unit
 					);
 					(lwt s = Lwt_unix.waitpid [] pid in status := Some s; return_unit)
 				]
 			done);
-			log#debug "pid %d exited";
+			Log.debug (fun m->m "pid %d exited");
 		in
 		!server |> Option.may kill;
 		server := None;
@@ -84,7 +84,7 @@ let () =
 	let test_port = 8119 in
 
 	if port_ready test_port then
-		log#info "Using existing server on port %d" test_port
+		Log.info (fun m->m "Using existing server on port %d" test_port)
 	else begin
 		let server_pid = (
 			let here = Filename.dirname Sys.argv.(0) in
@@ -92,10 +92,10 @@ let () =
 			let open Unix in
 
 			let cmd = [| path; "-qq"; "--port"; string_of_int test_port; "--data"; temp_root|] in
-			log#info "Running: `%s`" (String.concat " " (Array.to_list cmd));
+			Log.info (fun m->m "Running: `%s`" (String.concat " " (Array.to_list cmd)));
 			create_process cmd.(0) cmd stdin stdout stderr
 		) in
-		log#info "launched pid %d" server_pid;
+		Log.info (fun m->m "launched pid %d" server_pid);
 		server := Some server_pid;
 		await_tcp ~port:test_port ~pid:server_pid;
 	end;

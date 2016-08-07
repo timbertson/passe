@@ -1,8 +1,8 @@
 open Common
 module J = Json_ext
+module Log = (val Logging.log_module "store")
 
-module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
-	let log = Logging.get_logger "store"
+module Make (Re:Re_ext.Sig) = struct
 	exception InvalidFormat of string
 	let raise_invalid_format fmt = Printf.ksprintf (fun err -> raise (InvalidFormat err)) fmt
 
@@ -290,7 +290,7 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 
 
 		let parse_record : (string * J.json) -> record = fun (id, r) ->
-			log#debug "Parsing: %s (%s)" id (J.to_string r);
+			Log.debug (fun m -> m "Parsing: %s (%s)" id (J.to_string r));
 			match r with
 				| `Assoc pairs -> with_assoc pairs (fun pairs ->
 					match parse_field record_type pairs with
@@ -305,7 +305,7 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 						}
 					)
 				| _ ->
-					log#error "can't parse!";
+					Log.err(fun m -> m "can't parse!");
 					raise (InvalidFormat "can't parse record")
 
 		let json_pair_of_record r : (string * J.json) =
@@ -527,25 +527,29 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 		in
 
 		let apply_change current change : core =
-			log#debug "applying change: %s" (change |> Format.json_of_change |> J.to_single_line_string);
+			Log.debug(fun m -> m "applying change: %s"
+				(change |> Format.json_of_change |> J.to_single_line_string)
+			);
 			match change with
 			| Create record ->
 				let records = current.records in
 				if (StringMap.mem (id_of record) records) then
-					log#warn "creation of %a replaces existing entry"
-					J.print (Format.json_of_record record)
+					Log.warn(fun m -> m "creation of %a replaces existing entry"
+						J.fmt (Format.json_of_record record))
 				;
 				{current with records = StringMap.add (id_of record) record records}
 			| Delete id ->
 				let records = current.records in
 				if not (StringMap.mem id records) then
-					log#warn "dropping deletion of %s" id
+					Log.warn(fun m->m "dropping deletion of %s" id)
 				;
 				{current with records = StringMap.remove id records}
 			| Edit (id, edit) ->
 				let records = current.records in
 				begin match StringMap.find_opt id records with
-					| None -> log#warn "dropping edits to %s (no such record)" id; current
+					| None ->
+						Log.warn(fun m->m "dropping edits to %s (no such record)" id);
+						current
 					| Some existing -> (
 						let new_ = match edit, existing with
 						| `Domain edits, Domain record ->
@@ -554,7 +558,9 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 						| `Alias edits, Alias record ->
 								Some (Alias (List.fold_left apply_alias_edit record edits))
 
-						| _ -> log#warn "dropping edits on mismatching types for %s" id; None
+						| _ ->
+							Log.warn(fun m->m "dropping edits on mismatching types for %s" id);
+							None
 						in
 						match new_ with
 						| Some new_ -> {current with
@@ -627,7 +633,7 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 		let cmp a b =
 			let a_start = startswith a query
 			and b_start = startswith b query in
-			(* log#debug "a_start = %b; b_start=%b" a_start b_start; *)
+			(* Log.debug (fun m->m "a_start = %b; b_start=%b" a_start b_start); *)
 			if a_start = b_start then (
 				let a_len = String.length a and b_len = String.length b in
 				(* log#debug "a_len = %d; b_len=%d" a_len b_len; *)
@@ -640,9 +646,9 @@ module Make (Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
 			|> List.sort (cmp) |> take 5
 
 	let update ~(db:t) ~(original:record option) (updated:record option) =
-		log#info "modifying %a -> %a"
-			(Option.print J.print) (Option.map Format.json_of_record original)
-			(Option.print J.print) (Option.map Format.json_of_record updated);
+		Log.info (fun m->m "modifying %a -> %a"
+			(Option.fmt J.fmt) (Option.map Format.json_of_record original)
+			(Option.fmt J.fmt) (Option.map Format.json_of_record updated));
 
 		let edit_change = function
 			| (_, `Domain []) -> []

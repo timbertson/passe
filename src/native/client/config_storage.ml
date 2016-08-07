@@ -3,7 +3,7 @@ open Passe_unix
 open React_ext
 module Json = Json_ext
 
-let log = Logging.get_logger "local_storage"
+module Log = (val Logging.log_module "config_storage")
 
 (* A file-backed config compatible with Local_storage *)
 
@@ -48,7 +48,7 @@ class provider path =
 	let written = ref false in
 	let write (contents : Json.obj) =
 		let json_contents = (contents:>Json.json) in
-		(* log#debug "Saving contents: %a" Json.print json_contents; *)
+		(* Log.debug (fun m->m "Saving contents: %a" Json.print json_contents); *)
 		if not !written then (
 			makedirs (Filename.dirname path);
 			written := true

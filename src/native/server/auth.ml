@@ -86,9 +86,9 @@ module type Sig = sig
 	val delete_user : storage:storage -> User.db_user -> string -> bool Lwt.t
 end
 
-module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
+module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 	module Fs = Fs
-	let log = Logging.get_logger "auth"
+	module Log = (val Logging.log_module "auth")
 
 	let mandatory = J.mandatory
 
@@ -297,7 +297,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 			let (module Hash_impl) = Hash.select token_alg in
 			if verify user.password password then (
 				lwt password = if outdated_password user.password then (
-					log#info "upgrading password for %s" user.name;
+					Log.info (fun m->m "upgrading password for %s" user.name);
 					latest_password_format password
 				) else return user.password in
 				lwt new_token = Token.create ~username:user.name () in
@@ -381,7 +381,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 
 	class storage fs filename =
 		let lock = Lwt_mutex.create () in
-		let () = log#info "storage located at %s" filename in
+		let () = Log.info (fun m->m "storage located at %s" filename) in
 
 		object (self)
 		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) =
@@ -399,7 +399,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 					} in
 					let json = User.to_json user in
 					let line = J.to_single_line_string json in
-					log#debug "writing output user... %s" (user.User.name);
+					Log.debug (fun m->m "writing output user... %s" (user.User.name));
 					num_written := !num_written + 1;
 					output#push (`Output (line^"\n"))
 				in
@@ -412,10 +412,10 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 							lwt commit = self#_read (fun users -> fn users write_user) in
 							match commit with
 								| `Rollback ->
-										log#debug "discarding changes";
+										Log.debug (fun m->m "discarding changes");
 										output#push `Rollback
 								| `Commit ->
-										log#debug "committing changes";
+										Log.debug (fun m->m "committing changes");
 										return_unit
 						with e ->
 							(* write_file_s never seems to terminate if it is cancelled
@@ -424,7 +424,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 							lwt () = output#push `Rollback in
 							raise e
 						finally (
-							log#trace "closing output";
+							Log.debug (fun m->m "closing output");
 							return output#close
 						)
 					)
@@ -450,7 +450,7 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 						opened := true;
 						return db_users
 					with Fs.Error (Fs.ENOENT _) when not !opened -> (
-						log#debug "Ignoring missing user DB";
+						Log.debug (fun m->m "Ignoring missing user DB");
 						return (Lwt_stream.of_list [])
 					)
 				in
@@ -480,7 +480,9 @@ module Make (Logging:Logging.Sig)(Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Files
 				result := (match e with
 					| Conflict -> Some `Conflict
 					| Invalid_username -> Some `Invalid_username
-					| e -> log#info "Unexpected error in account creation: %s" (Printexc.to_string e) ; None
+					| e ->
+						Log.info (fun m->m "Unexpected error in account creation: %s" (Printexc.to_string e));
+						None
 				);
 				return `Rollback
 			end

@@ -3,7 +3,7 @@ open Passe_js
 open Common
 open Lwt
 open React
-let log = Logging.get_logger "ui"
+module Log = (val Logging.log_module "ui")
 
 let keycode_tab = 9
 let keycode_esc = 27
@@ -34,7 +34,7 @@ let convert_exception : unit Lwt.t -> mechanism_result Lwt.t =
 		with
 			| Lwt.Canceled as e -> return (Error e)
 			| e -> (
-				log#error "error in mechanism: %s" (Printexc.to_string e);
+				Log.err (fun m->m "error in mechanism: %s" (Printexc.to_string e));
 				return (Error e)
 			)
 
@@ -112,10 +112,10 @@ end
 let effectful_stream_mechanism : 'a. 'a signal -> ('a -> unit) -> unit Lwt.t = fun signal fn ->
 	let effect = S.map fn signal in
 	try_lwt
-		(* log#trace "starting effectful mechanism"; *)
+		(* Log.debug (fun m->m "starting effectful mechanism"); *)
 		pause ()
 	finally
-		(* log#trace "stopping effectful mechanism"; *)
+		(* Log.debug (fun m->m "stopping effectful mechanism"); *)
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
@@ -137,7 +137,7 @@ let stream_attribute_mechanism name value = fun elem ->
 let stream_class_mechanism name value = fun elem ->
 	let name_js = Js.string name in
 	let set v =
-		(* log#info "setting class %s to %b" name v; *)
+		(* Log.info (fun m->m "setting class %s to %b" name v); *)
 		let cls = elem##classList in
 		if v then cls##add(name_js) else cls##remove(name_js)
 	in
@@ -336,7 +336,7 @@ let editable_of_signal : 'v 'elem.
 		| None -> Lwt.return_unit
 		| Some update ->
 			events elem (fun event _ ->
-				log#info "responding to input change";
+				Log.info (fun m->m "responding to input change");
 				clear_error elem;
 				begin
 					try update (get elem)
@@ -524,9 +524,9 @@ let row scale ?collapse ?cls children =
 			let taken_size = List.fold_left (fun acc (col, _) ->
 				acc + (col.cp_size |> Option.default 0) + (col.cp_offset |> Option.default 0)
 			) 0 children in
-			(* log#debug "taken size = %d, from %d cols" taken_size ((List.length children) - n); *)
+			(* Log.debug (fun m->m "taken size = %d, from %d cols" taken_size ((List.length children) - n)); *)
 			let available_size = total_row_size - taken_size in
-			(* log#debug "available size = %d, split between %d" available_size n; *)
+			(* Log.debug (fun m->m "available size = %d, split between %d" available_size n); *)
 			available_size / n
 	in
 

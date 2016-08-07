@@ -5,7 +5,7 @@ open Test_common
 
 let post_json ?token ~data url = Server.post_json ?token ~data url |> Lwt_main.run
 let get_json ?token url = Server.get_json ?token url |> Lwt_main.run
-let log = Logging.get_logger "sync_tests"
+module Log = (val Logging.log_module "sync_tests")
 
 let identity = fun x -> x
 let str_eq (a:string) (b:string) = a = b
@@ -43,7 +43,7 @@ end
 let test_username = "test"
 let user_token = lazy (
 	let password = "secret" in
-	log#debug "creating test user...";
+	Log.debug (fun m->m "creating test user...");
 	let response = post_json
 		~data:(`Assoc [("user",`String test_username); ("password", `String password)])
 		(Server.path ["auth"; "signup"]) |> Response.ok
@@ -68,7 +68,7 @@ end
 (* module-wide setup *)
 let (>::) desc test =
 	let setup ctx =
-		log#info "Wiping user db: %s" test_username;
+		Log.info (fun m->m "Wiping user db: %s" test_username);
 		post_json
 		~data:(`Assoc ["user", `String test_username])
 		(Server.path ["ctl"; "reset_db"])
@@ -86,7 +86,7 @@ let suite = "sync" >:::
 	let save_db db =
 		let response = Sync.sync_db ~token:(Lazy.force user_token) db |> Lwt_main.run in
 		response |> Response.assert_ok;
-		log#debug "got sync response: %a" J.print (response |> Response.ok);
+		Log.debug (fun m->m "got sync response: %a" J.print (response |> Response.ok));
 		get_server_db () |> Store.assert_equal db
 	in
 

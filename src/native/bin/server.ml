@@ -12,11 +12,10 @@ let abs p = if Filename.is_relative p
 	then Filename.concat cwd p
 	else p
 
-module Logging = Logging.Make(Logging.Unix_output)
 module HTTP = Cohttp_lwt_unix.Server
 
 module Fs = struct
-	include Passe_server.Filesystem.Make(FS_unix)(Passe_server.Filesystem_unix.Atomic)(Logging)
+	include Passe_server.Filesystem.Make(FS_unix)(Passe_server.Filesystem_unix.Atomic)
 	(* XXX it'd be nice to use unwrap_lwt, but trying to constraint the Filesystem
 	 * so that `error` = `Fs.error` runs afoul of something a lot like
 	 * https://blogs.janestreet.com/using-with-type-on-a-variant-type/
@@ -26,24 +25,24 @@ module Fs = struct
 		| _ -> failwith "fs.connect() failed"
 end
 
-module Auth = Passe_server.Auth.Make(Logging)(Clock)(Passe_server.Hash_bcrypt)(Fs)
-module Unix_server = Passe_server.Service.Make(Logging)(Fs)(HTTP)(Auth)(Re_native)
+module Auth = Passe_server.Auth.Make(Clock)(Passe_server.Hash_bcrypt)(Fs)
+module Unix_server = Passe_server.Service.Make(Fs)(HTTP)(Auth)(Re_native)
 open Unix_server
 module Version = Version.Make(Re_native)
-let log = Logging.get_logger "service"
+module Log = (val Logging.log_module "service")
 
 let start_server ~host ~port ~development ~document_root ~data_root () =
 	let open Cohttp_lwt_unix in
-	log#info "Listening on: %s %d" host port;
+	Log.info (fun m->m "Listening on: %s %d" host port);
 	let document_root = abs document_root
 	and data_root = abs data_root in
-	log#info "Document root: %s" document_root;
-	log#info "Data root: %s" data_root;
+	Log.info (fun m->m "Document root: %s" document_root);
+	Log.info (fun m->m "Data root: %s" data_root);
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
-	if enable_rc then log#warn "Remote control enabled (for test use only)";
+	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 	lwt fs = Fs.connect () in
 	let user_db = make_db fs data_root in
-	let conn_closed (_ch, _conn) = log#trace "connection closed" in
+	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
 		~document_root
 		~data_root:(ref data_root)
@@ -73,10 +72,9 @@ let main () =
 	let development = StdOpt.store_true () in
 	let data_root = StdOpt.str_option ~default:"data" () in
 	let show_version = StdOpt.store_true () in
-	let default_verbosity = Logging.ord Logging.Info in
 	let verbosity = ref 0 in
-	let louder = StdOpt.decr_option ~dest:verbosity () in
-	let quieter = StdOpt.incr_option ~dest:verbosity () in
+	let louder = StdOpt.incr_option ~dest:verbosity () in
+	let quieter = StdOpt.decr_option ~dest:verbosity () in
 
 	let options = OptParser.make ~usage: ("Usage: service [OPTIONS]") () in
 	add options ~short_name:'p' ~long_name:"port" port;
@@ -92,20 +90,20 @@ let main () =
 		prerr_endline "Too many arguments";
 		exit 1
 	);
-	let log_version (meth:('a, unit, string, unit) format4 -> 'a) =
-		meth "passe version: %s" (Version.pretty ()) in
+
+	let log_version m =
+		let fmt = (Pervasives.format_of_string "passe version: %s") in
+		(* header + tags needed for type inference *)
+		m ?header:None ?tags:None fmt (Version.pretty ())
+	in
+
 	if Opt.get show_version then begin
-		log_version log#log;
+		Logs.app log_version;
 		exit 0
 	end;
-	Logging.current_level := default_verbosity + (!verbosity * Logging.lvl_scale);
-	let verbosity_desc = try Logging.all_levels
-		|> List.find (fun l -> Logging.ord l = !Logging.current_level)
-		|> Logging.string_of_level
-		with Not_found -> string_of_int !Logging.current_level
-	in
-	log#log " ( Log level: %s )" verbosity_desc;
-	log_version log#debug;
+	let log_level = Logging.(apply_verbosity (default_verbosity + !verbosity)) in
+	Logs.(app (fun m -> m " ( Log level: %a )" pp_level log_level));
+	Logs.debug log_version;
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
 	let dbdir = user_db_dir data_root in

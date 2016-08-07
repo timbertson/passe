@@ -3,12 +3,11 @@ open React_ext
 open Lwt
 module J = Json_ext
 
-module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Sig) = struct
-	module Store = Store.Make(Re)(Logging)
-	module Config = Config.Make(Logging)
-	module Auth = Client_auth.Make(Server)(Logging)
+module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
+	module Store = Store.Make(Re)
+	module Auth = Client_auth.Make(Server)
 	let db_url = Server.path ["db"]
-	let log = Logging.get_logger "sync"
+	module Log = (val Logging.log_module "sync")
 
 	type date = float
 	type sync_state =
@@ -59,7 +58,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 				(* server may fail with { conflict:true, stored_version: int, <core: {...}> } *)
 				let server_version = json |> Option.force |> J.mandatory J.int_field "stored_version" in
 				let local_version = Store.(db.core.version) in
-				log#warn "Version conflict: local_version=%d, server_version=%d" local_version server_version;
+				Log.warn (fun m->m "Version conflict: local_version=%d, server_version=%d" local_version server_version);
 				if local_version > server_version then (
 					(* we have a newer version; just re-send the upload with the entire DB and let the server update itself *)
 					send_db ~full:true db
@@ -113,20 +112,20 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 
 	let initial_auth_state auth_mode : initial_auth_state Lwt.t = (match auth_mode with
 		| `Explicit ->
-			log#debug("initial_auth_state: using explicit auth");
+			Log.debug (fun m->m "initial_auth_state: using explicit auth");
 			return `Explicit
 		| `Implicit ->
 			(* TODO: if we ever have an implicit auth state plus offline access, we should
 			 * harmonize this a bit to store user details in DB, and to better represent the
 			 * "you are offline and we have no idea if you're logged in" initial state *)
-			log#debug "initial_auth_state: fetching implicit state from server";
+			Log.debug (fun m->m "initial_auth_state: fetching implicit state from server");
 			lwt initial_state = try_lwt _validate_implicit_auth ()
 			with e -> (
-				log#warn "Failed to load initial auth state: %s" (Printexc.to_string e);
+				Log.warn (fun m->m "Failed to load initial auth state: %s" (Printexc.to_string e));
 				return `Anonymous
 			) in
-			log#debug "initial_auth_state: initial state is %s"
-				(Auth.string_of_auth_state (initial_state:>Auth.auth_state));
+			Log.debug (fun m->m "initial_auth_state: initial state is %s"
+				(Auth.string_of_auth_state (initial_state:>Auth.auth_state)));
 			return (initial_state:>initial_auth_state)
 	)
 
@@ -135,7 +134,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 		let field key:Config.child = config_provider.Config.field key in
 		let last_sync = field "last_sync" in
 
-		log#debug "using server root: %s" (!Server.root_url |> Uri.to_string);
+		Log.debug (fun m->m "using server root: %s" (!Server.root_url |> Uri.to_string));
 
 		let explicit_auth_signal () =
 			let stored_credentials = field "credentials" in
@@ -155,8 +154,8 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 					| Some (`Assoc _ as token) -> `Saved_user (parse_credentials token)
 
 					| Some(j) ->
-							log#error "Failed to deserialize credentials";
-							log#trace "Credentials: %s" (J.to_string j);
+							Log.err (fun m->m "Failed to deserialize credentials");
+							Log.debug (fun m->m "Credentials: %s" (J.to_string j));
 							`Logged_out
 
 					| None -> `Logged_out
@@ -168,7 +167,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 			let auth_state, _set_auth_state = editable_signal source in
 
 			let set_auth_state (state:Auth.auth_state) =
-				log#debug "set_auth_state(%s)" (string_of_auth_state state);
+				Log.debug (fun m->m "set_auth_state(%s)" (string_of_auth_state state));
 				let step = Step.create () in
 				begin match state with
 				| `Logged_out -> (stored_credentials)#delete ~step ()
@@ -236,7 +235,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 						running_sync := Some task;
 						set_busy true;
 						lwt err = try_lwt
-							log#info "syncing...";
+							Log.info (fun m->m "syncing...");
 
 							let uid = Auth.uid_of_authenticated auth in
 							let db_storage = local_db_for_user config_provider uid in
@@ -250,7 +249,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 								| Server.OK json ->
 										let open Store in
 										let version = J.(mandatory int_field "version" json) in
-										log#info "server returned version %d" version;
+										Log.info (fun m->m "server returned version %d" version);
 										(* if the returned `version` is equal to the db we sent, then
 										 * the server won't bother sending a payload, and we shouldn't bother
 										 * trying to process it *)
@@ -300,7 +299,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 			| OK response ->
 				(`Active_user (Auth.get_response_credentials response))
 			| Failed (_, message, _) ->
-					log#warn "Failed login: %s" message;
+					Log.warn (fun m->m "Failed login: %s" message);
 					`Failed_login user
 			| Unauthorized _ -> assert false
 		end in
@@ -309,11 +308,11 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig)(Logging:Logging.Si
 
 	let _mutate state fn =
 		match S.value state.current_user_db with
-			| None -> log#error "Can't alter DB - no current user"; false
+			| None -> Log.err (fun m->m "Can't alter DB - no current user"); false
 			| Some user_db ->
 				let current_db = S.value state.db_fallback in
 				let new_db = fn current_db in
-				log#info "Saving new DB: %s" (Store.to_json_string new_db);
+				Log.info (fun m->m "Saving new DB: %s" (Store.to_json_string new_db));
 				user_db#save (Store.to_json new_db);
 				true
 

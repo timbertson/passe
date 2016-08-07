@@ -1,4 +1,5 @@
 open Lwt
+module Log = (val Passe.Logging.log_module "fs")
 module type FS = sig
 	include V1_LWT.FS with type page_aligned_buffer = Cstruct.t
 end
@@ -53,9 +54,8 @@ module type AtomicSig = functor(Fs:FSCommonSig) -> sig
 	val readable:  Fs.t -> string -> string Lwt.t
 end
 
-module MakeCommon (Fs:FS)(Logging:Passe.Logging.Sig) : (FSCommonSig with type t = Fs.t) = struct
+module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 	include Fs
-	let log = Logging.get_logger "fs"
 
 	type write_instruction = [ `Output of string | `Rollback ]
 	type write_commit = [ `Commit | `Rollback ]
@@ -86,7 +86,7 @@ module MakeCommon (Fs:FS)(Logging:Passe.Logging.Sig) : (FSCommonSig with type t 
 
 	let fail desc e =
 		let errmsg = error_message e in
-		log#debug "%s operation failed: %s" desc errmsg;
+		Log.debug (fun m->m "%s operation failed: %s" desc errmsg);
 		raise (Error (match e with
 			| `No_directory_entry (parent,ent) -> ENOENT (Filename.concat parent ent)
 			| e -> FS_ERROR errmsg
@@ -129,11 +129,10 @@ end
 
 module StringMap = Map.Make(String)
 module MutexMap = StringMap
-module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with type t = Fs.t) = struct
-	module Common = MakeCommon(Fs)(Logging)
+module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
+	module Common = MakeCommon(Fs)
 	module Atomic = Atomic(Common)
 	include Common
-	let log = Logging.get_logger "fs"
 	let locks = ref StringMap.empty
 	let _with_lock : 'a. string -> (unit -> 'a Lwt.t) -> 'a Lwt.t = fun path fn ->
 		let lock =
@@ -147,7 +146,7 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 		try_lwt
 			fn ()
 		finally begin
-			log#trace "finished with mutex %s; no_open_locks = %b" path (Lwt_mutex.is_empty lock);
+			Log.debug (fun m->m "finished with mutex %s; no_open_locks = %b" path (Lwt_mutex.is_empty lock));
 			if (Lwt_mutex.is_empty lock) then (
 				locks := StringMap.remove path !locks
 			);
@@ -166,24 +165,24 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 
 	let write_file_s fs path stream =
 		locked_atomic_write_exn fs path (fun path ->
-			log#debug "Writing file stream: %s" path;
+			Log.debug (fun m->m "Writing file stream: %s" path);
 			let offset = ref 0 in
 			let result = ref `Commit in
 			lwt () = stream |> Lwt_stream.iter_s (fun instruction ->
 				match instruction with
 					| `Rollback ->
 						result := `Rollback;
-						log#trace "aborted write at offset %d" !offset;
+						Log.debug (fun m->m "aborted write at offset %d" !offset);
 						return_unit
 					| `Output chunk ->
 						let size = String.length chunk in
 						let prev_offset = !offset in
 						offset := !offset + size;
-						log#trace "writing chunk of len %d to %s at offset %d" size path prev_offset;
+						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path prev_offset);
 						unwrap_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
 			) in
 			let () = match !result with
-				| `Commit -> log#trace "comitting file write: %s" path
+				| `Commit -> Log.debug (fun m->m "comitting file write: %s" path)
 				| _ -> () in
 			return !result
 		)
@@ -193,7 +192,7 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 
 	let read_file_s = fun fs path consumer ->
 		locked_atomic_read_exn fs path (fun path ->
-			log#trace "Reading file stream: %s" path;
+			Log.debug (fun m->m "Reading file stream: %s" path);
 			let offset = ref 0 in
 			let max_chunk_size = 4096 in
 			consumer (Lwt_stream.from (fun () ->
@@ -208,7 +207,7 @@ module Make (Fs:FS)(Atomic:AtomicSig)(Logging:Passe.Logging.Sig) : (Sig with typ
 							chunk_size := !chunk_size + String.length chunk;
 							rv := (!rv ^ chunk)
 						);
-						log#trace "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset !chunk_size;
+						Log.debug (fun m->m "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset !chunk_size);
 						offset := !offset + !chunk_size
 					| `Error e -> fail "read" e
 				in
