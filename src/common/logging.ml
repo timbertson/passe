@@ -1,11 +1,11 @@
 let default_verbosity = 1 (* Warn *)
 
-let tagging_reporter reporter =
+let tagging_reporter parent =
 	{ Logs.report = (fun src level ~over k user_msgf ->
 		if (Logs.Src.equal src Logs.default || level = Logs.App) then
-			reporter.Logs.report src level ~over k user_msgf
+			parent.Logs.report src level ~over k user_msgf
 		else
-			reporter.Logs.report src level ~over k (fun outer_msgf ->
+			parent.Logs.report src level ~over k (fun outer_msgf ->
 				user_msgf (fun ?header ?tags fmt ->
 					outer_msgf ?header ?tags ("[%a %s] @[" ^^ fmt ^^ "@]")
 						Logs.pp_level level
@@ -14,12 +14,11 @@ let tagging_reporter reporter =
 		)
 	)}
 
-let set_reporter reporter = Logs.set_reporter (tagging_reporter reporter)
-
-let () =
-	(* initialize with default reporter *)
+let default_reporter =
 	let pp_header fmt (lvl, src) = () in
-	set_reporter (Logs.format_reporter ~pp_header ())
+	Logs.format_reporter ~pp_header ()
+
+let set_reporter reporter = Logs.set_reporter (tagging_reporter reporter)
 
 let apply_verbosity verbosity =
 	let open Logs in
@@ -34,3 +33,5 @@ let apply_verbosity verbosity =
 	log_level
 
 let log_module name = Logs.src_log (Logs.Src.create name)
+
+let () = set_reporter default_reporter

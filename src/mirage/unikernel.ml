@@ -8,9 +8,11 @@ module Main (C: CONSOLE) (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) 
   module Cohttp_server = Cohttp
   module Auth = Passe_server.Auth.Make(C)(Passe_server.Hash_bcrypt)(PasseFS)
   module Server = Passe_server.Service.Make(PasseFS)(Cohttp_server)(Auth)(Passe.Re_native)
+  module Timed_log = Passe_server.Timed_log.Make(Clock)
 
   let start console conduit fs clock =
-    Logs.(set_level ~all:true Debug);
+    Logging.set_reporter (Timed_log.reporter (Logs.reporter ()));
+    Logs.(set_level ~all:true (Some Debug));
     let data_root = "/data" in
     let http_callback = Server.handler
       ~document_root:"/www"

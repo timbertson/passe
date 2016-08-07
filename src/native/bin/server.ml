@@ -29,6 +29,7 @@ module Auth = Passe_server.Auth.Make(Clock)(Passe_server.Hash_bcrypt)(Fs)
 module Unix_server = Passe_server.Service.Make(Fs)(HTTP)(Auth)(Re_native)
 open Unix_server
 module Version = Version.Make(Re_native)
+module Timed_log = Passe_server.Timed_log.Make(Clock)
 module Log = (val Logging.log_module "service")
 
 let start_server ~host ~port ~development ~document_root ~data_root () =
@@ -73,6 +74,7 @@ let main () =
 	let data_root = StdOpt.str_option ~default:"data" () in
 	let show_version = StdOpt.store_true () in
 	let verbosity = ref 0 in
+	let timestamp = StdOpt.store_true () in
 	let louder = StdOpt.incr_option ~dest:verbosity () in
 	let quieter = StdOpt.decr_option ~dest:verbosity () in
 
@@ -83,6 +85,7 @@ let main () =
 	add options ~long_name:"data" data_root;
 	add options ~long_name:"development" ~help:"disable appcache" development;
 	add options ~long_name:"version" show_version;
+	add options ~long_name:"timestamp" timestamp;
 	add options ~short_name:'v' ~long_name:"verbose" louder;
 	add options ~short_name:'q' ~long_name:"quiet" quieter;
 	let posargs = OptParse.OptParser.parse ~first:1 options Sys.argv in
@@ -101,6 +104,13 @@ let main () =
 		Logs.app log_version;
 		exit 0
 	end;
+	if (Opt.get timestamp) then
+		Logs.set_reporter @@
+			(* TODO: this order seems backwards... *)
+			Logging.tagging_reporter @@
+			Timed_log.reporter @@
+			Logging.default_reporter;
+	
 	let log_level = Logging.(apply_verbosity (default_verbosity + !verbosity)) in
 	Logs.(app (fun m -> m " ( Log level: %a )" pp_level log_level));
 	Logs.debug log_version;
