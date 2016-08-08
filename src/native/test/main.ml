@@ -38,7 +38,7 @@ let await_tcp ~port ~pid =
 	done
 
 let () =
-	Logs.(set_level ~all:true Debug);
+	Logs.(set_level ~all:true (Some Debug));
 	Printexc.record_backtrace true;
 	Unix.putenv "PASSE_TEST_CTL" "1";
 
@@ -67,7 +67,7 @@ let () =
 					(lwt s = Lwt_unix.waitpid [] pid in status := Some s; return_unit)
 				]
 			done);
-			Log.debug (fun m->m "pid %d exited");
+			Log.debug (fun m->m "pid %d exited" pid);
 		in
 		!server |> Option.may kill;
 		server := None;

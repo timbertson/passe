@@ -50,6 +50,7 @@ let user_token = lazy (
 	in
 	J.mandatory J.get_field "token" response
 )
+let logged_in_user = lazy (`Active_user (test_username, Lazy.force user_token))
 
 let core_to_db core = Store.build_t core []
 let get_server_db () =
@@ -84,9 +85,9 @@ let (>::) desc test =
 let suite = "sync" >:::
 	let db_path = (Server.path ["db"]) in
 	let save_db db =
-		let response = Sync.sync_db ~token:(Lazy.force user_token) db |> Lwt_main.run in
+		let response = Sync.sync_db (Lazy.force logged_in_user) db |> Lwt_main.run in
 		response |> Response.assert_ok;
-		Log.debug (fun m->m "got sync response: %a" J.print (response |> Response.ok));
+		Log.debug (fun m->m "got sync response: %a" J.fmt (response |> Response.ok));
 		get_server_db () |> Store.assert_equal db
 	in
 
@@ -94,7 +95,7 @@ let suite = "sync" >:::
 
 	let sync_db ~db ~expected_result =
 		(* first, we check that the sync_result is the same *)
-		Sync.sync_db ~token:(Lazy.force user_token) db
+		Sync.sync_db (Lazy.force logged_in_user) db
 			|> Lwt_main.run
 			|> Response.ok
 			|> (fun json ->
