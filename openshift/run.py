@@ -29,6 +29,7 @@ while True:
 			'--host', os.environ['OPENSHIFT_DIY_IP'],
 			'--root', os.environ['OPENSHIFT_REPO_DIR'] + '/docroot',
 			'--data', os.environ['OPENSHIFT_DATA_DIR'],
+			'--timestamp',
 			'-vv',
 	])
 	time.sleep(2)
