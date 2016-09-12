@@ -32,28 +32,8 @@ let
 					});
 				};
 				xenOverrides = {
-					mirage-xen-posix = lib.overrideDerivation sels.mirage-xen-posix (o: {
-						src = mirage-platform-src;
-					});
-					mirage-xen-ocaml = lib.overrideDerivation sels.mirage-xen-ocaml (o: {
-						src = mirage-platform-src;
-					});
-					mirage-xen = lib.overrideDerivation sels.mirage-xen (o: {
-						src = mirage-platform-src;
-					});
 					io-page = lib.overrideDerivation sels.io-page (o: {
-						src = fetchgit {
-							url = "https://github.com/gfxmonk/io-page";
-							rev = "6c4d5634ca1f8e8df0de9ec50b366ec7bd74984e";
-							sha256 = "94ec05ffd213733cbe7c92291d06ea30122c4d9fa0c1bf74a912306d22cd0526";
-						};
-					});
-					tcpip = lib.overrideDerivation sels.tcpip (o: {
-						src = fetchgit {
-							url = "https://github.com/gfxmonk/mirage-tcpip";
-							rev = "c386b6a4a198cb122dd0b1fcb00291a09c6b1e98";
-							sha256 = "0c70a6cf658eac0248cb345934384dc51149d0893ddbb00915968deced1c6ea0";
-						};
+						patches = [ ./io-page.diff ];
 					});
 				};
 			in

@@ -1,3 +1,3 @@
-true: debug, package(fat-filesystem, io-page, mirage-block-xen.front, batteries, yojson, sha, lwt, lwt.syntax, mirage-console.xen, mirage-types, mirage-types.lwt, mirage-net-xen, mirage-types,cohttp,nocrypto,nocrypto.xen,mirage-http, lwt, mirage.runtime, tcpip.xen,mirage-clock-xen,conduit.mirage, mirage-net-xen, mirage.runtime,tcpip.stack-direct, astring, fileutils, safepass), syntax(camlp4o),annot,bin_annot,strict_sequence,principal
+true: debug, package(fat-filesystem, io-page, mirage-block-xen.front, batteries, yojson, sha, lwt, lwt.syntax, mirage-types, mirage-types.lwt, mirage-net-xen, mirage-types,cohttp,nocrypto,lwt, mirage.runtime,mirage-clock-xen,conduit.mirage, mirage-net-xen, mirage.runtime,tcpip.stack-direct, astring, fileutils, safepass, tyxml, tyxml.syntax), syntax(camlp4o),annot,bin_annot,strict_sequence,principal
 <src>: include
 <.*>: -traverse
