@@ -26,3 +26,5 @@ let finally_do cleanup resource f =
 	result
 
 let print_string () s = s
+
+let identity x = x

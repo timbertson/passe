@@ -1,3 +1,4 @@
+open Vdoml
 open Passe
 open Passe_js
 open Lwt
@@ -5,6 +6,7 @@ open Js
 open Dom_html
 open Common
 open React_ext
+module List = List_ext
 module J = Json_ext
 module Log = (val Logging.log_module "main")
 
@@ -13,6 +15,13 @@ let non_empty_string : string -> string option = Option.non_empty ~zero:""
 let default_empty_string : string option -> string = Option.default ""
 
 exception Fail
+type t = {
+	incognito : bool;
+	about_dialog: bool;
+}
+type message =
+	| Toggle_incognito
+	| Show_about_dialog
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -21,11 +30,12 @@ let check cond = Printf.ksprintf (function s ->
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
 
+(* TODO: remove *)
 let incognito, set_incognito = S.create false
 
-let logo () : #Dom_html.element Passe_ui.widget = (
-	Passe_ui.img ~cls:("footer-logo") ~attrs:["src", "/res/images/footer.png"] ()
-)
+let logo () =
+	let open Html in
+	img ~src:"/res/images/footer.png" ~a:[a_class "footer-logo"] ()
 
 let db_display sync : #Dom_html.element Passe_ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
@@ -43,45 +53,43 @@ let db_display sync : #Dom_html.element Passe_ui.widget =
 		Passe_ui.frag display;
 	] ()
 
-let footer () =
-	let open Passe_ui in
+let view_footer incognito =
+	let open Html in
+	let open Bootstrap in
 
-	let incognito_checkbox = Passe_ui.checkbox_of_signal ~update:set_incognito incognito in
-	incognito_checkbox#attr "title" "Don't store anything on this browser";
-
-	let incognito_container = div ~cls:"incognito-checkbox" ~children:[
-		frag incognito_checkbox;
-		child span ~text:" Incognito mode" ();
+	let incognito_checkbox = input ~a:[
+		a_input_type `Checkbox;
+		a_onclick (emitter ~response:`Unhandled Toggle_incognito);
+		a_title "Don't store anything on this browser";
 	] () in
 
-	incognito_container#class_s "selected" incognito;
+	let incognito_container = div ~a:[
+		a_class_list (List.filter_map identity [
+			Some "incognito-checkbox";
+			(if incognito then Some "selected" else None);
+		]);
+	] [
+		incognito_checkbox;
+		span [text" Incognito mode"];
+	] in
 
 	row `XS [
 		col [
-			child ul ~cls:"list-unstyled" ~children:[
-				child li ~children:[
-					frag incognito_container;
-				] ();
-			] ();
+			ul ~a:[a_class "list-unstyled"] [
+				li [
+					incognito_container;
+				];
+			];
 		];
 		col ~cls:"text-right" [
-			child ul ~cls:"list-unstyled" ~children:[
-				child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
-					Lwt_js_events.clicks elem (fun e _ ->
-						Passe_ui.stop e;
-						Passe_ui.overlay (fun close ->
-							Passe_ui.panel ~close ~title:"About Passé" ~children:[
-								child div ~mechanism:(fun elem ->
-									elem##innerHTML <- Js.string (
-										About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
-									);
-									return_unit
-								) ();
-							] ()
-						)
-					)
-				) ();
-			] ()
+			ul ~a:[a_class "list-unstyled"] [
+				li ~a:[
+					a_class "link";
+					a_onclick (emitter Show_about_dialog);
+				] [
+					text "About this site";
+				]
+			];
 		];
 	]
 
@@ -672,7 +680,31 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 	form
 )
 
+let update state = function
+	| Toggle_incognito ->
+		let incognito = (not state.incognito) in
+		set_incognito incognito;
+		{ state with incognito }
+	| Show_about_dialog ->
+		{ state with about_dialog = true }
+
+let initial_state =
+	{
+		incognito = false;
+		about_dialog = false;
+	}
+
+let view instance = fun { incognito } ->
+	let open Html in
+	div [
+		div ~a:[a_class "container footer"] [
+			view_footer incognito
+		];
+		div ~a:[a_class "container"] [ logo () ];
+	]
+
 let show_form sync (container:Dom_html.element Js.t) =
+	let main_component = Ui.component ~update ~view initial_state in
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Passe_ui.div
@@ -681,12 +713,7 @@ let show_form sync (container:Dom_html.element Js.t) =
 				Passe_ui.frag @@ Sync_ui.ui sync;
 				Passe_ui.frag @@ password_form sync;
 			] ();
-			Passe_ui.child Passe_ui.div ~cls:"container footer" ~children:[
-				Passe_ui.frag @@ footer ();
-			] ();
-			Passe_ui.child Passe_ui.div ~cls:"container" ~children:[
-				Passe_ui.frag (logo ());
-			] ();
+			Passe_ui.frag (Passe_ui.vdoml main_component);
 		] () in
 	(* all_content#append @@ db_display sync; *)
 	Passe_ui.withContent container all_content (fun _ ->

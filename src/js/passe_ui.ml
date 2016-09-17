@@ -180,7 +180,7 @@ class vdoml_widget component : fragment_t = object
 		let instance, thread = Vdoml.Ui.render component wrapper in
 		Vdoml.Ui.wait thread
 end
-
+let vdoml component = new vdoml_widget component
 
 let non_null o = Js.Opt.get o (fun () -> raise (AssertionError "unexpected null"))
 
@@ -508,8 +508,6 @@ let filter_map fn l =
 			| None -> acc
 			| Some item -> item :: acc
 	) l []
-
-let identity x = x
 
 let class_of_col_spec s =
 	let scale = string_of_col_scale s.col_scale in
