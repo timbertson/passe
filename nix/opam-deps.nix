@@ -2,11 +2,12 @@
 with pkgs;
 let
 	opam2nix-packages = callPackage ./opam2nix-packages.nix {};
+	vdoml = callPackage ./vdoml.nix {};
 	names = import (./opam-deps + "/${target}.nix" );
 	opamArgs = {
 		packages = names;
 		ocamlAttr = "ocaml_4_02";
-		extraRepos = [ ../safepass-xen/opam-repo ];
+		extraRepos = [ ../safepass-xen/opam-repo vdoml.opamRepo ];
 		overrides = {super, self}: {
 			opamSelection = let
 				mirage-platform-src = fetchgit {

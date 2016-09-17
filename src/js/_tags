@@ -1,1 +1,1 @@
-true: bin_annot, debug, package(logs, logs.browser, uri, yojson, js_of_ocaml, js_of_ocaml.syntax, lwt.react, lwt.syntax), syntax(camlp4o)
+true: bin_annot, debug, package(vdoml, logs, logs.browser, uri, yojson, js_of_ocaml, js_of_ocaml.syntax, lwt.react, lwt.syntax), syntax(camlp4o)

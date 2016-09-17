@@ -173,6 +173,14 @@ object (self)
 	method create_elem = cons ()
 end
 
+class vdoml_widget component : fragment_t = object
+	method attach : 'p. (#Dom.node as 'p) Js.t -> unit Lwt.t = fun parent ->
+		let wrapper = Dom_html.createDiv Dom_html.document in
+		Dom.appendChild parent wrapper;
+		let instance, thread = Vdoml.Ui.render component wrapper in
+		Vdoml.Ui.wait thread
+end
+
 
 let non_null o = Js.Opt.get o (fun () -> raise (AssertionError "unexpected null"))
 
