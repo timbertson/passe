@@ -23,30 +23,30 @@ let within min max i = Pervasives.min (Pervasives.max i min) max
 
 let incognito, set_incognito = S.create false
 
-let logo () : #Dom_html.element Ui.widget = (
-	Ui.img ~cls:("footer-logo") ~attrs:["src", "/res/images/footer.png"] ()
+let logo () : #Dom_html.element Passe_ui.widget = (
+	Passe_ui.img ~cls:("footer-logo") ~attrs:["src", "/res/images/footer.png"] ()
 )
 
-let db_display sync : #Dom_html.element Ui.widget =
+let db_display sync : #Dom_html.element Passe_ui.widget =
 	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
 		json
 			|> Option.map (J.to_string)
 			|> Option.default "<no DB>"
 	) in
 
-	let display = Ui.div ~cls:"db"
+	let display = Passe_ui.div ~cls:"db"
 		~children:[
-			Ui.text_stream contents
+			Passe_ui.text_stream contents
 		] () in
 
-	Ui.div ~cls:"db-editor" ~children:[
-		Ui.frag display;
+	Passe_ui.div ~cls:"db-editor" ~children:[
+		Passe_ui.frag display;
 	] ()
 
 let footer () =
-	let open Ui in
+	let open Passe_ui in
 
-	let incognito_checkbox = Ui.checkbox_of_signal ~update:set_incognito incognito in
+	let incognito_checkbox = Passe_ui.checkbox_of_signal ~update:set_incognito incognito in
 	incognito_checkbox#attr "title" "Don't store anything on this browser";
 
 	let incognito_container = div ~cls:"incognito-checkbox" ~children:[
@@ -68,9 +68,9 @@ let footer () =
 			child ul ~cls:"list-unstyled" ~children:[
 				child li ~cls:"link" ~text:"About this site" ~mechanism:(fun elem ->
 					Lwt_js_events.clicks elem (fun e _ ->
-						Ui.stop e;
-						Ui.overlay (fun close ->
-							Ui.panel ~close ~title:"About Passé" ~children:[
+						Passe_ui.stop e;
+						Passe_ui.overlay (fun close ->
+							Passe_ui.panel ~close ~title:"About Passé" ~children:[
 								child div ~mechanism:(fun elem ->
 									elem##innerHTML <- Js.string (
 										About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
@@ -85,19 +85,19 @@ let footer () =
 		];
 	]
 
-let password_form sync : #Dom_html.element Ui.widget = (
+let password_form sync : #Dom_html.element Passe_ui.widget = (
 	let db_fallback = sync.Sync.db_fallback in
-	let open Ui in
+	let open Passe_ui in
 
 	let domain, set_domain = S.create "" in
 	let clipboard_supported, set_clipboard_supported = S.create true in
 
 	let domain_is_active, set_domain_is_active = S.create false in
-	let domain_input = Ui.input_of_signal ~update:set_domain domain in
+	let domain_input = Passe_ui.input_of_signal ~update:set_domain domain in
 	domain_input#attr "name" "domain";
 
 	let master_password, set_master_password = S.create "" in
-	let password_input :Dom_html.inputElement widget = Ui.input_of_signal
+	let password_input :Dom_html.inputElement widget = Passe_ui.input_of_signal
 		~cons:(fun () -> createInput document ~_type:(s"password") ~name:(s"password"))
 		~update:set_master_password
 		master_password
@@ -300,7 +300,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 			suggestions |> List.mapi (fun i text ->
 				let w = li ~text ~mechanism:(fun elem ->
 					Lwt_js_events.mousedowns elem (fun click _ ->
-						Ui.stop click;
+						Passe_ui.stop click;
 						accept_suggestion text elem;
 						return_unit
 					) <&>
@@ -344,7 +344,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 
 	let click_action fn = (fun elem ->
 		Lwt_js_events.clicks ~use_capture:true elem (fun e _ ->
-			Ui.stop e;
+			Passe_ui.stop e;
 			fn elem e;
 			return_unit
 		)
@@ -370,7 +370,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 				deselect ()
 	) in
 
-	let password_display = current_password |> Ui.optional_signal_content (fun (p:string) ->
+	let password_display = current_password |> Passe_ui.optional_signal_content (fun (p:string) ->
 		(* every time we display a new password, default to hidden *)
 		set_show_plaintext_password false;
 
@@ -380,7 +380,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		let dummy_text = (string_repeat "•" length) in
 		let dummy = span ~cls:"dummy"
 			~children: [
-				frag (Ui.text_stream (show_plaintext_password |>
+				frag (Passe_ui.text_stream (show_plaintext_password |>
 				S.map (fun plain -> if plain then p else dummy_text)))
 			]
 			()
@@ -450,7 +450,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 								] ())
 							else
 								None
-						) |> Ui.option_stream);
+						) |> Passe_ui.option_stream);
 
 						child td ~cls:"controls" ~children:[
 							child span ~cls:"toggle"
@@ -461,7 +461,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 				] ();
 			] ();
 		] ();
-	) |> Ui.stream in
+	) |> Passe_ui.stream in
 
 	let unchanged_domain = S.l2 (fun db_dom domain_info ->
 		match db_dom with
@@ -476,10 +476,10 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		()
 	in
 
-	let domain_panel = Ui.div ~cls:"domain-info panel" () in
+	let domain_panel = Passe_ui.div ~cls:"domain-info panel" () in
 	let () =
 		let open Store in
-		let open Ui in
+		let open Passe_ui in
 		domain_panel#class_s "unknown" domain_is_unknown;
 		domain_panel#class_s "hidden" empty_domain;
 
@@ -489,7 +489,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 
 		save_button#mechanism (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
-				Ui.stop event;
+				Passe_ui.stop event;
 				save_current_domain ();
 				return_unit
 			)
@@ -526,7 +526,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 							then domain
 							else domain^" *")
 						domain domain_is_unknown unchanged_domain
-					) |> Ui.text_stream;
+					) |> Passe_ui.text_stream;
 
 					frag save_button;
 				] ();
@@ -541,7 +541,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 
 	let form =
 		let left elem = col ~size:2 [elem] in
-		Ui.div ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
+		Passe_ui.div ~cls:"form-horizontal main-form" ~attrs:(["role","form"]) ~children:[
 		row `Sml [
 			col ~size:7 ~cls:"password-form" [
 				row `XS ~collapse:true ~cls:"form-group" [
@@ -549,7 +549,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 					col [
 						clear_btn ~trigger:(fun () -> set_domain "") ();
 						frag domain_input;
-						Ui.stream (
+						Passe_ui.stream (
 							S.l2 (fun l idx -> l |> Option.map (fun l -> (l, idx))) domain_suggestions suggestion_idx
 							|> optional_signal_content make_suggestion_ui
 						);
@@ -587,7 +587,7 @@ let password_form sync : #Dom_html.element Ui.widget = (
 		in
 
 		let submit_form event =
-			Ui.stop event;
+			Passe_ui.stop event;
 			Log.info (fun m->m "form submitted");
 			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList
 				|> List.iter (fun elem ->
@@ -675,22 +675,22 @@ let password_form sync : #Dom_html.element Ui.widget = (
 let show_form sync (container:Dom_html.element Js.t) =
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
-	let all_content = Ui.div
+	let all_content = Passe_ui.div
 		~children:[
-			Ui.child Ui.div ~cls:"container main" ~children:[
-				Ui.frag @@ Sync_ui.ui sync;
-				Ui.frag @@ password_form sync;
+			Passe_ui.child Passe_ui.div ~cls:"container main" ~children:[
+				Passe_ui.frag @@ Sync_ui.ui sync;
+				Passe_ui.frag @@ password_form sync;
 			] ();
-			Ui.child Ui.div ~cls:"container footer" ~children:[
-				Ui.frag @@ footer ();
+			Passe_ui.child Passe_ui.div ~cls:"container footer" ~children:[
+				Passe_ui.frag @@ footer ();
 			] ();
-			Ui.child Ui.div ~cls:"container" ~children:[
-				Ui.frag (logo ());
+			Passe_ui.child Passe_ui.div ~cls:"container" ~children:[
+				Passe_ui.frag (logo ());
 			] ();
 		] () in
 	(* all_content#append @@ db_display sync; *)
-	Ui.withContent container all_content (fun _ ->
-		lwt () = Ui.pause () in
+	Passe_ui.withContent container all_content (fun _ ->
+		lwt () = Passe_ui.pause () in
 		Lwt.return_unit
 	)
 

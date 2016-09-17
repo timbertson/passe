@@ -2,7 +2,7 @@ open Passe
 open Passe_js
 open Common
 open React_ext
-open Ui
+open Passe_ui
 open Lwt
 module J = Json_ext
 module Xhr = XmlHttpRequest
@@ -44,10 +44,10 @@ let ui state =
 		let error, set_error = S.create None in
 
 		let error_widget = error
-			|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+			|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[
 				child i ~cls:"glyphicon glyphicon-remove" ();
 			] ())
-			|> Ui.stream in
+			|> Passe_ui.stream in
 		
 		div ~cls:"account-status login alert alert-info" ~children:[
 			child div ~cls:"login form-inline" ~attrs:["role","form"] ~children:[
@@ -130,7 +130,7 @@ let ui state =
 	in
 
 	let sync_state_widget auth = (
-		let open Ui in
+		let open Passe_ui in
 		let _node w = (w:>Dom.node widget_t) in
 		let sync_mechanism = (fun elem ->
 			Lwt_js_events.clicks elem (fun event _ ->
@@ -168,10 +168,10 @@ let ui state =
 		let preferences_section ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
-				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+				|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[
 					icon "remove";
 				] ())
-				|> Ui.stream in
+				|> Passe_ui.stream in
 			let db = S.value state.db_fallback in
 			let current_length = Store.((get_defaults db).default_length) in
 			let length, set_length = S.create current_length in
@@ -219,10 +219,10 @@ let ui state =
 		let password_change_section ~token ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
-				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+				|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[
 					child i ~cls:"glyphicon glyphicon-remove" ();
 				] ())
-				|> Ui.stream in
+				|> Passe_ui.stream in
 			let password_input ~label name =
 				let attrs = ["name",name; "type","password"] in
 				row `XS ~cls:"form-group" [
@@ -276,10 +276,10 @@ let ui state =
 		let user_delete_section ~token ~close () = (
 			let error, set_error = S.create None in
 			let error_widget = error
-				|> optional_signal_content (fun err -> Ui.p ~cls:"text-danger" ~text:err ~children:[
+				|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[
 					child i ~cls:"glyphicon glyphicon-remove" ();
 				] ())
-				|> Ui.stream in
+				|> Passe_ui.stream in
 			let password, set_password = S.create "" in
 			let password_field = input_of_signal ~update:set_password password in
 			let () = (
@@ -333,8 +333,8 @@ let ui state =
 		~children:[icon "cog"]
 		~mechanism:(fun elem ->
 			Lwt_js_events.clicks elem (fun evt _ ->
-				Ui.overlay (fun close ->
-					Ui.panel ~close ~title:"Account settings" ~children:[
+				Passe_ui.overlay (fun close ->
+					Passe_ui.panel ~close ~title:"Account settings" ~children:[
 						child div ~children:([
 								preferences_section ~close ();
 								child hr ()
@@ -486,4 +486,4 @@ let ui state =
 			| `Active_user _ as auth -> logged_in_ui auth
 	in
 
-	state.auth_state |> S.map auth_ui |> Ui.stream
+	state.auth_state |> S.map auth_ui |> Passe_ui.stream
