@@ -15,13 +15,15 @@ let non_empty_string : string -> string option = Option.non_empty ~zero:""
 let default_empty_string : string option -> string = Option.default ""
 
 exception Fail
+type dialog_type = [ `about ]
 type t = {
 	incognito : bool;
-	about_dialog: bool;
+	dialog: dialog_type option;
 }
 type message =
 	| Toggle_incognito
 	| Show_about_dialog
+	| Dismiss_overlay
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -230,8 +232,6 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 		set_suggestion_idx (Some (min desired max_len));
 	in
 	
-	let keycode_s = 83 in
-
 	let accept_suggestion : 'a. string -> (#Dom_html.element as 'a) Js.t -> unit
 		= fun text elem ->
 		set_domain text;
@@ -252,7 +252,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 			Lwt_js_events.blurs    elem (fun _ _ -> set_domain_is_active false; return_unit);
 			Lwt_js_events.inputs   elem (fun _ _ -> set_suggestion_idx None; return_unit);
 			Lwt_js_events.keydowns elem (fun e _ ->
-				if e##keyCode = keycode_esc then (
+				if e##keyCode = Keycode.esc then (
 					stop e;
 					set_domain "";
 					elem##focus()
@@ -285,8 +285,8 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 
 					Log.debug (fun m->m "Processing key code %d" which);
 					begin match which with
-						| k when k = keycode_tab -> if (select_current ()) then stop e
-						| k when k = keycode_return -> if (select_current ()) then stop e
+						| k when k = Keycode.tab -> if (select_current ()) then stop e
+						| k when k = Keycode.return -> if (select_current ()) then stop e
 						| k -> Log.debug (fun m->m "ignoring unknown key code %d" k)
 					end
 					(* Console.console##log(e); *)
@@ -607,7 +607,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 		in
 
 		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ ->
-			if (to_bool event##ctrlKey && event##keyCode = keycode_s) then (
+			if (to_bool event##ctrlKey && event##keyCode = Keycode.s) then (
 				stop event;
 				save_current_domain ();
 				return_unit
@@ -617,7 +617,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 		)
 		<&>
 		Lwt_js_events.keydowns ~use_capture:false document (fun event _ ->
-			if (event##keyCode = keycode_esc) then (
+			if (event##keyCode = Keycode.esc) then (
 				stop event;
 				clear_password ()
 			);
@@ -627,7 +627,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 		Lwt_js_events.clicks submit_button (fun event _ -> submit_form event)
 		<&>
 		Lwt_js_events.keydowns password_input (fun event _ ->
-			if event##keyCode = keycode_return then (
+			if event##keyCode = Keycode.return then (
 				submit_form event
 			) else return_unit
 		)
@@ -686,13 +686,47 @@ let update state = function
 		set_incognito incognito;
 		{ state with incognito }
 	| Show_about_dialog ->
-		{ state with about_dialog = true }
+		{ state with dialog = Some `about }
+	| Dismiss_overlay ->
+		{ state with dialog = None }
 
 let initial_state =
 	{
 		incognito = false;
-		about_dialog = false;
+		dialog = None;
 	}
+
+(* XXX Hack for connecting multiple vdoml trees to the same state *)
+let gen_updater =
+	let open Vdoml in
+	let toplevel_ui_instances = ref [] in
+	let global_state = ref initial_state in
+	fun () -> (
+		let instance = ref None in
+		let set inst = (
+			toplevel_ui_instances := inst :: !toplevel_ui_instances;
+			instance := Some inst
+		) in
+		let update instance_state message = (
+			let new_state = update !global_state message in
+			if new_state = !global_state then (
+				(* already propagated *)
+				new_state
+			) else (
+				global_state := new_state;
+				(* propagate to peers *)
+				let () = match !instance with
+					| None -> ()
+					| Some instance -> !toplevel_ui_instances |> List.iter (fun dest ->
+						(* phys equality *)
+						if dest != instance then Ui.emit dest message
+					)
+				in
+				new_state
+			)
+		) in
+		(set, update)
+	)
 
 let view instance = fun { incognito } ->
 	let open Html in
@@ -703,17 +737,49 @@ let view instance = fun { incognito } ->
 		div ~a:[a_class "container"] [ logo () ];
 	]
 
+let view_overlay instance = fun { dialog } ->
+	let open Html in
+	let close = emitter Dismiss_overlay in
+	match dialog with
+		| None -> text ""
+		| Some `about ->
+			Bootstrap.overlay ~cancel:close [
+				Bootstrap.panel ~title:"About Passé" [
+					(* TODO *)
+					(* div ~mechanism:(fun elem -> *)
+					(* 	elem##innerHTML <- Js.string ( *)
+					(* 		About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>"; *)
+					(* 	); *)
+					(* 	return_unit *)
+					(* ) () *)
+				]
+			]
+
 let show_form sync (container:Dom_html.element Js.t) =
+	let set_main, update = gen_updater () in
 	let main_component = Ui.component ~update ~view initial_state in
+
+	let set_overlay, update = gen_updater () in
+	let overlay_component = Ui.component ~update ~view:view_overlay initial_state in
+
+	Ui.set_log_level Logs.Info;
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Passe_ui.div
 		~children:[
+			Passe_ui.frag (Passe_ui.vdoml ~background:(fun instance ->
+				set_overlay instance;
+				Lwt.return_unit
+			) overlay_component);
 			Passe_ui.child Passe_ui.div ~cls:"container main" ~children:[
 				Passe_ui.frag @@ Sync_ui.ui sync;
 				Passe_ui.frag @@ password_form sync;
 			] ();
-			Passe_ui.frag (Passe_ui.vdoml main_component);
+			Passe_ui.frag (Passe_ui.vdoml ~background:(fun instance ->
+				set_main instance;
+				Bootstrap.install_overlay_handler instance Dismiss_overlay;
+				Lwt.return_unit
+			) main_component);
 		] () in
 	(* all_content#append @@ db_display sync; *)
 	Passe_ui.withContent container all_content (fun _ ->

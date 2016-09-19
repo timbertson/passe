@@ -2,6 +2,9 @@ module List = List_ext
 open Passe
 open Common
 open Vdoml.Html
+open Lwt
+
+let icon name = let open Vdoml.Html in i ~a:[a_class ("glyphicon glyphicon-"^name)] []
 
 type col_scale = [ `XS | `Sml | `Med | `Lg ]
 let string_of_col_scale = function
@@ -70,3 +73,36 @@ let row scale ?collapse ?cls children =
 			div ~a:[a_class (class_of_col_spec col)] children
 		)
 	)
+
+let install_overlay_handler instance cancel =
+	let document = Dom_html.document##documentElement in
+	Vdoml.Ui.async instance (Lwt_js_events.keydowns ~use_capture:true document (fun event _ ->
+		(* Console.console##log(event); *)
+		if (event##keyCode == Keycode.esc) then (
+			Vdoml.Ui.emit instance cancel
+		);
+		return_unit
+	))
+
+let overlay ~cancel content =
+	let open Vdoml.Html in
+	div ~a:[a_class "overlay"; a_onclick cancel ] content
+
+let panel ~title ?close children =
+	let _title = title in
+	let open Vdoml.Html in
+	let header = [
+		h3 ~a:[a_class "panel-title"] [text _title];
+	] in
+	let header = match close with
+		| None -> header
+		| Some close ->
+			(button ~a:[
+				a_onclick close;
+				a_class "link pull-right close"
+			] [icon "remove"]) :: header
+	in
+	div ~a:[a_class "panel panel-default"] [
+		div ~a:[a_class "panel-heading"] header;
+		div ~a:[a_class "panel-body"] children;
+	]

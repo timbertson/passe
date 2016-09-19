@@ -5,10 +5,6 @@ open Lwt
 open React
 module Log = (val Logging.log_module "ui")
 
-let keycode_tab = 9
-let keycode_esc = 27
-let keycode_return = 13
-
 (* FIXME: only required because raised exceptions don't seem to propagate properly
  * between #attach and withContent *)
 type mechanism_result =
@@ -173,15 +169,6 @@ object (self)
 	method create_elem = cons ()
 end
 
-class vdoml_widget component : fragment_t = object
-	method attach : 'p. (#Dom.node as 'p) Js.t -> unit Lwt.t = fun parent ->
-		let wrapper = Dom_html.createDiv Dom_html.document in
-		Dom.appendChild parent wrapper;
-		let instance, thread = Vdoml.Ui.render component wrapper in
-		Vdoml.Ui.wait thread
-end
-let vdoml component = new vdoml_widget component
-
 let non_null o = Js.Opt.get o (fun () -> raise (AssertionError "unexpected null"))
 
 let create_blank_node _ =
@@ -297,11 +284,31 @@ let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js
 		S.stop ~strong:true watch;
 		Lwt.return_unit
 
+let vdoml_mechanism ?background component = fun (placeholder:#Dom.node Js.t) ->
+	let instance, thread = Vdoml.Ui.render component placeholder in
+	let background = match background with
+		| Some bg -> bg instance
+		| None -> Lwt.return_unit
+	in
+
+	try_lwt
+		Lwt.join [
+			background >>= Lwt.pause;
+			Vdoml.Ui.wait thread;
+		]
+	finally
+		Vdoml.Ui.abort instance;
+		Lwt.return_unit
 
 let stream s =
 	let w = new leaf_widget
 		~mechanisms:[stream_mechanism s]
 		create_blank_node in
+	(w:>fragment_t)
+
+let vdoml ?background component =
+	let cons () = Dom_html.createDiv Dom_html.document in
+	let w = new leaf_widget ~mechanisms:[vdoml_mechanism ?background component] cons in
 	(w:>fragment_t)
 
 let option_stream s : fragment_t =
@@ -454,7 +461,7 @@ let overlay content =
 			hold;
 			Lwt_js_events.keydowns ~use_capture:true document (fun event _ ->
 				(* Console.console##log(event); *)
-				if (event##keyCode == keycode_esc) then (
+				if (event##keyCode == Keycode.esc) then (
 					stop event;
 					wake ()
 				);

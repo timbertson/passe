@@ -102,7 +102,7 @@ let ui state =
 					return_unit
 				in
 				let submit_on_return event _ =
-					if event##keyCode = keycode_return then (
+					if event##keyCode = Keycode.return then (
 						stop event;
 						submit Client_auth.login_url
 					) else return_unit
