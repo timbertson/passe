@@ -740,18 +740,16 @@ let view instance = fun { incognito } ->
 let view_overlay instance = fun { dialog } ->
 	let open Html in
 	let close = emitter Dismiss_overlay in
+	let inject_html elem =
+		elem##innerHTML <- Js.string (
+			About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
+		) in
 	match dialog with
 		| None -> text ""
 		| Some `about ->
 			Bootstrap.overlay ~cancel:close [
 				Bootstrap.panel ~title:"About Passé" [
-					(* TODO *)
-					(* div ~mechanism:(fun elem -> *)
-					(* 	elem##innerHTML <- Js.string ( *)
-					(* 		About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>"; *)
-					(* 	); *)
-					(* 	return_unit *)
-					(* ) () *)
+					div [] |> Ui.hook ~create:inject_html
 				]
 			]
 
