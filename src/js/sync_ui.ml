@@ -8,15 +8,33 @@ module J = Json_ext
 module Xhr = XmlHttpRequest
 open Sync
 
-let ui state =
+
+type error_message = string
+type state = Client_auth.auth_state * error_message option
+
+type message = [
+	| `error of error_message option
+	| `auth of Client_auth.auth_state
+]
+
+let update (auth, err) = function
+	| `error err -> (auth, err)
+	| `auth auth -> (auth, None)
+
+let initial auth = (auth, None)
+
+type sync_state = {
+	sync_error : string option;
+	sync_auth : Client_auth.auth_state;
+}
+
+let ui state = (
 	let last_sync_signal = state.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
 		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
 	) in
 
-	(* let remember_me_input = input ~attrs:[("type","checkbox");("checked","true")] () in *)
-	(* let remember_me = signal_of_checkbox ~initial:true remember_me_input in *)
 	let set_auth_state = state.set_auth_state in
 
 	let sync_running = state.sync_running in
@@ -487,3 +505,120 @@ let ui state =
 	in
 
 	state.auth_state |> S.map auth_ui |> Passe_ui.stream
+)
+
+open Vdoml
+open Html
+
+let view_login_form instance = fun username error_message -> (
+	let space = text " " in
+	let error = error_message |> Option.map (fun err ->
+		p ~a:[a_class "text-danger"] [
+			text err;
+			Bootstrap.icon "remove";
+		]
+	) |> Option.to_list in
+
+
+	div ~a:[a_class "account-status login alert alert-info"] [
+		div ~a:[a_class "login form-inline"; a_role "form"] (error @ [
+			div ~a:[a_class "form-group form-group-xs email"] [
+				label ~a:[a_class "sr-only"] [text "User"];
+				input ~a:[
+					a_class "form-control username-input";
+					a_name "user";
+					a_placeholder "User";
+					a_input_type `Text;
+					a_value (Option.default "" username);
+				] ();
+			];
+			space;
+
+			div ~a:[a_class "form-group form-group-xs password"] [
+				label ~a:[a_class "sr-only"] [text "password"];
+				input ~a:[
+					a_class "form-control password-input";
+					a_input_type `Password;
+					a_name "password";
+					a_placeholder "password";
+				] ();
+			];
+
+			space;
+			input ~a:[
+				a_class "btn btn-primary login";
+				a_input_type `Submit;
+				a_value "Sign in";
+			] ();
+			input ~a:[
+				a_class "btn btn-default muted signup pull-right";
+				a_input_type `Button;
+				a_value "Register";
+			] ();
+
+			div ~a:[a_class "clearfix"] [];
+		])
+		(* ~mechanism:(fun elem -> *)
+		(* 	let signup_button = elem##querySelector(Js.string ".signup") |> non_null in *)
+		(* 	let login_button = elem##querySelector(Js.string ".login") |> non_null in *)
+		(* 	(* XXX just search for any `input`, rather than binding events on each of these individually *) *)
+		(* 	let password_input = elem##querySelector(Js.string ".password-input") |> non_null in *)
+		(* 	let username_input = elem##querySelector(Js.string ".username-input") |> non_null in *)
+		(* 	let submit url = *)
+		(* 		Log.info (fun m->m "form submitted"); *)
+		(* 		let data = `Assoc (get_form_contents elem *)
+		(* 			|> List.map (fun (name, value) -> (name, `String value))) in *)
+		(* 		let open Server in *)
+		(* 		let open Either in *)
+		(* 		set_error None; *)
+		(* 		lwt response = Server.post_json ~data url in *)
+		(* 		let open Server in *)
+		(* 		let () = match response with *)
+		(* 			| OK response -> *)
+		(* 				set_auth_state (`Active_user (Auth.get_response_credentials response)) *)
+		(* 			| Failed (_, message, _) -> *)
+		(* 					set_error (Some message) *)
+		(* 			| Unauthorized _ -> assert false *)
+		(* 		in *)
+		(* 		return_unit *)
+		(* 	in *)
+		(* 	let submit_on_return event _ = *)
+		(* 		if event##keyCode = Keycode.return then ( *)
+		(* 			stop event; *)
+		(* 			submit Client_auth.login_url *)
+		(* 		) else return_unit *)
+		(* 	in *)
+		(*  *)
+		(* 	Lwt_js_events.clicks signup_button (fun event _ -> *)
+		(* 		stop event; *)
+		(* 		submit Client_auth.signup_url *)
+		(* 	) *)
+		(* 	<&> *)
+		(* 	Lwt_js_events.clicks login_button (fun event _ -> *)
+		(* 		stop event; *)
+		(* 		submit Client_auth.login_url *)
+		(* 	) *)
+		(* 	<&> Lwt_js_events.keydowns password_input submit_on_return *)
+		(* 	<&> Lwt_js_events.keydowns username_input submit_on_return *)
+		(* ) () *)
+	];
+)
+
+let view_anonymous () =
+	div ~a:[a_class "account-status login alert alert-danger"] [
+		span ~a:[a_class "user"] [text "Anonymous"];
+	]
+
+let view instance =
+	let view_login_form = view_login_form instance in
+	let view_saved_user _ = text "TODO" in
+	let view_logged_in_user _ = text "TODO" in
+	fun (auth, error_message) ->
+		match auth with
+			| `Logged_out -> view_login_form None error_message
+			| `Failed_login username -> view_login_form (Some username) error_message
+			| `Anonymous -> view_anonymous ()
+			| `Saved_user _ as auth -> view_saved_user auth
+			| `Saved_implicit_user _ as auth -> view_saved_user auth
+			| `Implicit_user _ as auth -> view_logged_in_user auth
+			| `Active_user _ as auth -> view_logged_in_user auth

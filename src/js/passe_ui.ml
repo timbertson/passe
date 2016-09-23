@@ -284,18 +284,13 @@ let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js
 		S.stop ~strong:true watch;
 		Lwt.return_unit
 
-let vdoml_mechanism ?background component = fun (placeholder:#Dom.node Js.t) ->
-	let instance, thread = Vdoml.Ui.render component placeholder in
-	let background = match background with
-		| Some bg -> bg instance
-		| None -> Lwt.return_unit
-	in
-
+let vdoml_mechanism ?background ?init component = fun (placeholder:#Dom.node Js.t) ->
+	let open Vdoml in
+	let instance, thread = Ui.render component placeholder in
+	init |> Option.may (fun fn -> fn instance);
+	background |> Option.may (fun fn -> Ui.async instance (fn instance));
 	try_lwt
-		Lwt.join [
-			background >>= Lwt.pause;
-			Vdoml.Ui.wait thread;
-		]
+		Vdoml.Ui.wait thread;
 	finally
 		Vdoml.Ui.abort instance;
 		Lwt.return_unit
@@ -306,7 +301,7 @@ let stream s =
 		create_blank_node in
 	(w:>fragment_t)
 
-let vdoml ?background component =
+let vdoml ?background ?init component =
 	let cons () = Dom_html.createDiv Dom_html.document in
 	let w = new leaf_widget ~mechanisms:[vdoml_mechanism ?background component] cons in
 	(w:>fragment_t)

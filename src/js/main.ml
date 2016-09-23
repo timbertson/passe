@@ -19,11 +19,13 @@ type dialog_type = [ `about ]
 type t = {
 	incognito : bool;
 	dialog: dialog_type option;
+	sync_state: Sync_ui.state;
 }
 type message =
 	| Toggle_incognito
 	| Show_about_dialog
 	| Dismiss_overlay
+	| Auth of Sync_ui.message
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -689,15 +691,18 @@ let update state = function
 		{ state with dialog = Some `about }
 	| Dismiss_overlay ->
 		{ state with dialog = None }
+	| Auth msg ->
+		{ state with sync_state = Sync_ui.update state.sync_state msg }
 
-let initial_state =
+let initial_state auth =
 	{
 		incognito = false;
 		dialog = None;
+		sync_state = Sync_ui.initial auth;
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater =
+let gen_updater initial_state =
 	let open Vdoml in
 	let toplevel_ui_instances = ref [] in
 	let global_state = ref initial_state in
@@ -753,30 +758,48 @@ let view_overlay instance = fun { dialog } ->
 				]
 			]
 
-let show_form sync (container:Dom_html.element Js.t) =
+let bind_signal actions xform s =
+	actions := (fun instance ->
+		Passe_ui.effectful_stream_mechanism s (fun state ->
+			Ui.emit instance (xform state)
+		)
+	) :: !actions;
+	S.value s
+
+let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
+	let ui_threads = ref [] in
+	let auth = bind_signal ui_threads
+		(fun state -> Auth (`auth state))
+		sync.Sync.auth_state in
+	let initial_state = initial_state auth in
+	let gen_updater = gen_updater initial_state in
+
 	let set_main, update = gen_updater () in
 	let main_component = Ui.component ~update ~view initial_state in
 
 	let set_overlay, update = gen_updater () in
 	let overlay_component = Ui.component ~update ~view:view_overlay initial_state in
 
+	let set_sync, update = gen_updater () in
+	let sync_component = Ui.component ~update ~view:(fun instance ->
+		let view = Sync_ui.view instance in
+		fun state -> view state.sync_state
+	) initial_state in
+
 	Ui.set_log_level Logs.Info;
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Passe_ui.div
 		~children:[
-			Passe_ui.frag (Passe_ui.vdoml ~background:(fun instance ->
-				set_overlay instance;
-				Lwt.return_unit
-			) overlay_component);
+			Passe_ui.frag (Passe_ui.vdoml ~init:set_overlay overlay_component);
 			Passe_ui.child Passe_ui.div ~cls:"container main" ~children:[
-				Passe_ui.frag @@ Sync_ui.ui sync;
+				Passe_ui.frag (Passe_ui.vdoml ~init:set_sync sync_component);
 				Passe_ui.frag @@ password_form sync;
 			] ();
 			Passe_ui.frag (Passe_ui.vdoml ~background:(fun instance ->
 				set_main instance;
 				Bootstrap.install_overlay_handler instance Dismiss_overlay;
-				Lwt.return_unit
+				Lwt.join (!ui_threads |> List.map (fun th -> th instance))
 			) main_component);
 		] () in
 	(* all_content#append @@ db_display sync; *)
