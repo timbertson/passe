@@ -8,7 +8,6 @@ module J = Json_ext
 module Xhr = XmlHttpRequest
 open Sync
 
-
 type error_message = string
 type ui_state = {
 	error: error_message option;
@@ -17,23 +16,26 @@ type ui_state = {
 
 type state = {
 	auth_state: Client_auth.auth_state;
+	sync_state: Sync.sync_state;
 	ui: ui_state;
 }
 
 type ui_message = [
 	| `error of error_message option
 	| `busy of bool
-	| `sync_requested
-]
-type message = [
-	| ui_message
-	| `external_change of Client_auth.auth_state
+	| `request_sync
 ]
 
-let run_background_sync ~set_auth_state () =
-	let sync_requested = Lwt_condition.create () in
-	let sync_messages, emit = E.create () in
-	let run = (fun auth ->
+type message = [
+	| ui_message
+	| `auth_state of Client_auth.auth_state
+	| `sync_state of Sync.sync_state
+]
+
+let run_background_auth ~set_auth_state ~sync_requested () =
+	(* used for saved user, to automatically login *)
+	let auth_messages, emit = E.create () in
+	let run = (fun (auth:Client_auth.saved_auth_state) ->
 		let continue = ref true in
 		while_lwt !continue do
 			emit (`busy true);
@@ -75,53 +77,117 @@ let run_background_sync ~set_auth_state () =
 			)
 		done
 	) in
-	(sync_requested, sync_messages, run)
+	(auth_messages, run)
+
+let run_background_sync sync sync_state =
+	(* used when signed in, to periodically sync DB state *)
+	let run_sync auth =
+		try_lwt
+			sync.run_sync auth
+		with e -> begin
+			Log.err (fun m->m "%s" (Printexc.to_string e));
+			return ()
+		end
+	in
+
+	fun (auth:Client_auth.logged_in_user_state) -> (
+		let sync_debounce = ref return_unit in
+		let run_sync () =
+			lwt () = !sync_debounce in
+			sync_debounce := (Lwt_js.sleep 5.0);
+			run_sync (auth:>Client_auth.authenticated_user_state)
+			in
+		lwt () = run_sync () in
+		while_lwt true do
+			Log.info (fun m->m "sync loop running..");
+			Lwt.pick [
+				(* every 30 minutes, attempt a sync *)
+				(Lwt_js.sleep 18000.0 >>= run_sync);
+				(* also sync shortly after making a change to the DB *)
+				(abortable_stream_mechanism sync_state (function
+					| Local_changes _ -> Lwt_js.sleep 2.0 >>= run_sync
+					| _ -> return_unit
+				));
+			]
+		done
+	)
+
+let sync_state sync = 
+	let last_sync_signal = sync.last_sync#signal in
+	let last_sync_time = last_sync_signal |> signal_lift_opt (function
+		| `Float t -> t
+		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
+	) in
+	let sync_running = sync.sync_running in
+	S.bind sync_running (fun is_running ->
+		if is_running then S.const Syncing else (
+			S.l2 (fun db sync_time ->
+				let len = List.length db.Store.changes in
+				if len = 0 then
+					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
+				else Local_changes len
+			) sync.db_fallback last_sync_time
+		)
+	)
 
 let update sync =
-	let background_sync_thread = ref None in
+	let sync_state = sync_state sync in
 
-	let sync_requested, sync_messages, run_background_sync =
-		run_background_sync ~set_auth_state:sync.Sync.set_auth_state () in
+	let background_thread = ref None in
+	let cancel_background () =
+		!background_thread |> Option.may (fun th ->
+			Lwt.cancel th;
+			background_thread := None
+		) in
+
+	let replace_thread th =
+		cancel_background ();
+		background_thread := Some th
+	in
+
+	let sync_requested = Lwt_condition.create () in
+
+	(* set up background functions *)
+	let run_background_sync = run_background_sync sync sync_state in
+	let auth_messages, run_background_auth =
+		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
 
 	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
-		!background_sync_thread |> Option.may (fun th ->
-			Lwt.cancel th;
-			background_sync_thread := None
-		);
-		let start (auth:Client_auth.saved_auth_state) =
-			Log.err (fun m->m "TODO (remove) running BG sync");
-			background_sync_thread := Some (run_background_sync auth)
-		in
+		cancel_background ();
 		let () = match auth with
-			| `Saved_user _ as auth -> start auth
-			| `Saved_implicit_user _ as auth -> start auth
-			| _ -> ()
+			| `Saved_user _ | `Saved_implicit_user _ as auth -> replace_thread (run_background_auth auth)
+			| `Implicit_user _ | `Active_user _ as auth -> replace_thread (run_background_sync auth)
+			| `Logged_out | `Failed_login _ | `Anonymous -> ()
 		in
 		auth
 	) in
-	let auth_state_messages = observed_auth_state |> S.changes |> E.map (fun auth -> `external_change auth) in
+
+	let auth_state_messages = observed_auth_state |> S.changes |> E.map (fun s -> `auth_state s) in
+	let sync_state_messages = sync_state |> S.changes |> E.map (fun s -> `sync_state s) in
 	let update_ui state message = match message with
 		| `error error -> { state with error }
 		| `busy busy -> { state with busy }
 	in
 	let update state (message:message) =
-		let update_ui message = { state with ui = update_ui state.ui message } in
 		match message with
-		| `external_change auth_state -> { state with auth_state }
-		(* TODO: http://stackoverflow.com/questions/39676627/ocaml-polymorphic-variants-bind-the-same-name-in-multiple-match-patterns *)
-		| `error _ as message -> update_ui message
-		| `busy _ as message -> update_ui message
-		| `sync_requested ->
+		| `auth_state auth_state -> { state with auth_state }
+		| `sync_state sync_state -> { state with sync_state }
+		| `error _ | `busy _ as message -> { state with ui = update_ui state.ui message }
+		| `request_sync ->
 			Lwt_condition.broadcast sync_requested ();
 			state
 	in
-	let messages : message event = E.select [sync_messages; auth_state_messages] in
-	(update, messages)
-
-let initial sync = {
-	ui = { error = None; busy = false };
-	auth_state = sync.Sync.auth_state |> S.value;
-}
+	let messages : message event = E.select [
+		auth_messages;
+		auth_state_messages;
+		sync_state_messages
+	] in
+	let initial = {
+		ui = { error = None; busy = false };
+		auth_state = sync.Sync.auth_state |> S.value;
+		sync_state = sync_state |> S.value;
+	} in
+	(initial, update, messages)
 
 type sync_state = {
 	sync_error : string option;
@@ -609,6 +675,25 @@ let ui state = (
 
 open Vdoml
 open Html
+open Bootstrap
+
+let view_sync_state = (function
+	| Uptodate -> text "";
+	| Updated_at date ->
+			let now = Date.time () in
+			let time_diff = max 0.0 (now -. date) in
+			a ~a:[
+				a_onclick (emitter `request_sync);
+				a_class "link has-tooltip";
+				a_title ("Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago");
+			] [icon "refresh"]
+	| Syncing ->
+		span ~a:[a_class "syncing"] [icon "refresh"]
+	| Local_changes count ->
+		span ~a:[a_title ((string_of_int count) ^ " pending changes...")] [
+			a ~a:[a_class "link"; a_onclick (emitter `request_sync)] [icon "upload"]
+		]
+	)
 
 let view_login_form instance = fun username {error; _} -> (
 	let space = text " " in
@@ -710,17 +795,16 @@ let optional_logout_ui user = [text "TODO"]
 
 let sync_state_widget auth = text "TODO"
 
-let view_logged_in_user _instance = fun (auth:Client_auth.authenticated_user_state) ->
+let view_logged_in_user _instance = fun (auth:Client_auth.authenticated_user_state) sync_state ->
 	let username = Client_auth.name_of_authenticated auth in
 	div ~a:[a_class "account-status alert alert-success"] ([
 		span ~a:[a_class "user"] [text username];
 	] @ (optional_logout_ui auth) @ [
 		span ~a:[a_class "online"] [
 			account_settings_button auth;
-			sync_state_widget auth;
+			view_sync_state sync_state;
 		];
 	])
-	(* TODO: ~mechanism:(sync_mechanism auth) () *)
 
 let view_saved_user _instance = fun (auth: Auth.saved_auth_state) {busy; _} -> (
 	let username = Auth.name_of_saved auth in
@@ -751,12 +835,10 @@ let view instance =
 	let view_login_form = view_login_form instance in
 	let view_saved_user = view_saved_user instance in
 	let view_logged_in_user = view_logged_in_user instance in
-	fun {auth_state; ui} ->
+	fun {auth_state; sync_state; ui} ->
 		match auth_state with
 			| `Logged_out -> view_login_form None ui
 			| `Failed_login username -> view_login_form (Some username) ui
 			| `Anonymous -> view_anonymous ()
-			| `Saved_user _ as auth -> view_saved_user auth ui
-			| `Saved_implicit_user _ as auth -> view_saved_user auth ui
-			| `Implicit_user _ as auth -> view_logged_in_user auth
-			| `Active_user _ as auth -> view_logged_in_user auth
+			| `Saved_user _ | `Saved_implicit_user _ as auth -> view_saved_user auth ui
+			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth sync_state

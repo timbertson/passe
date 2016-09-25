@@ -697,11 +697,11 @@ let update sync_ui_update = fun state -> function
 	| Auth msg ->
 		{ state with sync_state = sync_ui_update state.sync_state msg }
 
-let initial_state auth =
+let initial_state initial_sync_state =
 	{
 		incognito = false;
 		dialog = None;
-		sync_state = Sync_ui.initial auth;
+		sync_state = initial_sync_state;
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
@@ -764,8 +764,8 @@ let view_overlay instance = fun { dialog } ->
 
 let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in
-	let sync_ui_update, sync_ui_messages = Sync_ui.update sync in
-	let initial_state = initial_state sync in
+	let initial_sync_state, sync_ui_update, sync_ui_messages = Sync_ui.update sync in
+	let initial_state = initial_state initial_sync_state in
 	let gen_updater = gen_updater ~sync_ui_update initial_state in
 
 	let main_tasks = Tasks.init () in
@@ -783,8 +783,8 @@ let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 
 	let sync_tasks = Tasks.init () in
 	let sync_component = Ui.component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
-		let view = Sync_ui.view instance in
-		fun state -> view state.sync_state
+		let child = Ui.child ~view:Sync_ui.view ~message:sync_ui_message instance in
+		fun state -> child state.sync_state
 	) initial_state in
 
 	Ui.set_log_level Logs.Info;
