@@ -10,18 +10,118 @@ open Sync
 
 
 type error_message = string
-type state = Client_auth.auth_state * error_message option
+type ui_state = {
+	error: error_message option;
+	busy: bool;
+}
 
-type message = [
+type state = {
+	auth_state: Client_auth.auth_state;
+	ui: ui_state;
+}
+
+type ui_message = [
 	| `error of error_message option
-	| `auth of Client_auth.auth_state
+	| `busy of bool
+	| `sync_requested
+]
+type message = [
+	| ui_message
+	| `external_change of Client_auth.auth_state
 ]
 
-let update (auth, err) = function
-	| `error err -> (auth, err)
-	| `auth auth -> (auth, None)
+let run_background_sync ~set_auth_state () =
+	let sync_requested = Lwt_condition.create () in
+	let sync_messages, emit = E.create () in
+	let run = (fun auth ->
+		let continue = ref true in
+		while_lwt !continue do
+			emit (`busy true);
+			try_lwt (
+				continue := false;
+				let open Server in
+				let response = match auth with
+					| `Saved_user (username, creds) ->
+						Server.post_json ~data:creds Client_auth.token_validate_url
+					| `Saved_implicit_user _ ->
+						Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
+				in
 
-let initial auth = (auth, None)
+				match_lwt response with
+				| OK json -> return (match auth with
+					| `Saved_user u -> set_auth_state (`Active_user u)
+					| `Saved_implicit_user _ ->
+						set_auth_state (match Client_auth.parse_implicit_user json with
+							| Some u -> `Implicit_user u
+							| None -> `Anonymous
+						)
+					)
+				| Unauthorized msg ->
+					Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
+					let auth = (auth:>Client_auth.authenticated_user_state) in
+					set_auth_state (Auth.failed_login_of_authenticated auth);
+					return_unit
+				| Failed (_, msg, _) ->
+					Log.warn (fun m->m "unknown failure: %s" msg);
+					continue := true;
+					emit (`busy false);
+					Lwt.pick [
+						(Lwt_condition.wait sync_requested);
+						(Lwt_js.sleep 60.0);
+					]
+			) finally (
+				emit (`busy false);
+				Lwt.return_unit
+			)
+		done
+	) in
+	(sync_requested, sync_messages, run)
+
+let update sync =
+	let background_sync_thread = ref None in
+
+	let sync_requested, sync_messages, run_background_sync =
+		run_background_sync ~set_auth_state:sync.Sync.set_auth_state () in
+
+	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
+		!background_sync_thread |> Option.may (fun th ->
+			Lwt.cancel th;
+			background_sync_thread := None
+		);
+		let start (auth:Client_auth.saved_auth_state) =
+			Log.err (fun m->m "TODO (remove) running BG sync");
+			background_sync_thread := Some (run_background_sync auth)
+		in
+		let () = match auth with
+			| `Saved_user _ as auth -> start auth
+			| `Saved_implicit_user _ as auth -> start auth
+			| _ -> ()
+		in
+		auth
+	) in
+	let auth_state_messages = observed_auth_state |> S.changes |> E.map (fun auth -> `external_change auth) in
+	let update_ui state message = match message with
+		| `error error -> { state with error }
+		| `busy busy -> { state with busy }
+	in
+	let update state (message:message) =
+		let update_ui message = { state with ui = update_ui state.ui message } in
+		match message with
+		| `external_change auth_state -> { state with auth_state }
+		(* TODO: http://stackoverflow.com/questions/39676627/ocaml-polymorphic-variants-bind-the-same-name-in-multiple-match-patterns *)
+		| `error _ as message -> update_ui message
+		| `busy _ as message -> update_ui message
+		| `sync_requested ->
+			Lwt_condition.broadcast sync_requested ();
+			state
+	in
+	let messages : message event = E.select [sync_messages; auth_state_messages] in
+	(update, messages)
+
+let initial sync = {
+	ui = { error = None; busy = false };
+	auth_state = sync.Sync.auth_state |> S.value;
+}
 
 type sync_state = {
 	sync_error : string option;
@@ -510,9 +610,9 @@ let ui state = (
 open Vdoml
 open Html
 
-let view_login_form instance = fun username error_message -> (
+let view_login_form instance = fun username {error; _} -> (
 	let space = text " " in
-	let error = error_message |> Option.map (fun err ->
+	let error_text = error |> Option.map (fun err ->
 		p ~a:[a_class "text-danger"] [
 			text err;
 			Bootstrap.icon "remove";
@@ -521,7 +621,7 @@ let view_login_form instance = fun username error_message -> (
 
 
 	div ~a:[a_class "account-status login alert alert-info"] [
-		div ~a:[a_class "login form-inline"; a_role "form"] (error @ [
+		div ~a:[a_class "login form-inline"; a_role "form"] (error_text @ [
 			div ~a:[a_class "form-group form-group-xs email"] [
 				label ~a:[a_class "sr-only"] [text "User"];
 				input ~a:[
@@ -604,6 +704,44 @@ let view_login_form instance = fun username error_message -> (
 	];
 )
 
+let account_settings_button user = text "TODO"
+
+let optional_logout_ui user = [text "TODO"]
+
+let sync_state_widget auth = text "TODO"
+
+let view_logged_in_user _instance = fun (auth:Client_auth.authenticated_user_state) ->
+	let username = Client_auth.name_of_authenticated auth in
+	div ~a:[a_class "account-status alert alert-success"] ([
+		span ~a:[a_class "user"] [text username];
+	] @ (optional_logout_ui auth) @ [
+		span ~a:[a_class "online"] [
+			account_settings_button auth;
+			sync_state_widget auth;
+		];
+	])
+	(* TODO: ~mechanism:(sync_mechanism auth) () *)
+
+let view_saved_user _instance = fun (auth: Auth.saved_auth_state) {busy; _} -> (
+	let username = Auth.name_of_saved auth in
+	let offline_message = span
+		~a:[if busy then a_class "hidden" else None]
+		[text "offline "] in
+
+	let sync_button = a
+		~a:[a_class (if busy then "syncing" else "link")]
+		[Bootstrap.icon "refresh"] in
+
+	div ~a:[a_class "account-status alert alert-warning"] ([
+		span ~a:[a_class "user"] [text username];
+	] @ (optional_logout_ui (auth:>Client_auth.authenticated_user_state)) @ [
+		span ~a:[a_class "offline"] [
+			offline_message;
+			sync_button;
+		];
+	])
+)
+
 let view_anonymous () =
 	div ~a:[a_class "account-status login alert alert-danger"] [
 		span ~a:[a_class "user"] [text "Anonymous"];
@@ -611,14 +749,14 @@ let view_anonymous () =
 
 let view instance =
 	let view_login_form = view_login_form instance in
-	let view_saved_user _ = text "TODO" in
-	let view_logged_in_user _ = text "TODO" in
-	fun (auth, error_message) ->
-		match auth with
-			| `Logged_out -> view_login_form None error_message
-			| `Failed_login username -> view_login_form (Some username) error_message
+	let view_saved_user = view_saved_user instance in
+	let view_logged_in_user = view_logged_in_user instance in
+	fun {auth_state; ui} ->
+		match auth_state with
+			| `Logged_out -> view_login_form None ui
+			| `Failed_login username -> view_login_form (Some username) ui
 			| `Anonymous -> view_anonymous ()
-			| `Saved_user _ as auth -> view_saved_user auth
-			| `Saved_implicit_user _ as auth -> view_saved_user auth
+			| `Saved_user _ as auth -> view_saved_user auth ui
+			| `Saved_implicit_user _ as auth -> view_saved_user auth ui
 			| `Implicit_user _ as auth -> view_logged_in_user auth
 			| `Active_user _ as auth -> view_logged_in_user auth

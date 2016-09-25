@@ -21,6 +21,7 @@ type t = {
 	dialog: dialog_type option;
 	sync_state: Sync_ui.state;
 }
+
 type message =
 	| Toggle_incognito
 	| Show_about_dialog
@@ -682,7 +683,9 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 	form
 )
 
-let update state = function
+let sync_ui_message msg = Auth msg
+
+let update sync_ui_update = fun state -> function
 	| Toggle_incognito ->
 		let incognito = (not state.incognito) in
 		set_incognito incognito;
@@ -692,7 +695,7 @@ let update state = function
 	| Dismiss_overlay ->
 		{ state with dialog = None }
 	| Auth msg ->
-		{ state with sync_state = Sync_ui.update state.sync_state msg }
+		{ state with sync_state = sync_ui_update state.sync_state msg }
 
 let initial_state auth =
 	{
@@ -702,16 +705,17 @@ let initial_state auth =
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater initial_state =
+let gen_updater ~sync_ui_update initial_state =
 	let open Vdoml in
 	let toplevel_ui_instances = ref [] in
 	let global_state = ref initial_state in
-	fun () -> (
+	let update = update sync_ui_update in
+	fun tasks -> (
 		let instance = ref None in
-		let set inst = (
+		Ui.Tasks.sync tasks (fun inst ->
 			toplevel_ui_instances := inst :: !toplevel_ui_instances;
 			instance := Some inst
-		) in
+		);
 		let update instance_state message = (
 			let new_state = update !global_state message in
 			if new_state = !global_state then (
@@ -730,7 +734,7 @@ let gen_updater initial_state =
 				new_state
 			)
 		) in
-		(set, update)
+		update
 	)
 
 let view instance = fun { incognito } ->
@@ -758,30 +762,27 @@ let view_overlay instance = fun { dialog } ->
 				]
 			]
 
-let bind_signal actions xform s =
-	actions := (fun instance ->
-		Passe_ui.effectful_stream_mechanism s (fun state ->
-			Ui.emit instance (xform state)
-		)
-	) :: !actions;
-	S.value s
-
 let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
-	let ui_threads = ref [] in
-	let auth = bind_signal ui_threads
-		(fun state -> Auth (`auth state))
-		sync.Sync.auth_state in
-	let initial_state = initial_state auth in
-	let gen_updater = gen_updater initial_state in
+	let module Tasks = Ui.Tasks in
+	let sync_ui_update, sync_ui_messages = Sync_ui.update sync in
+	let initial_state = initial_state sync in
+	let gen_updater = gen_updater ~sync_ui_update initial_state in
 
-	let set_main, update = gen_updater () in
-	let main_component = Ui.component ~update ~view initial_state in
+	let main_tasks = Tasks.init () in
+	let main_component = Ui.component ~update:(gen_updater main_tasks) ~view initial_state in
+	Tasks.async main_tasks (fun instance ->
+		let messages = sync_ui_messages |> E.map sync_ui_message in
+		Passe_ui.effectful_event_mechanism messages (Ui.emit instance)
+	);
 
-	let set_overlay, update = gen_updater () in
-	let overlay_component = Ui.component ~update ~view:view_overlay initial_state in
+	let overlay_tasks = Tasks.init () in
+	let overlay_component = Ui.component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
+	Tasks.sync overlay_tasks (fun instance ->
+		Bootstrap.install_overlay_handler instance Dismiss_overlay;
+	);
 
-	let set_sync, update = gen_updater () in
-	let sync_component = Ui.component ~update ~view:(fun instance ->
+	let sync_tasks = Tasks.init () in
+	let sync_component = Ui.component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
 		let view = Sync_ui.view instance in
 		fun state -> view state.sync_state
 	) initial_state in
@@ -791,16 +792,12 @@ let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Passe_ui.div
 		~children:[
-			Passe_ui.frag (Passe_ui.vdoml ~init:set_overlay overlay_component);
+			Passe_ui.frag (Passe_ui.vdoml ~tasks:overlay_tasks overlay_component);
 			Passe_ui.child Passe_ui.div ~cls:"container main" ~children:[
-				Passe_ui.frag (Passe_ui.vdoml ~init:set_sync sync_component);
+				Passe_ui.frag (Passe_ui.vdoml ~tasks:sync_tasks sync_component);
 				Passe_ui.frag @@ password_form sync;
 			] ();
-			Passe_ui.frag (Passe_ui.vdoml ~background:(fun instance ->
-				set_main instance;
-				Bootstrap.install_overlay_handler instance Dismiss_overlay;
-				Lwt.join (!ui_threads |> List.map (fun th -> th instance))
-			) main_component);
+			Passe_ui.frag (Passe_ui.vdoml ~tasks:main_tasks main_component);
 		] () in
 	(* all_content#append @@ db_display sync; *)
 	Passe_ui.withContent container all_content (fun _ ->

@@ -115,6 +115,16 @@ let effectful_stream_mechanism : 'a. 'a signal -> ('a -> unit) -> unit Lwt.t = f
 		S.stop ~strong:true effect;
 		Lwt.return_unit
 
+let effectful_event_mechanism : 'a. 'a event -> ('a -> unit) -> unit Lwt.t = fun signal fn ->
+	let effect = E.map fn signal in
+	try_lwt
+		(* Log.debug (fun m->m "starting effectful mechanism"); *)
+		pause ()
+	finally
+		(* Log.debug (fun m->m "stopping effectful mechanism"); *)
+		E.stop ~strong:true effect;
+		Lwt.return_unit
+
 let abortable_stream_mechanism signal fn : unit Lwt.t =
 	let current_thread = ref None in
 	effectful_stream_mechanism signal (fun v ->
@@ -284,11 +294,9 @@ let stream_mechanism (s:#Dom.node #widget_t S.t) = fun (placeholder:#Dom.node Js
 		S.stop ~strong:true watch;
 		Lwt.return_unit
 
-let vdoml_mechanism ?background ?init component = fun (placeholder:#Dom.node Js.t) ->
+let vdoml_mechanism ?tasks component = fun (placeholder:#Dom.node Js.t) ->
 	let open Vdoml in
-	let instance, thread = Ui.render component placeholder in
-	init |> Option.may (fun fn -> fn instance);
-	background |> Option.may (fun fn -> Ui.async instance (fn instance));
+	let instance, thread = Ui.render ?tasks component placeholder in
 	try_lwt
 		Vdoml.Ui.wait thread;
 	finally
@@ -301,9 +309,9 @@ let stream s =
 		create_blank_node in
 	(w:>fragment_t)
 
-let vdoml ?background ?init component =
+let vdoml ?tasks component =
 	let cons () = Dom_html.createDiv Dom_html.document in
-	let w = new leaf_widget ~mechanisms:[vdoml_mechanism ?background component] cons in
+	let w = new leaf_widget ~mechanisms:[vdoml_mechanism ?tasks component] cons in
 	(w:>fragment_t)
 
 let option_stream s : fragment_t =
