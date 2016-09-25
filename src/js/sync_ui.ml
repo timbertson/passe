@@ -20,6 +20,17 @@ type state = {
 	ui: ui_state;
 }
 
+let string_of_ui_state = function { error; busy } ->
+	"{ error = " ^ (Option.to_string quote_string error) ^
+	"; busy = " ^ (string_of_bool busy) ^
+	" }"
+
+let string_of_state = function { auth_state; sync_state; ui } ->
+	"{ auth_state = " ^ (Client_auth.string_of_auth_state auth_state) ^
+	"; sync_state = " ^ (Sync.string_of_sync_state sync_state) ^
+	"; ui = " ^ (string_of_ui_state ui) ^
+	" }"
+
 type ui_message = [
 	| `error of error_message option
 	| `busy of bool
@@ -31,6 +42,13 @@ type message = [
 	| `auth_state of Client_auth.auth_state
 	| `sync_state of Sync.sync_state
 ]
+
+let string_of_message : message -> string = function
+	| `auth_state s -> "`auth_state " ^ (Client_auth.string_of_auth_state s)
+	| `sync_state s -> "`sync_state " ^ (Sync.string_of_sync_state s)
+	| `error err -> "`error " ^ (Option.to_string quote_string err)
+	| `busy b -> "`busy " ^ (string_of_bool b)
+	| `request_sync -> "`request_sync"
 
 let run_background_auth ~set_auth_state ~sync_requested () =
 	(* used for saved user, to automatically login *)
@@ -79,35 +97,39 @@ let run_background_auth ~set_auth_state ~sync_requested () =
 	) in
 	(auth_messages, run)
 
-let run_background_sync sync sync_state =
+let events_of_signal s =
+	let e, emit = E.create () in
+	emit (S.value s);
+	E.select [e; S.changes s]
+
+let run_background_sync ~sync_requested sync sync_state =
 	(* used when signed in, to periodically sync DB state *)
 	let run_sync auth =
+		(* XXX todo: uncomment this when we track down the error *)
 		try_lwt
 			sync.run_sync auth
 		with e -> begin
 			Log.err (fun m->m "%s" (Printexc.to_string e));
-			return ()
+			raise e
 		end
 	in
 
 	fun (auth:Client_auth.logged_in_user_state) -> (
-		let sync_debounce = ref return_unit in
-		let run_sync () =
-			lwt () = !sync_debounce in
-			sync_debounce := (Lwt_js.sleep 5.0);
-			run_sync (auth:>Client_auth.authenticated_user_state)
-			in
-		lwt () = run_sync () in
 		while_lwt true do
 			Log.info (fun m->m "sync loop running..");
+			lwt () = run_sync (auth:>Client_auth.authenticated_user_state) in
+			let next_change = (sync_state
+				|> events_of_signal
+				|> E.filter (function | Local_changes _ -> true | _ -> false)
+				|> Lwt_react.E.next)
+			in
 			Lwt.pick [
-				(* every 30 minutes, attempt a sync *)
-				(Lwt_js.sleep 18000.0 >>= run_sync);
-				(* also sync shortly after making a change to the DB *)
-				(abortable_stream_mechanism sync_state (function
-					| Local_changes _ -> Lwt_js.sleep 2.0 >>= run_sync
-					| _ -> return_unit
-				));
+				(* when clicked *)
+				(Lwt_condition.wait sync_requested);
+				(* every 30 minutes *)
+				(Lwt_js.sleep 18000.0);
+				(* shortly after making a change to the DB *)
+				(next_change >>= (fun _ -> Lwt_js.sleep 2.0))
 			]
 		done
 	)
@@ -136,27 +158,31 @@ let update sync =
 	let background_thread = ref None in
 	let cancel_background () =
 		!background_thread |> Option.may (fun th ->
+			Log.debug(fun m->m"cancelling background task");
 			Lwt.cancel th;
 			background_thread := None
 		) in
 
-	let replace_thread th =
+	let replace_thread desc th =
 		cancel_background ();
+		Log.debug(fun m->m"setting new background task: %s" desc);
 		background_thread := Some th
 	in
 
 	let sync_requested = Lwt_condition.create () in
 
 	(* set up background functions *)
-	let run_background_sync = run_background_sync sync sync_state in
+	let run_background_sync = run_background_sync ~sync_requested sync sync_state in
 	let auth_messages, run_background_auth =
 		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
 
 	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
 		cancel_background ();
 		let () = match auth with
-			| `Saved_user _ | `Saved_implicit_user _ as auth -> replace_thread (run_background_auth auth)
-			| `Implicit_user _ | `Active_user _ as auth -> replace_thread (run_background_sync auth)
+			| `Saved_user _ | `Saved_implicit_user _ as auth ->
+				replace_thread "auth" (run_background_auth auth)
+			| `Implicit_user _ | `Active_user _ as auth ->
+				replace_thread "sync" (run_background_sync auth)
 			| `Logged_out | `Failed_login _ | `Anonymous -> ()
 		in
 		auth
@@ -174,6 +200,7 @@ let update sync =
 		| `sync_state sync_state -> { state with sync_state }
 		| `error _ | `busy _ as message -> { state with ui = update_ui state.ui message }
 		| `request_sync ->
+			Log.debug (fun m->m "sync requested");
 			Lwt_condition.broadcast sync_requested ();
 			state
 	in
@@ -793,8 +820,6 @@ let account_settings_button user = text "TODO"
 
 let optional_logout_ui user = [text "TODO"]
 
-let sync_state_widget auth = text "TODO"
-
 let view_logged_in_user _instance = fun (auth:Client_auth.authenticated_user_state) sync_state ->
 	let username = Client_auth.name_of_authenticated auth in
 	div ~a:[a_class "account-status alert alert-success"] ([
@@ -813,8 +838,10 @@ let view_saved_user _instance = fun (auth: Auth.saved_auth_state) {busy; _} -> (
 		[text "offline "] in
 
 	let sync_button = a
-		~a:[a_class (if busy then "syncing" else "link")]
-		[Bootstrap.icon "refresh"] in
+		~a:[
+			a_class (if busy then "syncing" else "link");
+			a_onclick (emitter `request_sync);
+		] [Bootstrap.icon "refresh"] in
 
 	div ~a:[a_class "account-status alert alert-warning"] ([
 		span ~a:[a_class "user"] [text username];

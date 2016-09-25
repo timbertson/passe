@@ -22,11 +22,26 @@ type t = {
 	sync_state: Sync_ui.state;
 }
 
+let string_of_dialog = function
+	| `about -> "`about"
+
+let string_of_state = function { incognito; dialog; sync_state } ->
+	"{ incognito = " ^ (string_of_bool incognito) ^
+	"; dialog = " ^ (Option.to_string string_of_dialog dialog) ^
+	"; sync_state = " ^ (Sync_ui.string_of_state sync_state) ^
+	" }"
+
 type message =
 	| Toggle_incognito
 	| Show_about_dialog
 	| Dismiss_overlay
 	| Auth of Sync_ui.message
+
+let string_of_message = function
+	| Toggle_incognito -> "Toggle_incognito"
+	| Show_about_dialog -> "Show_about_dialog"
+	| Dismiss_overlay -> "Dismiss_overlay"
+	| Auth msg -> "Auth " ^ (Sync_ui.string_of_message msg)
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -685,17 +700,23 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 
 let sync_ui_message msg = Auth msg
 
-let update sync_ui_update = fun state -> function
-	| Toggle_incognito ->
-		let incognito = (not state.incognito) in
-		set_incognito incognito;
-		{ state with incognito }
-	| Show_about_dialog ->
-		{ state with dialog = Some `about }
-	| Dismiss_overlay ->
-		{ state with dialog = None }
-	| Auth msg ->
-		{ state with sync_state = sync_ui_update state.sync_state msg }
+let update sync_ui_update = fun state message ->
+	let state = match message with
+		| Toggle_incognito ->
+			let incognito = (not state.incognito) in
+			set_incognito incognito;
+			{ state with incognito }
+		| Show_about_dialog ->
+			{ state with dialog = Some `about }
+		| Dismiss_overlay ->
+			{ state with dialog = None }
+		| Auth msg ->
+			{ state with sync_state = sync_ui_update state.sync_state msg }
+	in
+	Log.debug (fun m->m "message: %s\n -> state: %s"
+		(string_of_message message)
+		(string_of_state state));
+	state
 
 let initial_state initial_sync_state =
 	{

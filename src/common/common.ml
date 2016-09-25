@@ -28,3 +28,5 @@ let finally_do cleanup resource f =
 let print_string () s = s
 
 let identity x = x
+
+let quote_string s = "\"" ^ String.escaped s ^ "\""
