@@ -35,6 +35,7 @@ type ui_message = [
 	| `error of error_message option
 	| `busy of bool
 	| `request_sync
+	| `request_logout of J.json
 ]
 
 type message = [
@@ -49,6 +50,7 @@ let string_of_message : message -> string = function
 	| `error err -> "`error " ^ (Option.to_string quote_string err)
 	| `busy b -> "`busy " ^ (string_of_bool b)
 	| `request_sync -> "`request_sync"
+	| `request_logout _ -> "`request_logout"
 
 let run_background_auth ~set_auth_state ~sync_requested () =
 	(* used for saved user, to automatically login *)
@@ -105,11 +107,11 @@ let events_of_signal s =
 let run_background_sync ~sync_requested sync sync_state =
 	(* used when signed in, to periodically sync DB state *)
 	let run_sync auth =
-		(* XXX todo: uncomment this when we track down the error *)
 		try_lwt
 			sync.run_sync auth
 		with e -> begin
 			Log.err (fun m->m "%s" (Printexc.to_string e));
+			(* XXX todo: remove this when we track down the error *)
 			raise e
 		end
 	in
@@ -133,6 +135,17 @@ let run_background_sync ~sync_requested sync sync_state =
 			]
 		done
 	)
+
+let logout ~set_auth_state = fun token -> (
+	let open Server in
+	match_lwt post_json ~data:token Client_auth.logout_url with
+		| OK _ | Unauthorized _ ->
+			set_auth_state `Logged_out;
+			return_unit;
+		| Failed (_, msg,_) ->
+			Log.err (fun m->m "Can't log out: %s" msg);
+			return_unit
+)
 
 let sync_state sync = 
 	let last_sync_signal = sync.last_sync#signal in
@@ -163,10 +176,12 @@ let update sync =
 			background_thread := None
 		) in
 
-	let replace_thread desc th =
+	let replace_thread th =
 		cancel_background ();
-		Log.debug(fun m->m"setting new background task: %s" desc);
-		background_thread := Some th
+		th |> Option.may (fun (desc, th) ->
+			Log.debug(fun m->m"setting new background task: %s" desc);
+			background_thread := Some th
+		)
 	in
 
 	let sync_requested = Lwt_condition.create () in
@@ -175,16 +190,16 @@ let update sync =
 	let run_background_sync = run_background_sync ~sync_requested sync sync_state in
 	let auth_messages, run_background_auth =
 		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
+	let logout = logout ~set_auth_state:sync.Sync.set_auth_state in
 
 	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
-		cancel_background ();
-		let () = match auth with
+		replace_thread (match auth with
 			| `Saved_user _ | `Saved_implicit_user _ as auth ->
-				replace_thread "auth" (run_background_auth auth)
+				Some ("auth", (run_background_auth auth))
 			| `Implicit_user _ | `Active_user _ as auth ->
-				replace_thread "sync" (run_background_sync auth)
-			| `Logged_out | `Failed_login _ | `Anonymous -> ()
-		in
+				Some ("sync", (run_background_sync auth))
+			| `Logged_out | `Failed_login _ | `Anonymous -> None
+		);
 		auth
 	) in
 
@@ -202,6 +217,10 @@ let update sync =
 		| `request_sync ->
 			Log.debug (fun m->m "sync requested");
 			Lwt_condition.broadcast sync_requested ();
+			state
+		| `request_logout token ->
+			(* TODO: perform in intercept, not update *)
+			Lwt.async (fun () -> logout token);
 			state
 	in
 	let messages : message event = E.select [
@@ -818,7 +837,15 @@ let view_login_form instance = fun username {error; _} -> (
 
 let account_settings_button user = text "TODO"
 
-let optional_logout_ui user = [text "TODO"]
+let optional_logout_ui (auth:Client_auth.authenticated_user_state) = (
+	Client_auth.token_of_authenticated auth |> Option.map (fun token ->
+		a ~a:[
+			a_class "hover-reveal link";
+			a_title "Log out";
+			a_onclick (emitter (`request_logout token));
+		] [icon "remove"]
+	) |> Option.to_list
+)
 
 let view_logged_in_user _instance = fun (auth:Client_auth.authenticated_user_state) sync_state ->
 	let username = Client_auth.name_of_authenticated auth in

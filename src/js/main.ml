@@ -731,7 +731,7 @@ let gen_updater ~sync_ui_update initial_state =
 	let toplevel_ui_instances = ref [] in
 	let global_state = ref initial_state in
 	let update = update sync_ui_update in
-	fun tasks -> (
+	fun (tasks:(t, message) Ui.Tasks.t) -> (
 		let instance = ref None in
 		Ui.Tasks.sync tasks (fun inst ->
 			toplevel_ui_instances := inst :: !toplevel_ui_instances;
@@ -790,20 +790,20 @@ let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let gen_updater = gen_updater ~sync_ui_update initial_state in
 
 	let main_tasks = Tasks.init () in
-	let main_component = Ui.component ~update:(gen_updater main_tasks) ~view initial_state in
+	let main_component = Ui.pure_component ~update:(gen_updater main_tasks) ~view initial_state in
 	Tasks.async main_tasks (fun instance ->
 		let messages = sync_ui_messages |> E.map sync_ui_message in
 		Passe_ui.effectful_event_mechanism messages (Ui.emit instance)
 	);
 
 	let overlay_tasks = Tasks.init () in
-	let overlay_component = Ui.component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
+	let overlay_component = Ui.pure_component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
 	Tasks.sync overlay_tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 	);
 
 	let sync_tasks = Tasks.init () in
-	let sync_component = Ui.component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
+	let sync_component = Ui.pure_component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
 		let child = Ui.child ~view:Sync_ui.view ~message:sync_ui_message instance in
 		fun state -> child state.sync_state
 	) initial_state in
