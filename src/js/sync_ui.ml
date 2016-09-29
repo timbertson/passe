@@ -165,6 +165,14 @@ let sync_state sync =
 		)
 	)
 
+let command sync = (
+	let logout = logout ~set_auth_state:sync.Sync.set_auth_state in
+	(fun instance -> function
+		| `request_logout token -> Some (logout token)
+		| _ -> None
+	)
+)
+
 let update sync =
 	let sync_state = sync_state sync in
 
@@ -190,7 +198,6 @@ let update sync =
 	let run_background_sync = run_background_sync ~sync_requested sync sync_state in
 	let auth_messages, run_background_auth =
 		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
-	let logout = logout ~set_auth_state:sync.Sync.set_auth_state in
 
 	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
 		replace_thread (match auth with
@@ -214,13 +221,10 @@ let update sync =
 		| `auth_state auth_state -> { state with auth_state }
 		| `sync_state sync_state -> { state with sync_state }
 		| `error _ | `busy _ as message -> { state with ui = update_ui state.ui message }
+		| `request_logout _ -> state
 		| `request_sync ->
 			Log.debug (fun m->m "sync requested");
 			Lwt_condition.broadcast sync_requested ();
-			state
-		| `request_logout token ->
-			(* TODO: perform in intercept, not update *)
-			Lwt.async (fun () -> logout token);
 			state
 	in
 	let messages : message event = E.select [
@@ -896,3 +900,7 @@ let view instance =
 			| `Anonymous -> view_anonymous ()
 			| `Saved_user _ | `Saved_implicit_user _ as auth -> view_saved_user auth ui
 			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth sync_state
+
+let component sync =
+	let command = command sync in
+	Ui.component ~command ~view ()

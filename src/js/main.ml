@@ -35,13 +35,14 @@ type message =
 	| Toggle_incognito
 	| Show_about_dialog
 	| Dismiss_overlay
-	| Auth of Sync_ui.message
+	| Sync of Sync_ui.message
 
 let string_of_message = function
 	| Toggle_incognito -> "Toggle_incognito"
 	| Show_about_dialog -> "Show_about_dialog"
 	| Dismiss_overlay -> "Dismiss_overlay"
-	| Auth msg -> "Auth " ^ (Sync_ui.string_of_message msg)
+	| Sync msg -> "Sync " ^ (Sync_ui.string_of_message msg)
+
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -698,7 +699,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 	form
 )
 
-let sync_ui_message msg = Auth msg
+let sync_ui_message msg = Sync msg
 
 let update sync_ui_update = fun state message ->
 	let state = match message with
@@ -710,7 +711,7 @@ let update sync_ui_update = fun state message ->
 			{ state with dialog = Some `about }
 		| Dismiss_overlay ->
 			{ state with dialog = None }
-		| Auth msg ->
+		| Sync msg ->
 			{ state with sync_state = sync_ui_update state.sync_state msg }
 	in
 	Log.debug (fun m->m "message: %s\n -> state: %s"
@@ -790,21 +791,22 @@ let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let gen_updater = gen_updater ~sync_ui_update initial_state in
 
 	let main_tasks = Tasks.init () in
-	let main_component = Ui.pure_component ~update:(gen_updater main_tasks) ~view initial_state in
+	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
 	Tasks.async main_tasks (fun instance ->
 		let messages = sync_ui_messages |> E.map sync_ui_message in
 		Passe_ui.effectful_event_mechanism messages (Ui.emit instance)
 	);
 
 	let overlay_tasks = Tasks.init () in
-	let overlay_component = Ui.pure_component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
+	let overlay_component = Ui.root_component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
 	Tasks.sync overlay_tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 	);
 
 	let sync_tasks = Tasks.init () in
-	let sync_component = Ui.pure_component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
-		let child = Ui.child ~view:Sync_ui.view ~message:sync_ui_message instance in
+	let sync_component = Sync_ui.component sync in
+	let sync_component = Ui.root_component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
+		let child = Ui.child ~message:sync_ui_message sync_component instance in
 		fun state -> child state.sync_state
 	) initial_state in
 
