@@ -702,6 +702,7 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 let sync_ui_message msg = Sync msg
 
 let update sync_ui_update = fun state message ->
+	Log.debug (fun m->m "message: %s" (string_of_message message));
 	let state = match message with
 		| Toggle_incognito ->
 			let incognito = (not state.incognito) in
@@ -714,9 +715,7 @@ let update sync_ui_update = fun state message ->
 		| Sync msg ->
 			{ state with sync_state = sync_ui_update state.sync_state msg }
 	in
-	Log.debug (fun m->m "message: %s\n -> state: %s"
-		(string_of_message message)
-		(string_of_state state));
+	Log.debug (fun m->m " -> state: %s" (string_of_state state));
 	state
 
 let initial_state initial_sync_state =

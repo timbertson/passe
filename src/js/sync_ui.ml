@@ -9,9 +9,14 @@ module Xhr = XmlHttpRequest
 open Sync
 
 type error_message = string
+type login_form = {
+	username: string option;
+	password: string option;
+}
 type ui_state = {
 	error: error_message option;
 	busy: bool;
+	login_form: login_form;
 }
 
 type state = {
@@ -20,9 +25,15 @@ type state = {
 	ui: ui_state;
 }
 
-let string_of_ui_state = function { error; busy } ->
+let string_of_login_form = function { username; password } ->
+	"{ username = " ^ (Option.to_string quote_string username) ^
+	"; password = " ^ (Option.to_string (fun s -> "( ... )") password) ^
+	" }"
+
+let string_of_ui_state = function { error; busy; login_form } ->
 	"{ error = " ^ (Option.to_string quote_string error) ^
 	"; busy = " ^ (string_of_bool busy) ^
+	"; login_form = " ^ (string_of_login_form login_form) ^
 	" }"
 
 let string_of_state = function { auth_state; sync_state; ui } ->
@@ -31,11 +42,19 @@ let string_of_state = function { auth_state; sync_state; ui } ->
 	"; ui = " ^ (string_of_ui_state ui) ^
 	" }"
 
+type field = [
+	| `username of string
+	| `passe_password of string
+]
+
 type ui_message = [
 	| `error of error_message option
 	| `busy of bool
 	| `request_sync
 	| `request_logout of J.json
+	| `request_login of login_form
+	| `request_signup
+	| `edit of field
 ]
 
 type message = [
@@ -44,6 +63,10 @@ type message = [
 	| `sync_state of Sync.sync_state
 ]
 
+let string_of_field : field -> string = function
+	| `username u -> "username " ^ u
+	| `passe_password _ -> "password ( ... )"
+
 let string_of_message : message -> string = function
 	| `auth_state s -> "`auth_state " ^ (Client_auth.string_of_auth_state s)
 	| `sync_state s -> "`sync_state " ^ (Sync.string_of_sync_state s)
@@ -51,198 +74,9 @@ let string_of_message : message -> string = function
 	| `busy b -> "`busy " ^ (string_of_bool b)
 	| `request_sync -> "`request_sync"
 	| `request_logout _ -> "`request_logout"
-
-let run_background_auth ~set_auth_state ~sync_requested () =
-	(* used for saved user, to automatically login *)
-	let auth_messages, emit = E.create () in
-	let run = (fun (auth:Client_auth.saved_auth_state) ->
-		let continue = ref true in
-		while_lwt !continue do
-			emit (`busy true);
-			try_lwt (
-				continue := false;
-				let open Server in
-				let response = match auth with
-					| `Saved_user (username, creds) ->
-						Server.post_json ~data:creds Client_auth.token_validate_url
-					| `Saved_implicit_user _ ->
-						Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
-				in
-
-				match_lwt response with
-				| OK json -> return (match auth with
-					| `Saved_user u -> set_auth_state (`Active_user u)
-					| `Saved_implicit_user _ ->
-						set_auth_state (match Client_auth.parse_implicit_user json with
-							| Some u -> `Implicit_user u
-							| None -> `Anonymous
-						)
-					)
-				| Unauthorized msg ->
-					Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
-					let auth = (auth:>Client_auth.authenticated_user_state) in
-					set_auth_state (Auth.failed_login_of_authenticated auth);
-					return_unit
-				| Failed (_, msg, _) ->
-					Log.warn (fun m->m "unknown failure: %s" msg);
-					continue := true;
-					emit (`busy false);
-					Lwt.pick [
-						(Lwt_condition.wait sync_requested);
-						(Lwt_js.sleep 60.0);
-					]
-			) finally (
-				emit (`busy false);
-				Lwt.return_unit
-			)
-		done
-	) in
-	(auth_messages, run)
-
-let events_of_signal s =
-	let e, emit = E.create () in
-	emit (S.value s);
-	E.select [e; S.changes s]
-
-let run_background_sync ~sync_requested sync sync_state =
-	(* used when signed in, to periodically sync DB state *)
-	let run_sync auth =
-		try_lwt
-			sync.run_sync auth
-		with e -> begin
-			Log.err (fun m->m "%s" (Printexc.to_string e));
-			(* XXX todo: remove this when we track down the error *)
-			raise e
-		end
-	in
-
-	fun (auth:Client_auth.logged_in_user_state) -> (
-		while_lwt true do
-			Log.info (fun m->m "sync loop running..");
-			lwt () = run_sync (auth:>Client_auth.authenticated_user_state) in
-			let next_change = (sync_state
-				|> events_of_signal
-				|> E.filter (function | Local_changes _ -> true | _ -> false)
-				|> Lwt_react.E.next)
-			in
-			Lwt.pick [
-				(* when clicked *)
-				(Lwt_condition.wait sync_requested);
-				(* every 30 minutes *)
-				(Lwt_js.sleep 18000.0);
-				(* shortly after making a change to the DB *)
-				(next_change >>= (fun _ -> Lwt_js.sleep 2.0))
-			]
-		done
-	)
-
-let logout ~set_auth_state = fun token -> (
-	let open Server in
-	match_lwt post_json ~data:token Client_auth.logout_url with
-		| OK _ | Unauthorized _ ->
-			set_auth_state `Logged_out;
-			return_unit;
-		| Failed (_, msg,_) ->
-			Log.err (fun m->m "Can't log out: %s" msg);
-			return_unit
-)
-
-let sync_state sync = 
-	let last_sync_signal = sync.last_sync#signal in
-	let last_sync_time = last_sync_signal |> signal_lift_opt (function
-		| `Float t -> t
-		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
-	) in
-	let sync_running = sync.sync_running in
-	S.bind sync_running (fun is_running ->
-		if is_running then S.const Syncing else (
-			S.l2 (fun db sync_time ->
-				let len = List.length db.Store.changes in
-				if len = 0 then
-					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
-				else Local_changes len
-			) sync.db_fallback last_sync_time
-		)
-	)
-
-let command sync = (
-	let logout = logout ~set_auth_state:sync.Sync.set_auth_state in
-	(fun instance -> function
-		| `request_logout token -> Some (logout token)
-		| _ -> None
-	)
-)
-
-let update sync =
-	let sync_state = sync_state sync in
-
-	let background_thread = ref None in
-	let cancel_background () =
-		!background_thread |> Option.may (fun th ->
-			Log.debug(fun m->m"cancelling background task");
-			Lwt.cancel th;
-			background_thread := None
-		) in
-
-	let replace_thread th =
-		cancel_background ();
-		th |> Option.may (fun (desc, th) ->
-			Log.debug(fun m->m"setting new background task: %s" desc);
-			background_thread := Some th
-		)
-	in
-
-	let sync_requested = Lwt_condition.create () in
-
-	(* set up background functions *)
-	let run_background_sync = run_background_sync ~sync_requested sync sync_state in
-	let auth_messages, run_background_auth =
-		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
-
-	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
-		replace_thread (match auth with
-			| `Saved_user _ | `Saved_implicit_user _ as auth ->
-				Some ("auth", (run_background_auth auth))
-			| `Implicit_user _ | `Active_user _ as auth ->
-				Some ("sync", (run_background_sync auth))
-			| `Logged_out | `Failed_login _ | `Anonymous -> None
-		);
-		auth
-	) in
-
-	let auth_state_messages = observed_auth_state |> S.changes |> E.map (fun s -> `auth_state s) in
-	let sync_state_messages = sync_state |> S.changes |> E.map (fun s -> `sync_state s) in
-	let update_ui state message = match message with
-		| `error error -> { state with error }
-		| `busy busy -> { state with busy }
-	in
-	let update state (message:message) =
-		match message with
-		| `auth_state auth_state -> { state with auth_state }
-		| `sync_state sync_state -> { state with sync_state }
-		| `error _ | `busy _ as message -> { state with ui = update_ui state.ui message }
-		| `request_logout _ -> state
-		| `request_sync ->
-			Log.debug (fun m->m "sync requested");
-			Lwt_condition.broadcast sync_requested ();
-			state
-	in
-	let messages : message event = E.select [
-		auth_messages;
-		auth_state_messages;
-		sync_state_messages
-	] in
-	let initial = {
-		ui = { error = None; busy = false };
-		auth_state = sync.Sync.auth_state |> S.value;
-		sync_state = sync_state |> S.value;
-	} in
-	(initial, update, messages)
-
-type sync_state = {
-	sync_error : string option;
-	sync_auth : Client_auth.auth_state;
-}
+	| `request_login form -> "`request_login " ^ (string_of_login_form form)
+	| `request_signup -> "`request_signup"
+	| `edit field -> "`edit (" ^ (string_of_field field) ^ ")"
 
 let ui state = (
 	let last_sync_signal = state.last_sync#signal in
@@ -724,6 +558,296 @@ let ui state = (
 )
 
 open Vdoml
+
+let run_background_auth ~set_auth_state ~sync_requested () =
+	(* used for saved user, to automatically login *)
+	let auth_messages, emit = E.create () in
+	let run = (fun (auth:Client_auth.saved_auth_state) ->
+		let continue = ref true in
+		while_lwt !continue do
+			emit (`busy true);
+			try_lwt (
+				continue := false;
+				let open Server in
+				let response = match auth with
+					| `Saved_user (username, creds) ->
+						Server.post_json ~data:creds Client_auth.token_validate_url
+					| `Saved_implicit_user _ ->
+						Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
+				in
+
+				match_lwt response with
+				| OK json -> return (match auth with
+					| `Saved_user u -> set_auth_state (`Active_user u)
+					| `Saved_implicit_user _ ->
+						set_auth_state (match Client_auth.parse_implicit_user json with
+							| Some u -> `Implicit_user u
+							| None -> `Anonymous
+						)
+					)
+				| Unauthorized msg ->
+					Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
+					let auth = (auth:>Client_auth.authenticated_user_state) in
+					set_auth_state (Auth.failed_login_of_authenticated auth);
+					return_unit
+				| Failed (_, msg, _) ->
+					Log.warn (fun m->m "unknown failure: %s" msg);
+					continue := true;
+					emit (`busy false);
+					Lwt.pick [
+						(Lwt_condition.wait sync_requested);
+						(Lwt_js.sleep 60.0);
+					]
+			) finally (
+				emit (`busy false);
+				Lwt.return_unit
+			)
+		done
+	) in
+	(auth_messages, run)
+
+let events_of_signal s =
+	let e, emit = E.create () in
+	emit (S.value s);
+	E.select [e; S.changes s]
+
+let run_background_sync ~sync_requested sync sync_state =
+	(* used when signed in, to periodically sync DB state *)
+	let run_sync auth =
+		try_lwt
+			sync.run_sync auth
+		with e -> begin
+			Log.err (fun m->m "%s" (Printexc.to_string e));
+			(* XXX todo: remove this when we track down the error *)
+			raise e
+		end
+	in
+
+	fun (auth:Client_auth.logged_in_user_state) -> (
+		while_lwt true do
+			Log.info (fun m->m "sync loop running..");
+			lwt () = run_sync (auth:>Client_auth.authenticated_user_state) in
+			let next_change = (sync_state
+				|> events_of_signal
+				|> E.filter (function | Local_changes _ -> true | _ -> false)
+				|> Lwt_react.E.next)
+			in
+			Lwt.pick [
+				(* when clicked *)
+				(Lwt_condition.wait sync_requested);
+				(* every 30 minutes *)
+				(Lwt_js.sleep 18000.0);
+				(* shortly after making a change to the DB *)
+				(next_change >>= (fun _ -> Lwt_js.sleep 2.0))
+			]
+		done
+	)
+
+let sync_state sync = 
+	let last_sync_signal = sync.last_sync#signal in
+	let last_sync_time = last_sync_signal |> signal_lift_opt (function
+		| `Float t -> t
+		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
+	) in
+	let sync_running = sync.sync_running in
+	S.bind sync_running (fun is_running ->
+		if is_running then S.const Syncing else (
+			S.l2 (fun db sync_time ->
+				let len = List.length db.Store.changes in
+				if len = 0 then
+					sync_time |> Option.map (fun t -> Updated_at t) |> Option.default Uptodate
+				else Local_changes len
+			) sync.db_fallback last_sync_time
+		)
+	)
+
+(* (* TODO: move to vdoml *) *)
+(* module Action : sig *)
+(* 	type t *)
+(* 	val init : unit -> t *)
+(* 	val replace : t -> ('state, 'message) Vdoml.Ui.instance -> 'message Lwt.t -> unit Lwt.t *)
+(* 	val replace_opt : t -> ('state, 'message) Vdoml.Ui.instance -> 'message option Lwt.t -> unit Lwt.t *)
+(*  *)
+(* 	val bind : ('a -> 'message option Lwt.t) -> ('state, 'message) Vdoml.Ui.instance -> ('a -> unit Lwt.t) *)
+(* end = struct *)
+(* 	type t = unit Lwt.t option ref *)
+(* 	let init () = ref None *)
+(*  *)
+(* 	let replace_opt ref instance action = ( *)
+(* 		!ref |> Option.may Lwt.cancel; *)
+(*  *)
+(* 		(* Can't have a self-recursive value, so use Lazy for indirection *) *)
+(* 		let rec th = lazy (action |> Lwt.map (Option.may (fun msg -> *)
+(* 			let current = !ref in *)
+(* 			let th = Lazy.force th in *)
+(* 			if current |> Option.map ((==) th) |> Option.default false *)
+(* 				then Vdoml.Ui.emit instance msg *)
+(* 				else Log.info (fun m->m"Discarding message from cancelled thread") *)
+(* 		))) in *)
+(* 		let th = Lazy.force th in *)
+(* 		ref := Some (th); *)
+(* 		th *)
+(* 	) *)
+(*  *)
+(* 	let replace ref instance action = *)
+(* 		replace_opt ref instance (action |> Lwt.map (fun x -> Some x)) *)
+(* 	 *)
+(* 	let bind fn = *)
+(* 		let ref = ref None in *)
+(* 		fun instance arg -> ( *)
+(* 			!ref |> Option.may Lwt.cancel; *)
+(*  *)
+(* 			(* Can't have a self-recursive value, so use Lazy for indirection *) *)
+(* 			let rec th = lazy (fn arg |> Lwt.map (Option.may (fun msg -> *)
+(* 				let current = !ref in *)
+(* 				let th = Lazy.force th in *)
+(* 				if current |> Option.map ((==) th) |> Option.default false *)
+(* 					then Vdoml.Ui.emit instance msg *)
+(* 					else Log.info (fun m->m"Discarding message from cancelled thread") *)
+(* 			))) in *)
+(* 			let th = Lazy.force th in *)
+(* 			ref := Some (th); *)
+(* 			th *)
+(* 		) *)
+(* end *)
+
+let logout ~set_auth_state = fun token -> (
+	let open Server in
+	match_lwt post_json ~data:token Client_auth.logout_url with
+		| OK _ | Unauthorized _ ->
+			set_auth_state `Logged_out;
+			return_unit;
+		| Failed (_, msg,_) ->
+			Log.err (fun m->m "Can't log out: %s" msg);
+			return_unit
+)
+
+let submit_form ~set_auth_state url instance {username; password} = (
+	Log.info (fun m->m "form submitted");
+	let data = match username, password with
+		| Some username, Some password ->
+			Some (`Assoc [
+				"user", `String username;
+				"password", `String password;
+			])
+		| _ ->
+			Ui.emit instance (`error (Some "Username and password required"));
+			None
+	in
+	data |> Option.map (fun data ->
+		let open Server in
+		let open Either in
+		Ui.emit instance (`error None);
+		let open Server in
+		Server.post_json ~data url |> Lwt.map (function
+			| OK response ->
+				set_auth_state (`Active_user (Auth.get_response_credentials response));
+				None
+			| Failed (_, message, _) ->
+				Some (`error (Some message))
+			| Unauthorized _ -> assert false
+		)
+	) |> Option.default (Lwt.return None)
+)
+
+let command sync instance : (state, message) Ui.command_fn  = (
+	let set_auth_state = sync.Sync.set_auth_state in
+	let logout = Ui.supplantable (fun token ->
+		logout ~set_auth_state token |> Lwt.map (fun _ -> None)
+	) instance in
+	let login = Ui.supplantable (fun login_form ->
+		submit_form ~set_auth_state Client_auth.login_url instance login_form
+	) instance in
+	function
+	| `request_logout token -> Some (logout token)
+	| `request_login form -> Some (login form)
+	| _ -> None
+)
+
+let update sync =
+	let sync_state = sync_state sync in
+
+	let background_thread = ref None in
+	let cancel_background () =
+		!background_thread |> Option.may (fun th ->
+			Log.debug(fun m->m"cancelling background task");
+			Lwt.cancel th;
+			background_thread := None
+		) in
+
+	let replace_thread th =
+		cancel_background ();
+		th |> Option.may (fun (desc, th) ->
+			Log.debug(fun m->m"setting new background task: %s" desc);
+			background_thread := Some th
+		)
+	in
+
+	let sync_requested = Lwt_condition.create () in
+
+	(* set up background functions *)
+	let run_background_sync = run_background_sync ~sync_requested sync sync_state in
+	let auth_messages, run_background_auth =
+		run_background_auth ~set_auth_state:sync.Sync.set_auth_state ~sync_requested () in
+
+	let observed_auth_state = sync.Sync.auth_state |> S.map (fun auth ->
+		replace_thread (match auth with
+			| `Saved_user _ | `Saved_implicit_user _ as auth ->
+				Some ("auth", (run_background_auth auth))
+			| `Implicit_user _ | `Active_user _ as auth ->
+				Some ("sync", (run_background_sync auth))
+			| `Logged_out | `Failed_login _ | `Anonymous -> None
+		);
+		auth
+	) in
+
+	let auth_state_messages = observed_auth_state |> S.changes |> E.map (fun s -> `auth_state s) in
+	let sync_state_messages = sync_state |> S.changes |> E.map (fun s -> `sync_state s) in
+	let update_ui state message = match message with
+		| `error error -> { state with error }
+		| `busy busy -> { state with busy }
+		| `edit field -> (match field with
+			| `username u -> { state with login_form = { state.login_form with username = Some u } }
+			| `passe_password p -> { state with login_form = { state.login_form with password = Some p } }
+		)
+	in
+	let update state (message:message) =
+		match message with
+		| `auth_state auth_state -> { state with auth_state }
+		| `sync_state sync_state -> { state with sync_state }
+		| `error _ | `busy _ | `edit _ as message -> { state with ui = update_ui state.ui message }
+		| `request_sync ->
+			Log.debug (fun m->m "sync requested");
+			Lwt_condition.broadcast sync_requested ();
+			state
+		| `request_logout _ | `request_login _ | `request_signup -> state
+	in
+	let messages : message event = E.select [
+		auth_messages;
+		auth_state_messages;
+		sync_state_messages
+	] in
+	let initial = {
+		ui = {
+			error = None;
+			busy = false;
+			login_form = {
+				username = None;
+				password = None;
+			};
+		};
+		auth_state = sync.Sync.auth_state |> S.value;
+		sync_state = sync_state |> S.value;
+	} in
+	(initial, update, messages)
+
+type sync_state = {
+	sync_error : string option;
+	sync_auth : Client_auth.auth_state;
+}
+
+
+
 open Html
 open Bootstrap
 
@@ -745,99 +869,125 @@ let view_sync_state = (function
 		]
 	)
 
-let view_login_form instance = fun username {error; _} -> (
-	let space = text " " in
-	let error_text = error |> Option.map (fun err ->
-		p ~a:[a_class "text-danger"] [
-			text err;
-			Bootstrap.icon "remove";
-		]
-	) |> Option.to_list in
+(* TODO: inline in vdoml? *)
+let track_contents constructor = a_oninput (Html.handler (fun evt ->
+	Event.input_contents evt |> Option.map (fun text ->
+		Event.return `Unhandled (`edit (constructor text))
+	) |> Event.optional))
+
+let emit_on_return instance action : message attr = a_onkeydown (handler (Ui.bind instance (fun state evt ->
+	evt
+		|> Event.keyboard_event
+		|> Option.map (fun evt -> evt##keyCode)
+		|> Option.filter ((=) Keycode.return)
+		|> Option.map (fun _ -> Event.handle (action state))
+		|> Event.optional
+)))
+
+let view_login_form instance =
+	let submit_on_return = emit_on_return instance (fun state -> (`request_login state.ui.login_form)) in
+	let track_username = track_contents (fun text -> `username text) in
+	let track_password = track_contents (fun text -> `passe_password text) in
+
+	fun stored_username {error; login_form=form} -> (
+		let space = text " " in
+		let error_text = error |> Option.map (fun err ->
+			p ~a:[a_class "text-danger"] [
+				Bootstrap.icon "remove";
+				text err;
+			]
+		) |> Option.to_list in
 
 
-	div ~a:[a_class "account-status login alert alert-info"] [
-		div ~a:[a_class "login form-inline"; a_role "form"] (error_text @ [
-			div ~a:[a_class "form-group form-group-xs email"] [
-				label ~a:[a_class "sr-only"] [text "User"];
+		div ~a:[a_class "account-status login alert alert-info"] [
+			div ~a:[a_class "login form-inline"; a_role "form"] (error_text @ [
+				div ~a:[a_class "form-group form-group-xs email"] [
+					label ~a:[a_class "sr-only"] [text "User"];
+					input ~a:[
+						a_class "form-control username-input";
+						a_name "user";
+						a_placeholder "User";
+						a_input_type `Text;
+						a_value (Option.default "" (form.username |> Option.or_ stored_username));
+						track_username;
+						submit_on_return;
+					] ();
+				];
+				space;
+
+				div ~a:[a_class "form-group form-group-xs password"] [
+					label ~a:[a_class "sr-only"] [text "password"];
+					input ~a:[
+						a_class "form-control password-input";
+						a_input_type `Password;
+						a_name "password";
+						a_placeholder "password";
+						track_password;
+						submit_on_return;
+					] ();
+				];
+
+				space;
 				input ~a:[
-					a_class "form-control username-input";
-					a_name "user";
-					a_placeholder "User";
-					a_input_type `Text;
-					a_value (Option.default "" username);
+					a_class "btn btn-primary login";
+					a_input_type `Submit;
+					a_value "Sign in";
+					a_onclick (emitter ((`request_login form)));
 				] ();
-			];
-			space;
-
-			div ~a:[a_class "form-group form-group-xs password"] [
-				label ~a:[a_class "sr-only"] [text "password"];
 				input ~a:[
-					a_class "form-control password-input";
-					a_input_type `Password;
-					a_name "password";
-					a_placeholder "password";
+					a_class "btn btn-default muted signup pull-right";
+					a_input_type `Button;
+					a_value "Register";
+					a_onclick (emitter `request_signup);
 				] ();
-			];
 
-			space;
-			input ~a:[
-				a_class "btn btn-primary login";
-				a_input_type `Submit;
-				a_value "Sign in";
-			] ();
-			input ~a:[
-				a_class "btn btn-default muted signup pull-right";
-				a_input_type `Button;
-				a_value "Register";
-			] ();
-
-			div ~a:[a_class "clearfix"] [];
-		])
-		(* ~mechanism:(fun elem -> *)
-		(* 	let signup_button = elem##querySelector(Js.string ".signup") |> non_null in *)
-		(* 	let login_button = elem##querySelector(Js.string ".login") |> non_null in *)
-		(* 	(* XXX just search for any `input`, rather than binding events on each of these individually *) *)
-		(* 	let password_input = elem##querySelector(Js.string ".password-input") |> non_null in *)
-		(* 	let username_input = elem##querySelector(Js.string ".username-input") |> non_null in *)
-		(* 	let submit url = *)
-		(* 		Log.info (fun m->m "form submitted"); *)
-		(* 		let data = `Assoc (get_form_contents elem *)
-		(* 			|> List.map (fun (name, value) -> (name, `String value))) in *)
-		(* 		let open Server in *)
-		(* 		let open Either in *)
-		(* 		set_error None; *)
-		(* 		lwt response = Server.post_json ~data url in *)
-		(* 		let open Server in *)
-		(* 		let () = match response with *)
-		(* 			| OK response -> *)
-		(* 				set_auth_state (`Active_user (Auth.get_response_credentials response)) *)
-		(* 			| Failed (_, message, _) -> *)
-		(* 					set_error (Some message) *)
-		(* 			| Unauthorized _ -> assert false *)
-		(* 		in *)
-		(* 		return_unit *)
-		(* 	in *)
-		(* 	let submit_on_return event _ = *)
-		(* 		if event##keyCode = Keycode.return then ( *)
-		(* 			stop event; *)
-		(* 			submit Client_auth.login_url *)
-		(* 		) else return_unit *)
-		(* 	in *)
-		(*  *)
-		(* 	Lwt_js_events.clicks signup_button (fun event _ -> *)
-		(* 		stop event; *)
-		(* 		submit Client_auth.signup_url *)
-		(* 	) *)
-		(* 	<&> *)
-		(* 	Lwt_js_events.clicks login_button (fun event _ -> *)
-		(* 		stop event; *)
-		(* 		submit Client_auth.login_url *)
-		(* 	) *)
-		(* 	<&> Lwt_js_events.keydowns password_input submit_on_return *)
-		(* 	<&> Lwt_js_events.keydowns username_input submit_on_return *)
-		(* ) () *)
-	];
-)
+				div ~a:[a_class "clearfix"] [];
+			])
+			(* ~mechanism:(fun elem -> *)
+			(* 	let signup_button = elem##querySelector(Js.string ".signup") |> non_null in *)
+			(* 	let login_button = elem##querySelector(Js.string ".login") |> non_null in *)
+			(* 	(* XXX just search for any `input`, rather than binding events on each of these individually *) *)
+			(* 	let password_input = elem##querySelector(Js.string ".password-input") |> non_null in *)
+			(* 	let username_input = elem##querySelector(Js.string ".username-input") |> non_null in *)
+			(* 	let submit url = *)
+			(* 		Log.info (fun m->m "form submitted"); *)
+			(* 		let data = `Assoc (get_form_contents elem *)
+			(* 			|> List.map (fun (name, value) -> (name, `String value))) in *)
+			(* 		let open Server in *)
+			(* 		let open Either in *)
+			(* 		set_error None; *)
+			(* 		lwt response = Server.post_json ~data url in *)
+			(* 		let open Server in *)
+			(* 		let () = match response with *)
+			(* 			| OK response -> *)
+			(* 				set_auth_state (`Active_user (Auth.get_response_credentials response)) *)
+			(* 			| Failed (_, message, _) -> *)
+			(* 					set_error (Some message) *)
+			(* 			| Unauthorized _ -> assert false *)
+			(* 		in *)
+			(* 		return_unit *)
+			(* 	in *)
+			(* 	let submit_on_return event _ = *)
+			(* 		if event##keyCode = Keycode.return then ( *)
+			(* 			stop event; *)
+			(* 			submit Client_auth.login_url *)
+			(* 		) else return_unit *)
+			(* 	in *)
+			(*  *)
+			(* 	Lwt_js_events.clicks signup_button (fun event _ -> *)
+			(* 		stop event; *)
+			(* 		submit Client_auth.signup_url *)
+			(* 	) *)
+			(* 	<&> *)
+			(* 	Lwt_js_events.clicks login_button (fun event _ -> *)
+			(* 		stop event; *)
+			(* 		submit Client_auth.login_url *)
+			(* 	) *)
+			(* 	<&> Lwt_js_events.keydowns password_input submit_on_return *)
+			(* 	<&> Lwt_js_events.keydowns username_input submit_on_return *)
+			(* ) () *)
+		];
+	)
 
 let account_settings_button user = text "TODO"
 
@@ -901,6 +1051,6 @@ let view instance =
 			| `Saved_user _ | `Saved_implicit_user _ as auth -> view_saved_user auth ui
 			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth sync_state
 
-let component sync =
+let component sync : (state, message) Ui.component =
 	let command = command sync in
 	Ui.component ~command ~view ()

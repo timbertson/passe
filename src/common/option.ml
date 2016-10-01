@@ -33,6 +33,10 @@ let bind fn opt = match opt with
 	| Some v -> fn v
 	| None -> None
 
+let filter fn = function
+	| Some x as rv when fn x -> rv
+	| Some _ | None -> None
+
 let or_fn fn opt = match opt with
 	| Some _ as v -> v
 	| None -> fn ()
