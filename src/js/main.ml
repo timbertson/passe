@@ -785,16 +785,12 @@ let view_overlay instance = fun { dialog } ->
 
 let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in
-	let initial_sync_state, sync_ui_update, sync_ui_messages = Sync_ui.update sync in
+	let initial_sync_state, sync_ui_update = Sync_ui.update sync in
 	let initial_state = initial_state initial_sync_state in
 	let gen_updater = gen_updater ~sync_ui_update initial_state in
 
 	let main_tasks = Tasks.init () in
 	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
-	Tasks.async main_tasks (fun instance ->
-		let messages = sync_ui_messages |> E.map sync_ui_message in
-		Passe_ui.effectful_event_mechanism messages (Ui.emit instance)
-	);
 
 	let overlay_tasks = Tasks.init () in
 	let overlay_component = Ui.root_component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
