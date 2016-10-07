@@ -819,6 +819,9 @@ let view_login_form instance =
 	let submit_on_return = emit_on_return instance (fun state -> (`request_login state.ui.login_form)) in
 	let track_username = track_contents (fun text -> `username text) in
 	let track_password = track_contents (fun text -> `passe_password text) in
+	let request_login = handler (Ui.bind instance (fun state _evt ->
+		Event.handle (`request_login state.ui.login_form)
+	)) in
 
 	fun stored_username {error; login_form=form} -> (
 		let space = text " " in
@@ -828,7 +831,6 @@ let view_login_form instance =
 				text err;
 			]
 		) |> Option.to_list in
-
 
 		div ~a:[a_class "account-status login alert alert-info"] [
 			div ~a:[a_class "login form-inline"; a_role "form"] (error_text @ [
@@ -863,7 +865,7 @@ let view_login_form instance =
 					a_class "btn btn-primary login";
 					a_input_type `Submit;
 					a_value "Sign in";
-					a_onclick (emitter ((`request_login form)));
+					a_onclick request_login;
 				] ();
 				input ~a:[
 					a_class "btn btn-default muted signup pull-right";

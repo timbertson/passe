@@ -76,9 +76,11 @@ let view_footer incognito =
 	let open Html in
 	let open Bootstrap in
 
+	let toggle response = emitter ~response Toggle_incognito in
 	let incognito_checkbox = input ~a:[
 		a_input_type `Checkbox;
-		a_onclick (emitter ~response:`Unhandled Toggle_incognito);
+		a_onclick (toggle `Unhandled);
+		a_checked incognito;
 		a_title "Don't store anything on this browser";
 	] () in
 
@@ -89,7 +91,7 @@ let view_footer incognito =
 		]);
 	] [
 		incognito_checkbox;
-		span [text" Incognito mode"];
+		span ~a:[a_onclick (toggle `Handled)] [text" Incognito mode"];
 	] in
 
 	row `XS [
