@@ -36,13 +36,14 @@ type message =
 	| Show_about_dialog
 	| Dismiss_overlay
 	| Sync of Sync_ui.message
+	| Hacky_state_override of t (* Remove me, obviously *)
 
 let string_of_message = function
 	| Toggle_incognito -> "Toggle_incognito"
 	| Show_about_dialog -> "Show_about_dialog"
 	| Dismiss_overlay -> "Dismiss_overlay"
 	| Sync msg -> "Sync " ^ (Sync_ui.string_of_message msg)
-
+	| Hacky_state_override _ -> "Hacky_state_override (...)"
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -50,9 +51,6 @@ let check cond = Printf.ksprintf (function s ->
 
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max
-
-(* TODO: remove *)
-let incognito, set_incognito = S.create false
 
 let logo () =
 	let open Html in
@@ -701,12 +699,12 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 
 let sync_ui_message msg = Sync msg
 
-let update sync_ui_update = fun state message ->
+let update ~sync_ui_update ~storage_provider = fun state message ->
 	Log.debug (fun m->m "message: %s" (string_of_message message));
 	let state = match message with
 		| Toggle_incognito ->
-			let incognito = (not state.incognito) in
-			set_incognito incognito;
+			let incognito = not state.incognito in
+			storage_provider#set_persistent incognito;
 			{ state with incognito }
 		| Show_about_dialog ->
 			{ state with dialog = Some `about }
@@ -714,6 +712,7 @@ let update sync_ui_update = fun state message ->
 			{ state with dialog = None }
 		| Sync msg ->
 			{ state with sync_state = sync_ui_update state.sync_state msg }
+		| Hacky_state_override state -> state
 	in
 	Log.debug (fun m->m " -> state: %s" (string_of_state state));
 	state
@@ -726,34 +725,31 @@ let initial_state initial_sync_state =
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater ~sync_ui_update initial_state =
+let gen_updater ~sync_ui_update ~storage_provider initial_state =
 	let open Vdoml in
 	let toplevel_ui_instances = ref [] in
-	let global_state = ref initial_state in
-	let update = update sync_ui_update in
+	let update = update ~sync_ui_update ~storage_provider in
 	fun (tasks:(t, message) Ui.Tasks.t) -> (
 		let instance = ref None in
 		Ui.Tasks.sync tasks (fun inst ->
 			toplevel_ui_instances := inst :: !toplevel_ui_instances;
 			instance := Some inst
 		);
-		let update instance_state message = (
-			let new_state = update !global_state message in
-			if new_state = !global_state then (
-				(* already propagated *)
-				new_state
-			) else (
-				global_state := new_state;
-				(* propagate to peers *)
-				let () = match !instance with
-					| None -> ()
-					| Some instance -> !toplevel_ui_instances |> List.iter (fun dest ->
-						(* phys equality *)
-						if dest != instance then Ui.emit dest message
-					)
-				in
-				new_state
-			)
+		let update state message = (
+			let state = update state message in
+			match message with
+				| Hacky_state_override _ -> state
+				| _ -> (
+					(* propagate to peers *)
+					let () = match !instance with
+						| None -> ()
+						| Some instance -> !toplevel_ui_instances |> List.iter (fun dest ->
+							(* phys equality *)
+							if dest != instance then Ui.emit dest (Hacky_state_override state)
+						)
+					in
+					state
+				)
 		) in
 		update
 	)
@@ -783,11 +779,11 @@ let view_overlay instance = fun { dialog } ->
 				]
 			]
 
-let show_form (sync:Sync.state) (container:Dom_html.element Js.t) =
+let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in
 	let initial_sync_state, sync_ui_update = Sync_ui.update sync in
 	let initial_state = initial_state initial_sync_state in
-	let gen_updater = gen_updater ~sync_ui_update initial_state in
+	let gen_updater = gen_updater ~sync_ui_update ~storage_provider initial_state in
 
 	let main_tasks = Tasks.init () in
 	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
@@ -832,7 +828,7 @@ let print_exc context e =
 
 let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
-let main sync = (
+let main ~storage_provider sync = (
 	try_lwt (
 		let main_elem = (document##getElementById (s"main")) in
 		check (Opt.test main_elem) "main_elem not found!";
@@ -859,7 +855,7 @@ let main sync = (
 				[]
 			)
 		in
-		Lwt.join ([ show_form sync main_elem ] @ offline_actions)
+		Lwt.join ([ show_form ~storage_provider sync main_elem ] @ offline_actions)
 	) with e -> (
 		print_exc "Toplevel" e;
 		return_unit
@@ -882,7 +878,6 @@ let () = (
 
 	let storage_provider = (new Local_storage.provider (true)) in
 	let config_provider = Config.build storage_provider in
-	let _ = incognito |> S.map (fun v -> storage_provider#set_persistent (not v)) in
 	let initial_auth = Sync.initial_auth_state (Lazy.force Passe_env_js.auth_mode) in
 
 	let listener = ref null in
@@ -893,7 +888,7 @@ let () = (
 			Opt.iter !listener Dom_events.stop_listen;
 			Lwt.async (fun () ->
 				initial_auth >>= fun initial_auth ->
-				main Sync.(build {
+				main ~storage_provider Sync.(build {
 					env_initial_auth = initial_auth;
 					env_config_provider = config_provider
 				})

@@ -690,11 +690,11 @@ let sync_db_loop ~sync ~sync_state auth =
 		]
 	done
 
-let run_background_sync__2 ~sync ~set_auth_state instance sync_state : (Client_auth.auth_state option -> message option Lwt.t) =
+let run_background_sync ~sync ~set_auth_state instance sync_state : (Client_auth.auth_state option -> message option Lwt.t) =
 	let last_auth = ref None in
 	let run = (fun auth ->
 		last_auth := Some auth;
-		Log.info (fun m->m "run background_sync called");
+		Log.info (fun m->m "run_background_sync called");
 		(match auth with
 			| `Logged_out | `Anonymous | `Failed_login _ -> return_unit
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
@@ -719,7 +719,7 @@ let command sync instance : (state, message) Ui.command_fn  = (
 
 	let sync_state = sync_state sync in
 	let background_sync = Ui.supplantable
-		(run_background_sync__2 ~sync ~set_auth_state instance sync_state) instance in
+		(run_background_sync ~sync ~set_auth_state instance sync_state) instance in
 
 	(* kick off initial background syc *)
 	background_sync (Some (S.value sync.Sync.auth_state)) |> Ui.async instance;
