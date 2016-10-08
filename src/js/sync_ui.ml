@@ -52,7 +52,7 @@ type ui_message = [
 	| `busy of bool
 	| `request_sync
 	| `request_logout of J.json
-	| `request_login of login_form
+	| `request_login
 	| `request_signup
 	| `edit of field
 ]
@@ -74,7 +74,7 @@ let string_of_message : message -> string = function
 	| `busy b -> "`busy " ^ (string_of_bool b)
 	| `request_sync -> "`request_sync"
 	| `request_logout _ -> "`request_logout"
-	| `request_login form -> "`request_login " ^ (string_of_login_form form)
+	| `request_login -> "`request_login"
 	| `request_signup -> "`request_signup"
 	| `edit field -> "`edit (" ^ (string_of_field field) ^ ")"
 
@@ -731,12 +731,12 @@ let command sync instance : (state, message) Ui.command_fn  = (
 	emit_changes sync.Sync.auth_state (fun s -> `auth_state s);
 	emit_changes sync_state (fun s -> `sync_state s);
 
-	function
-	| `request_logout token -> Some (logout token)
-	| `request_login form -> Some (login form)
-	| `auth_state auth -> Some (background_sync (Some auth))
-	| `request_sync -> Some (background_sync None)
-	| _ -> None
+	fun state message -> match message with
+		| `request_logout token -> Some (logout token)
+		| `request_login -> Some (login state.ui.login_form)
+		| `auth_state auth -> Some (background_sync (Some auth))
+		| `request_sync -> Some (background_sync None)
+		| _ -> None
 )
 
 let update sync =
@@ -756,7 +756,7 @@ let update sync =
 
 		(* used only for `command` side effects *)
 		| `request_sync | `request_logout _
-		| `request_login _ | `request_signup -> state
+		| `request_login | `request_signup -> state
 	in
 	let initial = {
 		ui = {
@@ -811,17 +811,14 @@ let emit_on_return instance action : message attr = a_onkeydown (handler (Ui.bin
 		|> Event.keyboard_event
 		|> Option.map (fun evt -> evt##keyCode)
 		|> Option.filter ((=) Keycode.return)
-		|> Option.map (fun _ -> Event.handle (action state))
+		|> Option.map (fun _ -> Event.handle action)
 		|> Event.optional
 )))
 
 let view_login_form instance =
-	let submit_on_return = emit_on_return instance (fun state -> (`request_login state.ui.login_form)) in
+	let submit_on_return = emit_on_return instance `request_login in
 	let track_username = track_contents (fun text -> `username text) in
 	let track_password = track_contents (fun text -> `passe_password text) in
-	let request_login = handler (Ui.bind instance (fun state _evt ->
-		Event.handle (`request_login state.ui.login_form)
-	)) in
 
 	fun stored_username {error; login_form=form} -> (
 		let space = text " " in
@@ -865,7 +862,7 @@ let view_login_form instance =
 					a_class "btn btn-primary login";
 					a_input_type `Submit;
 					a_value "Sign in";
-					a_onclick request_login;
+					a_onclick (emitter `request_login);
 				] ();
 				input ~a:[
 					a_class "btn btn-default muted signup pull-right";
