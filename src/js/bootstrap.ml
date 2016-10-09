@@ -1,7 +1,8 @@
 module List = List_ext
 open Passe
 open Common
-open Vdoml.Html
+open Vdoml
+open Html
 open Lwt
 
 let icon name = let open Vdoml.Html in i ~a:[a_class ("glyphicon glyphicon-"^name)] []
@@ -84,9 +85,17 @@ let install_overlay_handler instance cancel =
 		return_unit
 	))
 
-let overlay ~cancel content =
-	let open Vdoml.Html in
-	div ~a:[a_class "overlay"; a_onclick cancel ] content
+let overlay ~cancel =
+	let onclick = handler (fun evt ->
+		let is_overlay = Event.target evt |> Option.map (fun target ->
+			target##classList##contains(Js.string "overlay") |> Js.to_bool
+		) |> Option.default false in
+		(if is_overlay
+			then Some (Event.handle cancel)
+			else None
+		) |> Event.optional
+	) in
+	fun content -> div ~a:[a_class "overlay"; a_onclick onclick] content
 
 let panel ~title ?close children =
 	let _title = title in
@@ -106,3 +115,5 @@ let panel ~title ?close children =
 		div ~a:[a_class "panel-heading"] header;
 		div ~a:[a_class "panel-body"] children;
 	]
+
+let control_label text = label ~a:[a_class "control-label"] [Vdoml.Html.text text]

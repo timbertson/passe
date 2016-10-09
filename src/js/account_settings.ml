@@ -1,6 +1,7 @@
 open Passe
 open Passe_js
 open Common
+module Log = (val Logging.log_module "account_settings")
 
 open Vdoml
 open Html
@@ -9,14 +10,19 @@ open Bootstrap
 type state = {
 	error: string option;
 	user: Client_auth.authenticated_user_state;
+	password_confirmation: string;
 }
 
 type internal_message = [
 	| `delete_account
+	| `password_confirmation of string
+	| `error of string option
 ]
 
 let string_of_message : internal_message -> string = function
 	| `delete_account -> "`delete_account"
+	| `password_confirmation p -> "`password_confirmation " ^ (String.make (String.length p) '*')
+	| `error error -> "`error " ^ (Option.to_string quote_string error)
 
 type message = [
 	| internal_message
@@ -132,75 +138,64 @@ type message = [
 (* 	) () *)
 (* ) in *)
 (*  *)
-(* let user_delete_section ~token ~close () = ( *)
-(* 	let error, set_error = S.create None in *)
-(* 	let error_widget = error *)
-(* 		|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[ *)
-(* 			child i ~cls:"glyphicon glyphicon-remove" (); *)
-(* 		] ()) *)
-(* 		|> Passe_ui.stream in *)
-(* 	let password, set_password = S.create "" in *)
-(* 	let password_field = input_of_signal ~update:set_password password in *)
-(* 	let () = ( *)
-(* 		password_field#attr "type" "password"; *)
-(* 		password_field#attr "class" "form-control"; *)
-(* 	) in *)
-(*  *)
-(* 	child div ~cls:"form-horizontal" ~children:[ *)
-(* 		error_widget; *)
-(* 		row `XS ~cls:"form-group" [ *)
-(* 			col ~size:4 [control_label "Password"]; *)
-(* 			col [frag password_field ]; *)
-(* 		]; *)
-(*  *)
-(* 		row `XS ~collapse:true [ *)
-(* 			col ~size:8 ~offset:4 ~cls:"text-right" [ *)
-(* 				child span ~cls:"text-muted" ~text:"Careful now... " (); *)
-(* 				child input ~cls:"btn btn-danger submit" ~attrs:[("type","submit"); ("value","Delete account")] (); *)
-(* 			]; *)
-(* 		]; *)
-(* 	] ~mechanism:(fun form -> *)
-(* 		let submit_button = form##querySelector(Js.string ".submit") |> non_null in *)
-(* 		Lwt_js_events.clicks submit_button (fun event _ -> *)
-(* 			stop event; *)
-(* 			if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then begin *)
-(* 				set_error None; *)
-(* 				let open Server in *)
-(* 				match_lwt post_json *)
-(* 					~token *)
-(* 					~data:(`Assoc ["password", `String (S.value password)]) *)
-(* 					Client_auth.delete_user_url *)
-(* 				with *)
-(* 					| OK _ -> *)
-(* 						set_auth_state `Logged_out; *)
-(* 						close (); *)
-(* 						return_unit; *)
-(* 					| Unauthorized msg -> *)
-(* 						set_error (Some (msg |> Option.default "Unauthorized")); *)
-(* 						return_unit; *)
-(* 					| Failed (_, msg,_) -> *)
-(* 						set_error (Some msg); *)
-(* 						return_unit *)
-(* 			end else return_unit *)
-(* 		) *)
-(* 	) (); *)
 (* ) in *)
 
-let hide = (emitter `hide)
 let password_change_section () : message html = text "TODO: password change"
 let preferences_section () : message html = text "TODO: preferences change"
-let user_delete_section () : message html = text "TODO: user delete"
 
-let view_panel (user:Client_auth.authenticated_user_state) =
-	Bootstrap.overlay ~cancel:hide [
+let user_delete_section =
+	let track_password_confirmation =
+		track_input_contents (fun value -> `password_confirmation value)
+	in
+	fun { error; password_confirmation } -> (
+		let error_widget = error
+			|> Option.map (fun err ->
+				p ~a:[a_class "text-danger"] [
+					i ~a:[a_class "glyphicon glyphicon-remove"] [];
+					text err;
+				]
+		) |> Option.default (text "") in
+
+		let password_field =
+			input ~a:[
+				a_input_type `Password;
+				a_class "form-control";
+				a_value password_confirmation;
+				a_oninput track_password_confirmation;
+			] ()
+		in
+
+		div ~a:[a_class "form-horizontal"] [
+			error_widget;
+			row `XS ~cls:"form-group" [
+				col ~size:4 [control_label "Password"];
+				col [password_field];
+			];
+
+			row `XS ~collapse:true [
+				col ~size:8 ~offset:4 ~cls:"text-right" [
+					span ~a:[a_class "text-muted"] [text "Careful now... "];
+					input ~a:[
+						a_class "btn btn-danger submit";
+						a_input_type `Submit;
+						a_value "Delete account";
+						a_onclick (emitter `delete_account);
+					] ();
+				];
+			];
+		]
+	)
+
+let view_panel instance state =
+	Bootstrap.overlay ~cancel:`hide [
 		Bootstrap.panel ~title:"Account settings" ([
 			preferences_section ();
 			hr ()
-		] @ (match user with
+		] @ (match state.user with
 				| `Active_user (_, token)  | `Saved_user (_, token) -> [
 					password_change_section ();
 					hr ();
-					user_delete_section ();
+					user_delete_section state;
 				]
 				| `Implicit_user _ | `Saved_implicit_user _ -> []
 			)
@@ -215,19 +210,52 @@ let button : (unit, unit) Ui.component = Ui.component
 	] [icon "cog"])
 	()
 
-let panel_command instance = function
-	| _ -> raise (AssertionError "TODO")
+let delete_account ~set_auth_state instance password token = (
+	if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then (
+		Ui.emit instance (`error None);
+		let open Server in
+		let open Lwt in
+		let return_error msg = Ui.emit instance (`error (Some msg)); return_unit in
+		Some (
+			match_lwt post_json
+				~token
+				~data:(`Assoc ["password", `String password])
+				Client_auth.delete_user_url
+			with
+				| OK _ ->
+					set_auth_state `Logged_out;
+					Ui.emit instance `hide;
+					return_unit
+				| Unauthorized msg ->
+					return_error (msg |> Option.default "Unauthorized")
+				| Failed (_, msg,_) ->
+					return_error msg
+		)
+	) else None
+)
 
-let panel : (state, message) Ui.component = Ui.component
-	~view:(fun instance { user } -> view_panel user)
-	~command:panel_command
-	()
+let panel_command sync =
+	let set_auth_state = sync.Sync.set_auth_state in
+	let delete_account = delete_account ~set_auth_state in
+	(fun instance state msg -> match msg with
+		| `delete_account ->
+			Client_auth.token_of_authenticated state.user
+				|> Option.bind (delete_account instance state.password_confirmation)
+		| `hide -> Ui.emit instance (`password_confirmation ""); None
+		| _ -> None
+	)
+
+let panel sync : (state, message) Ui.component =
+	Ui.component ~view:view_panel ~command:(panel_command sync) ()
 
 let initial auth_state = {
 	user = auth_state;
 	error = None;
+	password_confirmation = "";
 }
 
 let update state = function
 	| `delete_account -> state
+	| `password_confirmation password_confirmation -> { state with password_confirmation }
+	| `error error -> { state with error }
 

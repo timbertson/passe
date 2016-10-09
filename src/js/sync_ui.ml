@@ -365,12 +365,6 @@ let view_sync_state = (function
 		]
 	)
 
-(* TODO: inline in vdoml? *)
-let track_contents constructor = a_oninput (Html.handler (fun evt ->
-	Event.input_contents evt |> Option.map (fun text ->
-		Event.return `Unhandled (`edit (constructor text))
-	) |> Event.optional))
-
 let emit_on_return instance action : message attr = a_onkeydown (handler (Ui.bind instance (fun state evt ->
 	evt
 		|> Event.keyboard_event
@@ -382,8 +376,8 @@ let emit_on_return instance action : message attr = a_onkeydown (handler (Ui.bin
 
 let view_login_form instance =
 	let submit_on_return = emit_on_return instance `request_login in
-	let track_username = track_contents (fun text -> `username text) in
-	let track_password = track_contents (fun text -> `passe_password text) in
+	let track_username = track_input_contents (fun text -> `edit (`username text)) in
+	let track_password = track_input_contents (fun text -> `edit (`passe_password text)) in
 
 	fun stored_username {error; login_form=form} -> (
 		let space = text " " in
@@ -404,7 +398,7 @@ let view_login_form instance =
 						a_placeholder "User";
 						a_input_type `Text;
 						a_value (Option.default "" (form.username |> Option.or_ stored_username));
-						track_username;
+						a_oninput track_username;
 						submit_on_return;
 					] ();
 				];
@@ -418,7 +412,7 @@ let view_login_form instance =
 						a_name "password";
 						a_placeholder "password";
 						a_value (Option.default "" form.password);
-						track_password;
+						a_oninput track_password;
 						submit_on_return;
 					] ();
 				];

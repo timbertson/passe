@@ -742,7 +742,8 @@ let update ~sync_ui_update ~storage_provider = fun state message ->
 			{ state with sync_state = sync_ui_update state.sync_state msg }
 		| Account_settings msg ->
 			{ state with
-				account_settings = Account_settings.update state.account_settings msg
+				account_settings = state.account_settings
+					|> Option.map (fun state -> Account_settings.update state msg);
 			}
 		| Hacky_state_override state -> state
 	in
@@ -796,12 +797,11 @@ let view instance = fun { incognito } ->
 		div ~a:[a_class "container"] [ logo () ];
 	]
 
-let view_overlay instance =
-	let account_settings_panel = Ui.child
-		~message:account_settings_message (Account_settings.panel) instance in
+let view_overlay sync instance =
+	let account_settings_panel = Ui.child ~message:account_settings_message
+		(Account_settings.panel sync) instance in
 	(fun { dialog; account_settings } ->
 		let open Html in
-		let close = emitter Dismiss_overlay in
 		let inject_html elem =
 			elem##innerHTML <- Js.string (
 				About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
@@ -809,7 +809,7 @@ let view_overlay instance =
 		match dialog with
 			| None -> text ""
 			| Some `about ->
-				Bootstrap.overlay ~cancel:close [
+				Bootstrap.overlay ~cancel:Dismiss_overlay [
 					Bootstrap.panel ~title:"About Passé" [
 						div [] |> Ui.hook ~create:inject_html
 					]
@@ -830,7 +830,7 @@ let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js
 	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
 
 	let overlay_tasks = Tasks.init () in
-	let overlay_component = Ui.root_component ~update:(gen_updater overlay_tasks) ~view:view_overlay initial_state in
+	let overlay_component = Ui.root_component ~update:(gen_updater overlay_tasks) ~view:(view_overlay sync) initial_state in
 	Tasks.sync overlay_tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 	);
