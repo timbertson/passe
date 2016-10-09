@@ -51,7 +51,7 @@ let html ~implicit_auth ~offline_access () =
 
 					var tag = function(name, text) {
 						var node=document.createElement(name);
-						node.appendChild(text);
+						node.appendChild(document.createTextNode(text));
 						e.appendChild(node);
 					}
 

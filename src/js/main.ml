@@ -15,15 +15,17 @@ let non_empty_string : string -> string option = Option.non_empty ~zero:""
 let default_empty_string : string option -> string = Option.default ""
 
 exception Fail
-type dialog_type = [ `about ]
+type dialog_type = [ `about | `account_settings ]
 type t = {
 	incognito : bool;
 	dialog: dialog_type option;
 	sync_state: Sync_ui.state;
+	account_settings: Account_settings.state option;
 }
 
 let string_of_dialog = function
 	| `about -> "`about"
+	| `account_settings -> "`account_settings"
 
 let string_of_state = function { incognito; dialog; sync_state } ->
 	"{ incognito = " ^ (string_of_bool incognito) ^
@@ -34,15 +36,21 @@ let string_of_state = function { incognito; dialog; sync_state } ->
 type message =
 	| Toggle_incognito
 	| Show_about_dialog
+	| Show_account_settings
 	| Dismiss_overlay
-	| Sync of Sync_ui.message
+	| Sync of Sync_ui.internal_message
+	| Account_settings of Account_settings.internal_message
+	| Auth_state of Client_auth.auth_state
 	| Hacky_state_override of t (* Remove me, obviously *)
 
 let string_of_message = function
 	| Toggle_incognito -> "Toggle_incognito"
 	| Show_about_dialog -> "Show_about_dialog"
+	| Show_account_settings -> "Show_account_settings"
 	| Dismiss_overlay -> "Dismiss_overlay"
 	| Sync msg -> "Sync " ^ (Sync_ui.string_of_message msg)
+	| Auth_state auth -> "Auth_state " ^ (Client_auth.string_of_auth_state auth)
+	| Account_settings msg -> "Account_settings " ^ (Account_settings.string_of_message msg)
 	| Hacky_state_override _ -> "Hacky_state_override (...)"
 
 let check cond = Printf.ksprintf (function s ->
@@ -699,7 +707,16 @@ let password_form sync : #Dom_html.element Passe_ui.widget = (
 	form
 )
 
-let sync_ui_message msg = Sync msg
+(* map component messages into toplevel messages,
+ * removing messages which need to be handled by this component *)
+let sync_ui_message (msg:Sync_ui.message) = match msg with
+	| `show_account_settings -> Show_account_settings
+	| `auth_state auth -> Auth_state auth
+	| #Sync_ui.internal_message as msg -> Sync msg
+
+let account_settings_message (msg:Account_settings.message) = match msg with
+	| `hide -> Dismiss_overlay
+	| #Account_settings.internal_message as msg -> Account_settings msg
 
 let update ~sync_ui_update ~storage_provider = fun state message ->
 	Log.debug (fun m->m "message: %s" (string_of_message message));
@@ -710,10 +727,23 @@ let update ~sync_ui_update ~storage_provider = fun state message ->
 			{ state with incognito }
 		| Show_about_dialog ->
 			{ state with dialog = Some `about }
+		| Show_account_settings ->
+			{ state with dialog = Some `account_settings }
 		| Dismiss_overlay ->
 			{ state with dialog = None }
+		| Auth_state auth ->
+			let account_settings = auth
+				|> Client_auth.authenticated_of_user_state
+				|> Option.map Account_settings.initial
+			in
+			let sync_state = sync_ui_update state.sync_state (`auth_state auth) in
+			{ state with sync_state; account_settings }
 		| Sync msg ->
 			{ state with sync_state = sync_ui_update state.sync_state msg }
+		| Account_settings msg ->
+			{ state with
+				account_settings = Account_settings.update state.account_settings msg
+			}
 		| Hacky_state_override state -> state
 	in
 	Log.debug (fun m->m " -> state: %s" (string_of_state state));
@@ -724,6 +754,7 @@ let initial_state initial_sync_state =
 		incognito = false;
 		dialog = None;
 		sync_state = initial_sync_state;
+		account_settings = None;
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
@@ -765,21 +796,29 @@ let view instance = fun { incognito } ->
 		div ~a:[a_class "container"] [ logo () ];
 	]
 
-let view_overlay instance = fun { dialog } ->
-	let open Html in
-	let close = emitter Dismiss_overlay in
-	let inject_html elem =
-		elem##innerHTML <- Js.string (
-			About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
-		) in
-	match dialog with
-		| None -> text ""
-		| Some `about ->
-			Bootstrap.overlay ~cancel:close [
-				Bootstrap.panel ~title:"About Passé" [
-					div [] |> Ui.hook ~create:inject_html
+let view_overlay instance =
+	let account_settings_panel = Ui.child
+		~message:account_settings_message (Account_settings.panel) instance in
+	(fun { dialog; account_settings } ->
+		let open Html in
+		let close = emitter Dismiss_overlay in
+		let inject_html elem =
+			elem##innerHTML <- Js.string (
+				About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
+			) in
+		match dialog with
+			| None -> text ""
+			| Some `about ->
+				Bootstrap.overlay ~cancel:close [
+					Bootstrap.panel ~title:"About Passé" [
+						div [] |> Ui.hook ~create:inject_html
+					]
 				]
-			]
+			| Some `account_settings ->
+				account_settings
+					|> Option.map account_settings_panel
+					|> Option.default (text "Not logged in")
+	)
 
 let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in

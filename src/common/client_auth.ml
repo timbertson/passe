@@ -128,6 +128,10 @@ module Make (Server:Server.Sig) = struct
 	let token_of_authenticated (auth: authenticated_user_state) = match auth with
 		| `Active_user (_, token) | `Saved_user (_, token) -> Some token
 		| `Implicit_user _ | `Saved_implicit_user _ -> None
+	
+	let authenticated_of_user_state (auth: auth_state) = match auth with
+		| #authenticated_user_state as state -> Some state
+		| _ -> None
 
 	let username_key = "user"
 
