@@ -27,7 +27,7 @@ type state = {
 
 let string_of_login_form = function { username; password } ->
 	"{ username = " ^ (Option.to_string quote_string username) ^
-	"; password = " ^ (Option.to_string (fun s -> "( ... )") password) ^
+	"; password = " ^ (Option.to_string (fun s -> String.make (String.length s) '*') password) ^
 	" }"
 
 let string_of_ui_state = function { error; busy; login_form } ->
@@ -77,6 +77,19 @@ let string_of_message : message -> string = function
 	| `request_login -> "`request_login"
 	| `request_signup -> "`request_signup"
 	| `edit field -> "`edit (" ^ (string_of_field field) ^ ")"
+
+let login_form_of_auth_state current: Client_auth.auth_state -> login_form = function
+	| `Logged_out | `Anonymous
+		-> { username = None; password = None }
+
+	| `Failed_login u
+	| `Saved_user (u, _)
+	| `Saved_implicit_user (u, _)
+		-> { current with username = Some u }
+
+	| `Active_user _
+	| `Implicit_user _
+		-> current
 
 (* let ui state = ( *)
 (* 	let last_sync_signal = state.last_sync#signal in *)
@@ -713,8 +726,13 @@ let command sync instance : (state, message) Ui.command_fn  = (
 	let logout = Ui.supplantable (fun token ->
 		logout ~set_auth_state token |> Lwt.map (fun _ -> None)
 	) instance in
+
 	let login = Ui.supplantable (fun login_form ->
 		submit_form ~set_auth_state Client_auth.login_url instance login_form
+	) instance in
+
+	let signup = Ui.supplantable (fun login_form ->
+		submit_form ~set_auth_state Client_auth.signup_url instance login_form
 	) instance in
 
 	let sync_state = sync_state sync in
@@ -734,6 +752,7 @@ let command sync instance : (state, message) Ui.command_fn  = (
 	fun state message -> match message with
 		| `request_logout token -> Some (logout token)
 		| `request_login -> Some (login state.ui.login_form)
+		| `request_signup -> Some (signup state.ui.login_form)
 		| `auth_state auth -> Some (background_sync (Some auth))
 		| `request_sync -> Some (background_sync None)
 		| _ -> None
@@ -750,7 +769,13 @@ let update sync =
 	in
 	let update state (message:message) =
 		match message with
-		| `auth_state auth_state -> { state with auth_state }
+		| `auth_state auth_state ->
+			{ state with
+				auth_state;
+				ui = { state.ui with
+					login_form = login_form_of_auth_state state.ui.login_form auth_state;
+				};
+			}
 		| `sync_state sync_state -> { state with sync_state }
 		| `error _ | `busy _ | `edit _ as message -> { state with ui = update_ui state.ui message }
 
@@ -852,6 +877,7 @@ let view_login_form instance =
 						a_input_type `Password;
 						a_name "password";
 						a_placeholder "password";
+						a_value (Option.default "" form.password);
 						track_password;
 						submit_on_return;
 					] ();
@@ -873,49 +899,6 @@ let view_login_form instance =
 
 				div ~a:[a_class "clearfix"] [];
 			])
-			(* ~mechanism:(fun elem -> *)
-			(* 	let signup_button = elem##querySelector(Js.string ".signup") |> non_null in *)
-			(* 	let login_button = elem##querySelector(Js.string ".login") |> non_null in *)
-			(* 	(* XXX just search for any `input`, rather than binding events on each of these individually *) *)
-			(* 	let password_input = elem##querySelector(Js.string ".password-input") |> non_null in *)
-			(* 	let username_input = elem##querySelector(Js.string ".username-input") |> non_null in *)
-			(* 	let submit url = *)
-			(* 		Log.info (fun m->m "form submitted"); *)
-			(* 		let data = `Assoc (get_form_contents elem *)
-			(* 			|> List.map (fun (name, value) -> (name, `String value))) in *)
-			(* 		let open Server in *)
-			(* 		let open Either in *)
-			(* 		set_error None; *)
-			(* 		lwt response = Server.post_json ~data url in *)
-			(* 		let open Server in *)
-			(* 		let () = match response with *)
-			(* 			| OK response -> *)
-			(* 				set_auth_state (`Active_user (Auth.get_response_credentials response)) *)
-			(* 			| Failed (_, message, _) -> *)
-			(* 					set_error (Some message) *)
-			(* 			| Unauthorized _ -> assert false *)
-			(* 		in *)
-			(* 		return_unit *)
-			(* 	in *)
-			(* 	let submit_on_return event _ = *)
-			(* 		if event##keyCode = Keycode.return then ( *)
-			(* 			stop event; *)
-			(* 			submit Client_auth.login_url *)
-			(* 		) else return_unit *)
-			(* 	in *)
-			(*  *)
-			(* 	Lwt_js_events.clicks signup_button (fun event _ -> *)
-			(* 		stop event; *)
-			(* 		submit Client_auth.signup_url *)
-			(* 	) *)
-			(* 	<&> *)
-			(* 	Lwt_js_events.clicks login_button (fun event _ -> *)
-			(* 		stop event; *)
-			(* 		submit Client_auth.login_url *)
-			(* 	) *)
-			(* 	<&> Lwt_js_events.keydowns password_input submit_on_return *)
-			(* 	<&> Lwt_js_events.keydowns username_input submit_on_return *)
-			(* ) () *)
 		];
 	)
 

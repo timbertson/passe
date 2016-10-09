@@ -51,8 +51,8 @@ let html ~implicit_auth ~offline_access () =
 
 					var tag = function(name, text) {
 						var node=document.createElement(name);
-						node.appendContent(text);
-						e.appendNode(node);
+						node.appendChild(text);
+						e.appendChild(node);
 					}
 
 					tag("h1", "Uncaught Error");
