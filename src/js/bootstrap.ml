@@ -107,7 +107,7 @@ let panel ~title ?close children =
 		| None -> header
 		| Some close ->
 			(button ~a:[
-				a_onclick close;
+				a_onclick (emitter close);
 				a_class "link pull-right close"
 			] [icon "remove"]) :: header
 	in

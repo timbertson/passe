@@ -1,6 +1,7 @@
 open Passe
 open Passe_js
 open Common
+open React_ext
 module Log = (val Logging.log_module "account_settings")
 
 open Vdoml
@@ -8,79 +9,41 @@ open Html
 open Bootstrap
 
 type state = {
-	error: string option;
 	user: Client_auth.authenticated_user_state;
+	db: Store.t;
+
+	user_delete_error: string option;
 	password_confirmation: string;
+
+	preferences_error: string option;
+	password_length_input: string;
+	password_length: int option;
 }
 
 type internal_message = [
+	| `db_changed of Store.t
 	| `delete_account
 	| `password_confirmation of string
-	| `error of string option
+	| `user_delete_error of string option
+	| `preferences_error of string option
+	| `save_preferences
+	| `password_length of string
 ]
 
 let string_of_message : internal_message -> string = function
 	| `delete_account -> "`delete_account"
 	| `password_confirmation p -> "`password_confirmation " ^ (String.make (String.length p) '*')
-	| `error error -> "`error " ^ (Option.to_string quote_string error)
+	| `user_delete_error error -> "`user_delete_error " ^ (Option.to_string quote_string error)
+	| `preferences_error error -> "`preferences_error " ^ (Option.to_string quote_string error)
+	| `save_preferences -> "`save_preferences"
+	| `password_length len -> "`password_length " ^ len
+	| `db_changed _ -> "`db_changed"
 
 type message = [
 	| internal_message
 	| `hide
 ]
 
-(* let account_settings_button instance = ( *)
-(* let preferences_section ~close () = ( *)
-(* 	let error, set_error = S.create None in *)
-(* 	let error_widget = error *)
-(* 		|> optional_signal_content (fun err -> Passe_ui.p ~cls:"text-danger" ~text:err ~children:[ *)
-(* 			icon "remove"; *)
-(* 		] ()) *)
-(* 		|> Passe_ui.stream in *)
-(* 	let db = S.value state.db_fallback in *)
-(* 	let current_length = Store.((get_defaults db).default_length) in *)
-(* 	let length, set_length = S.create current_length in *)
-(* 	let set_length str = *)
-(* 		match (try Some (int_of_string str) with _ -> None) with *)
-(* 			| Some len -> set_length len *)
-(* 			| None -> set_error (Some "Not a number") *)
-(* 	in *)
-(* 	let length_field = input_of_signal ~update:set_length (S.map string_of_int length) in *)
-(* 	length_field#attr "class" "form-control"; *)
-(*  *)
-(* 	child div ~cls:"form-horizontal" ~children:[ *)
-(* 		error_widget; *)
-(*  *)
-(* 		row `XS ~cls:"form-group" [ *)
-(* 			col ~size:4 [control_label "Default password length"]; *)
-(* 			col [frag length_field]; *)
-(* 		]; *)
-(*  *)
-(* 		row `XS [ *)
-(* 			col ~size:8 ~offset:4 [ *)
-(* 				child input ~cls:"btn btn-primary save" ~attrs:[("type","submit"); ("value","Save defaults")] (); *)
-(* 			]; *)
-(* 		]; *)
-(* 	] ~mechanism:(fun form -> *)
-(* 		let submit_button = form##querySelector(Js.string ".save") |> non_null in *)
-(* 		Lwt_js_events.clicks submit_button (fun event _ -> *)
-(* 			stop event; *)
-(* 			let length = S.value length in *)
-(* 			let saved = if length = current_length *)
-(* 				then true *)
-(* 				else Sync.save_default ~state (`Length length) *)
-(* 			in *)
-(* 			if saved then ( *)
-(* 				Dom_html.window##alert (Js.string "Defaults saved"); *)
-(* 				close (); *)
-(* 			) else ( *)
-(* 				Dom_html.window##alert (Js.string "Unable to save DB"); *)
-(* 			); *)
-(* 			return_unit *)
-(* 		) *)
-(* 	) (); *)
-(* ) in *)
-(*  *)
 (* let password_change_section ~token ~close () = ( *)
 (* 	let error, set_error = S.create None in *)
 (* 	let error_widget = error *)
@@ -137,18 +100,62 @@ type message = [
 (* 		) *)
 (* 	) () *)
 (* ) in *)
-(*  *)
-(* ) in *)
 
 let password_change_section () : message html = text "TODO: password change"
-let preferences_section () : message html = text "TODO: preferences change"
+
+let current_password_length db = Store.((get_defaults db).default_length)
+
+let preferences_section =
+	let track_password_length = track_input_contents (fun str -> `password_length str) in
+
+	fun { preferences_error; db; password_length; password_length_input } -> (
+		let error_widget = preferences_error
+			|> Option.map (fun err ->
+				p ~a:[a_class "text-danger"] [
+					icon "remove";
+					text err;
+				]
+			) |> Option.default empty
+		in
+
+		let password_length_unchanged = match password_length with
+			| Some len when len <> (current_password_length db) -> false
+			| _ -> true
+		in
+
+		let length_field = input ~a:[
+			a_oninput track_password_length;
+			a_value password_length_input;
+			a_class "form-control";
+		] () in
+
+		div ~a:[a_class "form-horizontal"] [
+			error_widget |> Ui.identify (`String "error");
+			row `XS ~cls:"form-group" [
+				col ~size:4 [control_label "Default password length"];
+				col [length_field];
+			];
+
+			row `XS [
+				col ~size:8 ~offset:4 [
+					input ~a:[
+						a_class "btn btn-primary";
+						a_input_type `Submit;
+						a_value "Save defaults";
+						a_onclick (emitter `save_preferences);
+						a_disabled password_length_unchanged;
+					] ();
+				];
+			];
+		]
+	)
 
 let user_delete_section =
 	let track_password_confirmation =
 		track_input_contents (fun value -> `password_confirmation value)
 	in
-	fun { error; password_confirmation } -> (
-		let error_widget = error
+	fun { user_delete_error; password_confirmation } -> (
+		let error_widget = user_delete_error
 			|> Option.map (fun err ->
 				p ~a:[a_class "text-danger"] [
 					i ~a:[a_class "glyphicon glyphicon-remove"] [];
@@ -166,7 +173,7 @@ let user_delete_section =
 		in
 
 		div ~a:[a_class "form-horizontal"] [
-			error_widget;
+			error_widget |> Ui.identify (`String "error");
 			row `XS ~cls:"form-group" [
 				col ~size:4 [control_label "Password"];
 				col [password_field];
@@ -186,10 +193,11 @@ let user_delete_section =
 		]
 	)
 
-let view_panel instance state =
-	Bootstrap.overlay ~cancel:`hide [
-		Bootstrap.panel ~title:"Account settings" ([
-			preferences_section ();
+let view_panel instance =
+	let panel ~title children = Bootstrap.overlay ~cancel:`hide [Bootstrap.panel ~close:`hide ~title children] in
+	(fun state ->
+		panel ~title:"Account settings" ([
+			preferences_section state;
 			hr ()
 		] @ (match state.user with
 				| `Active_user (_, token)  | `Saved_user (_, token) -> [
@@ -200,7 +208,7 @@ let view_panel instance state =
 				| `Implicit_user _ | `Saved_implicit_user _ -> []
 			)
 		)
-	]
+	)
 
 let button : (unit, unit) Ui.component = Ui.component
 	~view:(fun instance state -> a ~a:[
@@ -212,10 +220,10 @@ let button : (unit, unit) Ui.component = Ui.component
 
 let delete_account ~set_auth_state instance password token = (
 	if (Dom_html.window##confirm (Js.string "Are you SURE?") |> Js.to_bool) then (
-		Ui.emit instance (`error None);
+		Ui.emit instance (`user_delete_error None);
 		let open Server in
 		let open Lwt in
-		let return_error msg = Ui.emit instance (`error (Some msg)); return_unit in
+		let return_error msg = Ui.emit instance (`user_delete_error (Some msg)); return_unit in
 		Some (
 			match_lwt post_json
 				~token
@@ -234,28 +242,72 @@ let delete_account ~set_auth_state instance password token = (
 	) else None
 )
 
-let panel_command sync =
+let save_preferences ~sync instance { password_length; db } = (
+	let current = current_password_length db in
+	let password_length = password_length |> Option.default current in
+	let saved = if current = password_length
+		then true
+		else Sync.save_default ~state:sync (`Length password_length)
+	in
+	if saved then (
+		Dom_html.window##alert (Js.string "Defaults saved")
+	) else (
+		Dom_html.window##alert (Js.string "Unable to save DB")
+	)
+)
+
+let panel_command sync instance =
 	let set_auth_state = sync.Sync.set_auth_state in
 	let delete_account = delete_account ~set_auth_state in
-	(fun instance state msg -> match msg with
+	Passe_ui.emit_changes instance sync.Sync.db_fallback (fun db -> `db_changed db);
+	(fun state msg -> match msg with
 		| `delete_account ->
 			Client_auth.token_of_authenticated state.user
 				|> Option.bind (delete_account instance state.password_confirmation)
 		| `hide -> Ui.emit instance (`password_confirmation ""); None
+		| `save_preferences -> save_preferences ~sync instance state; None
 		| _ -> None
 	)
 
 let panel sync : (state, message) Ui.component =
 	Ui.component ~view:view_panel ~command:(panel_command sync) ()
 
-let initial auth_state = {
-	user = auth_state;
-	error = None;
-	password_confirmation = "";
-}
+let reset_preferences state =
+	let current_length = current_password_length state.db in
+	{ state with
+		password_length_input = current_length |> string_of_int;
+		password_length = None;
+		preferences_error = None;
+	}
 
-let update state = function
-	| `delete_account -> state
+let initial sync auth_state =
+	let db = S.value sync.Sync.db_fallback in
+	{
+		user = auth_state;
+		user_delete_error = None;
+		preferences_error = None;
+		password_confirmation = "";
+		db;
+		password_length_input = "";
+		password_length = None;
+	} |> reset_preferences
+
+let rec update state = function
 	| `password_confirmation password_confirmation -> { state with password_confirmation }
-	| `error error -> { state with error }
-
+	| `user_delete_error user_delete_error -> { state with user_delete_error }
+	| `preferences_error preferences_error -> { state with preferences_error }
+	| `password_length password_length_input -> (
+		let state length err = { state with
+			password_length_input;
+			password_length = length;
+			preferences_error = err;
+		} in
+		match (try Some (int_of_string password_length_input) with _ -> None) with
+			| None -> state None (Some "Not a number")
+			| Some len -> state (Some len) None
+	)
+	(* command-only messages *)
+	| `delete_account -> state
+	| `save_preferences -> state
+	| `db_changed db ->
+			{ state with db } |> reset_preferences

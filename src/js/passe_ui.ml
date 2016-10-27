@@ -575,3 +575,10 @@ let get_form_contents (elem:Dom_html.htmlElement Js.t) =
 		let input = Opt.get input (fun () -> failwith "failed to cast input element") in
 		(input##name |> to_string, input##value |> to_string)
 	)
+
+let emit_changes instance ?(initial=false) signal message_of_state =
+	let open Vdoml in
+	if initial then S.value signal |> message_of_state |> (Ui.emit instance);
+	signal |> S.changes |> E.map message_of_state
+		|> Lwt_react.E.to_stream |> Lwt_stream.iter (Ui.emit instance)
+		|> Ui.async instance

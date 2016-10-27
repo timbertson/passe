@@ -718,7 +718,7 @@ let account_settings_message (msg:Account_settings.message) = match msg with
 	| `hide -> Dismiss_overlay
 	| #Account_settings.internal_message as msg -> Account_settings msg
 
-let update ~sync_ui_update ~storage_provider = fun state message ->
+let update ~sync ~sync_ui_update ~storage_provider = fun state message ->
 	Log.debug (fun m->m "message: %s" (string_of_message message));
 	let state = match message with
 		| Toggle_incognito ->
@@ -734,7 +734,7 @@ let update ~sync_ui_update ~storage_provider = fun state message ->
 		| Auth_state auth ->
 			let account_settings = auth
 				|> Client_auth.authenticated_of_user_state
-				|> Option.map Account_settings.initial
+				|> Option.map (Account_settings.initial sync)
 			in
 			let sync_state = sync_ui_update state.sync_state (`auth_state auth) in
 			{ state with sync_state; account_settings }
@@ -759,10 +759,10 @@ let initial_state initial_sync_state =
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater ~sync_ui_update ~storage_provider initial_state =
+let gen_updater ~sync ~sync_ui_update ~storage_provider initial_state =
 	let open Vdoml in
 	let toplevel_ui_instances = ref [] in
-	let update = update ~sync_ui_update ~storage_provider in
+	let update = update ~sync ~sync_ui_update ~storage_provider in
 	fun (tasks:(t, message) Ui.Tasks.t) -> (
 		let instance = ref None in
 		Ui.Tasks.sync tasks (fun inst ->
@@ -800,6 +800,7 @@ let view instance = fun { incognito } ->
 let view_overlay sync instance =
 	let account_settings_panel = Ui.child ~message:account_settings_message
 		(Account_settings.panel sync) instance in
+	let overlay = Bootstrap.overlay ~cancel:Dismiss_overlay in
 	(fun { dialog; account_settings } ->
 		let open Html in
 		let inject_html elem =
@@ -809,8 +810,8 @@ let view_overlay sync instance =
 		match dialog with
 			| None -> text ""
 			| Some `about ->
-				Bootstrap.overlay ~cancel:Dismiss_overlay [
-					Bootstrap.panel ~title:"About Passé" [
+				overlay [
+					Bootstrap.panel ~close:Dismiss_overlay ~title:"About Passé" [
 						div [] |> Ui.hook ~create:inject_html
 					]
 				]
@@ -824,7 +825,7 @@ let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js
 	let module Tasks = Ui.Tasks in
 	let initial_sync_state, sync_ui_update = Sync_ui.update sync in
 	let initial_state = initial_state initial_sync_state in
-	let gen_updater = gen_updater ~sync_ui_update ~storage_provider initial_state in
+	let gen_updater = gen_updater ~sync ~sync_ui_update ~storage_provider initial_state in
 
 	let main_tasks = Tasks.init () in
 	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
@@ -842,7 +843,6 @@ let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js
 		fun state -> child state.sync_state
 	) initial_state in
 
-	Ui.set_log_level Logs.Info;
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
 	let all_content = Passe_ui.div
@@ -906,16 +906,20 @@ let main ~storage_provider sync = (
 let () = (
 	Logging.set_reporter (Logs_browser.console_reporter ());
 	Log.app (fun m->m "passe %s" (Version.pretty ()));
-	Logs.(set_level ~all:true (Some (
+	let app_level, vdoml_level = (
 		let uri = !Server.root_url in
+		let open Logs in
 		match Uri.fragment uri with
-		| Some "debug" -> Debug
-		| Some "info" -> Info
+		| Some "trace" -> (Debug, None)
+		| Some "debug" -> (Debug, Some Info)
+		| Some "info" -> (Info, None)
 		| _ -> (match Uri.host uri with
-			| Some "localhost" -> Info
-			| _ -> Warning
+			| Some "localhost" -> (Info, None)
+			| _ -> (Warning, None)
 		)
-	)));
+	) in
+	Logs.set_level ~all:true (Some app_level);
+	vdoml_level |> Option.default app_level |> Ui.set_log_level;
 
 	let storage_provider = (new Local_storage.provider (true)) in
 	let config_provider = Config.build storage_provider in

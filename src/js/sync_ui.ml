@@ -279,13 +279,8 @@ let command sync instance : (state, message) Ui.command_fn  = (
 
 	(* kick off initial background syc *)
 	background_sync (Some (S.value sync.Sync.auth_state)) |> Ui.async instance;
-	let emit_changes signal message_of_state =
-		signal |> S.changes |> E.map message_of_state
-			|> Lwt_react.E.to_stream |> Lwt_stream.iter (Ui.emit instance)
-			|> Ui.async instance
-	in
-	emit_changes sync.Sync.auth_state (fun s -> `auth_state s);
-	emit_changes sync_state (fun s -> `sync_state s);
+	Passe_ui.emit_changes instance sync.Sync.auth_state (fun s -> `auth_state s);
+	Passe_ui.emit_changes instance sync_state (fun s -> `sync_state s);
 
 	fun state message -> match message with
 		| `request_logout token -> Some (logout token)
