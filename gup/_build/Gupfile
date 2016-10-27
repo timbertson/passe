@@ -8,3 +8,5 @@ gup-js:
 	**/*.js
 gup-xen:
 	**/mir-console.xen
+clean:
+	**/clean

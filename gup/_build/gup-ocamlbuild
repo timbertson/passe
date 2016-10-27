@@ -44,7 +44,7 @@ fi
 set -x
 
 $rainbow $ocamlbuild_args \
-	-cflag -warn-error -cflag +a-3 \
+	-cflag -warn-error -cflag +A \
 	-build-dir "$BUILDDIR" -use-ocamlfind $FLAGS "$target"
 popd >/dev/null
 
