@@ -1,2 +1,4 @@
 #!bash -eu
-npm2nix package.json "$1"
+node2nix="$(nix-build --no-out-link -A nodePackages.node2nix '<nixpkgs>')"
+[ -d "$node2nix" ]
+"$node2nix/bin/node2nix" -i package.json -o "$1" --composition /dev/null --flatten

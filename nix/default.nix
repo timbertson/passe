@@ -61,22 +61,19 @@ in
 
 stdenv.mkDerivation (commonAttrs // (
 	if target == "client" then {} else let
-		npm_deps = pkgs.callPackage ./npm-deps.nix {
-			self = npm_deps // {
-				buildNodePackage = nodePackages.buildNodePackage;
-			};
-		};
+		nodeEnv = pkgs.callPackage ./node-env.nix {};
+		npm_deps = (pkgs.callPackage ./npm-deps.nix { inherit nodeEnv; }).package;
 		bootstrap = npm_deps.by-spec.bootstrap."3.2.0";
 		lessc = npm_deps.by-spec.less."*";
 		lessc_plugins = [
 			npm_deps.by-spec."less-plugin-clean-css"."*"
 		];
+		node_modules = "${npm_deps}/lib/node_modules/passe-deps/node_modules";
 
 	in ({
-		LESSC = "${lessc}/bin/lessc";
-		TWITTER_BOOTSTRAP = "${bootstrap}/lib/node_modules/bootstrap";
-		NODE_PATH = lib.concatStringsSep ":"
-			(map (base: "${base}/lib/node_modules") lessc_plugins);
+		LESSC = "${node_modules}/.bin/lessc";
+		TWITTER_BOOTSTRAP = "${node_modules}/bootstrap";
+		NODE_PATH = node_modules;
 		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
 	})
 ))
