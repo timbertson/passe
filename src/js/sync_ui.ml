@@ -27,7 +27,7 @@ type state = {
 
 let string_of_login_form = function { username; password } ->
 	"{ username = " ^ (Option.to_string quote_string username) ^
-	"; password = " ^ (Option.to_string (fun s -> String.make (String.length s) '*') password) ^
+	"; password = " ^ (Option.to_string mask_string password) ^
 	" }"
 
 let string_of_ui_state = function { error; busy; login_form } ->
@@ -279,7 +279,6 @@ let command sync instance : (state, message) Ui.command_fn  = (
 
 	(* kick off initial background syc *)
 	background_sync (Some (S.value sync.Sync.auth_state)) |> Ui.async instance;
-	Passe_ui.emit_changes instance sync.Sync.auth_state (fun s -> `auth_state s);
 	Passe_ui.emit_changes instance sync_state (fun s -> `sync_state s);
 
 	fun state message -> match message with
@@ -291,7 +290,7 @@ let command sync instance : (state, message) Ui.command_fn  = (
 		| _ -> None
 )
 
-let update sync =
+let update state (message:internal_message) =
 	let update_ui state message = match message with
 		| `error error -> { state with error }
 		| `busy busy -> { state with busy }
@@ -300,36 +299,33 @@ let update sync =
 			| `passe_password p -> { state with login_form = { state.login_form with password = Some p } }
 		)
 	in
-	let update state (message:internal_message) =
-		match message with
-		| `auth_state auth_state ->
-			{ state with
-				auth_state;
-				ui = { state.ui with
-					login_form = login_form_of_auth_state state.ui.login_form auth_state;
-				};
-			}
-		| `sync_state sync_state -> { state with sync_state }
-		| `error _ | `busy _ | `edit _ as message -> { state with ui = update_ui state.ui message }
-
-		(* used only for `command` side effects *)
-		| `request_sync | `request_logout _ | `request_login | `request_signup
-			-> state
-	in
-
-	let initial = {
-		ui = {
-			error = None;
-			busy = false;
-			login_form = {
-				username = None;
-				password = None;
+	match message with
+	| `auth_state auth_state ->
+		{ state with
+			auth_state;
+			ui = { state.ui with
+				login_form = login_form_of_auth_state state.ui.login_form auth_state;
 			};
+		}
+	| `sync_state sync_state -> { state with sync_state }
+	| `error _ | `busy _ | `edit _ as message -> { state with ui = update_ui state.ui message }
+
+	(* used only for `command` side effects *)
+	| `request_sync | `request_logout _ | `request_login | `request_signup
+		-> state
+
+let initial_state sync = {
+	ui = {
+		error = None;
+		busy = false;
+		login_form = {
+			username = None;
+			password = None;
 		};
-		auth_state = sync.Sync.auth_state |> S.value;
-		sync_state = sync_state sync |> S.value;
-	} in
-	(initial, update)
+	};
+	auth_state = sync.Sync.auth_state |> S.value;
+	sync_state = sync_state sync |> S.value;
+}
 
 type sync_state = {
 	sync_error : string option;

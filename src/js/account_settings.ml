@@ -32,7 +32,7 @@ type internal_message = [
 
 let string_of_message : internal_message -> string = function
 	| `delete_account -> "`delete_account"
-	| `password_confirmation p -> "`password_confirmation " ^ (String.make (String.length p) '*')
+	| `password_confirmation p -> "`password_confirmation " ^ (mask_string p)
 	| `user_delete_error error -> "`user_delete_error " ^ (Option.to_string quote_string error)
 	| `preferences_error error -> "`preferences_error " ^ (Option.to_string quote_string error)
 	| `save_preferences -> "`save_preferences"

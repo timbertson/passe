@@ -30,3 +30,5 @@ let print_string () s = s
 let identity x = x
 
 let quote_string s = "\"" ^ String.escaped s ^ "\""
+
+let mask_string s = String.make (String.length s) '*'
