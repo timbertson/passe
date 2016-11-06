@@ -211,6 +211,7 @@ let view_panel instance =
 	)
 
 let button : (unit, unit) Ui.component = Ui.component
+	~eq:(Pervasives.(=))
 	~view:(fun instance state -> a ~a:[
 		a_class "hover-reveal link settings-button";
 		a_title "Settings";
@@ -270,7 +271,7 @@ let panel_command sync instance =
 	)
 
 let panel sync : (state, message) Ui.component =
-	Ui.component ~view:view_panel ~command:(panel_command sync) ()
+	Ui.component ~view:view_panel ~eq:(=) ~command:(panel_command sync) ()
 
 let reset_preferences state =
 	let current_length = current_password_length state.db in

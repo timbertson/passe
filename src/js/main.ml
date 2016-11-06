@@ -24,6 +24,29 @@ type t = {
 	account_settings: Account_settings.state option;
 }
 
+let eq a b =
+	let {
+		incognito = incognito_a;
+		dialog = dialog_a;
+		sync_state = sync_state_a;
+		password_form = password_form_a;
+		account_settings = account_settings_a;
+	} = a in
+	let {
+		incognito = incognito_b;
+		dialog = dialog_b;
+		sync_state = sync_state_b;
+		password_form = password_form_b;
+		account_settings = account_settings_b;
+	} = b in
+	(
+		incognito_a = incognito_b &&
+		dialog_a = dialog_b &&
+		sync_state_a = sync_state_b &&
+		Password_form.eq password_form_a password_form_b &&
+		account_settings_a = account_settings_b
+	)
+
 let string_of_dialog = function
 	| `about -> "`about"
 	| `account_settings -> "`account_settings"
@@ -250,28 +273,28 @@ let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js
 	let gen_updater = gen_updater ~sync ~storage_provider initial_state in
 
 	let main_tasks = Tasks.init () in
-	let main_component = Ui.root_component ~update:(gen_updater main_tasks) ~view initial_state in
+	let main_component = Ui.root_component ~eq ~update:(gen_updater main_tasks) ~view initial_state in
 	Tasks.sync main_tasks (fun instance ->
 		Passe_ui.emit_changes instance sync.Sync.auth_state (fun s -> Auth_state s);
 	);
 
 
 	let overlay_tasks = Tasks.init () in
-	let overlay_component = Ui.root_component ~update:(gen_updater overlay_tasks) ~view:(view_overlay sync) initial_state in
+	let overlay_component = Ui.root_component ~eq ~update:(gen_updater overlay_tasks) ~view:(view_overlay sync) initial_state in
 	Tasks.sync overlay_tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 	);
 
 	let sync_tasks = Tasks.init () in
 	let sync_component = Sync_ui.component sync in
-	let sync_component = Ui.root_component ~update:(gen_updater sync_tasks) ~view:(fun instance ->
+	let sync_component = Ui.root_component ~eq ~update:(gen_updater sync_tasks) ~view:(fun instance ->
 		let child = Ui.child ~message:sync_ui_message sync_component instance in
 		fun state -> child state.sync_state
 	) initial_state in
 
 	let password_form_tasks = Tasks.init () in
 	let password_form_component = Password_form.component sync in
-	let password_form_component = Ui.root_component ~update:(gen_updater password_form_tasks) ~view:(fun instance ->
+	let password_form_component = Ui.root_component ~eq ~update:(gen_updater password_form_tasks) ~view:(fun instance ->
 		let child = Ui.child ~message:password_form_message password_form_component instance in
 		fun state -> child state.password_form
 	) initial_state in
@@ -343,7 +366,7 @@ let () = (
 		let uri = !Server.root_url in
 		let open Logs in
 		match Uri.fragment uri with
-		| Some "trace" -> (Debug, None)
+		| Some "trace" -> (Debug, Some Debug)
 		| Some "debug" -> (Debug, Some Info)
 		| Some "info" -> (Info, None)
 		| _ -> (match Uri.host uri with

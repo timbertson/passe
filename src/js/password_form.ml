@@ -31,6 +31,35 @@ type state = {
 	(* saved_domain_info : Store.record option; *)
 }
 
+let eq a b =
+	let {
+		domain = domain_a;
+		db = db_a;
+		master_password = master_password_a;
+		generated_password = generated_password_a;
+		active_input = active_input_a;
+		domain_suggestions = domain_suggestions_a;
+		domain_record = domain_record_a;
+	} = a in
+	let {
+		domain = domain_b;
+		db = db_b;
+		master_password = master_password_b;
+		generated_password = generated_password_b;
+		active_input = active_input_b;
+		domain_suggestions = domain_suggestions_b;
+		domain_record = domain_record_b;
+	} = b in
+	(
+		db_a == db_b && (* don't bother deep equality checking *)
+		domain_a = domain_b &&
+		master_password_a = master_password_b &&
+		generated_password_a = generated_password_b &&
+		active_input_a = active_input_b &&
+		domain_suggestions_a = domain_suggestions_b &&
+		domain_record_a = domain_record_b
+	)
+
 let initial_state sync = {
 	active_input = None;
 	domain = "";
@@ -654,4 +683,4 @@ let view sync instance : state -> internal_message Html.html =
 		form
 	)
 
-let component sync = Ui.component ~view:(view sync) ()
+let component sync = Ui.component ~eq ~view:(view sync) ()

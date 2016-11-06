@@ -496,4 +496,4 @@ let view instance =
 
 let component sync : (state, message) Ui.component =
 	let command = command sync in
-	Ui.component ~command ~view ()
+	Ui.component ~eq:(=) ~command ~view ()
