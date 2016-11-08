@@ -229,7 +229,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 				match !running_sync with
 					| Some (future,_) -> future
 					| None -> begin
-						let (future, sync_complete) as task = Lwt.wait () in
+						let (_future, sync_complete) as task = Lwt.wait () in
 						let finish err =
 							running_sync := None;
 							set_busy false;

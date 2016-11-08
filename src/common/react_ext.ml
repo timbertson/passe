@@ -1,6 +1,6 @@
 let opt_map = Option.map
 include React
-let never_eq = (fun a b -> false)
+let never_eq = (fun _ _ -> false)
 
 let editable_signal source =
 	let initial = (S.value source) in

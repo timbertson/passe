@@ -51,7 +51,7 @@ let string_of_dialog = function
 	| `about -> "`about"
 	| `account_settings -> "`account_settings"
 
-let string_of_state = function { incognito; dialog; sync_state } ->
+let string_of_state = function { incognito; dialog; sync_state; _ } ->
 	"{ incognito = " ^ (string_of_bool incognito) ^
 	"; dialog = " ^ (Option.to_string string_of_dialog dialog) ^
 	"; sync_state = " ^ (Sync_ui.string_of_state sync_state) ^
@@ -205,7 +205,7 @@ let initial_state sync =
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater ~sync ~storage_provider initial_state =
+let gen_updater ~sync ~storage_provider =
 	let open Vdoml in
 	let toplevel_ui_instances = ref [] in
 	let update = update ~sync ~storage_provider in
@@ -234,7 +234,7 @@ let gen_updater ~sync ~storage_provider initial_state =
 		update
 	)
 
-let view instance = fun { incognito } ->
+let view _instance = fun { incognito; _ } ->
 	let open Html in
 	div [
 		div ~a:[a_class "container footer"] [
@@ -247,7 +247,7 @@ let view_overlay sync instance =
 	let account_settings_panel = Ui.child ~message:account_settings_message
 		(Account_settings.panel sync) instance in
 	let overlay = Bootstrap.overlay ~cancel:Dismiss_overlay in
-	(fun { dialog; account_settings } ->
+	(fun { dialog; account_settings; _ } ->
 		let open Html in
 		let inject_html elem =
 			elem##innerHTML <- Js.string (
@@ -269,8 +269,8 @@ let view_overlay sync instance =
 
 let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in
+	let gen_updater = gen_updater ~sync ~storage_provider in
 	let initial_state = initial_state sync in
-	let gen_updater = gen_updater ~sync ~storage_provider initial_state in
 
 	let main_tasks = Tasks.init () in
 	let main_component = Ui.root_component ~eq ~update:(gen_updater main_tasks) ~view initial_state in
@@ -293,7 +293,7 @@ let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js
 	) initial_state in
 
 	let password_form_tasks = Tasks.init () in
-	let password_form_component = Password_form.component sync in
+	let password_form_component = Password_form.component in
 	let password_form_component = Ui.root_component ~eq ~update:(gen_updater password_form_tasks) ~view:(fun instance ->
 		let child = Ui.child ~message:password_form_message password_form_component instance in
 		fun state -> child state.password_form

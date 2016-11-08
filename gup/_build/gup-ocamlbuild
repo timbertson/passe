@@ -25,6 +25,10 @@ fi
 gup --always
 
 FLAGS=""
+if [ "$build_type" = dev ]; then
+	FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45"
+fi
+
 if [ "$compile_mode" = 'mirage-xen' ]; then
 	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"
 elif [ "$build_type" = dev ]; then
@@ -44,7 +48,6 @@ fi
 set -x
 
 $rainbow $ocamlbuild_args \
-	-cflag -warn-error -cflag +A \
 	-build-dir "$BUILDDIR" -use-ocamlfind $FLAGS "$target"
 popd >/dev/null
 

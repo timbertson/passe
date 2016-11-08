@@ -1,6 +1,4 @@
-open Lwt
 open Common
-open Either
 module J = Json_ext
 
 (* TODO: hide these type implementations behind signature *)
@@ -149,7 +147,6 @@ module Make (Server:Server.Sig) = struct
 	let signup_url = Server.path ["auth"; "signup"]
 	let logout_url = Server.path ["auth"; "logout"]
 	let token_validate_url = Server.path ["auth"; "validate"]
-	let logout_url = Server.path ["auth"; "logout"]
 	let change_password_url = Server.path ["auth"; "change-password"]
 	let delete_user_url = Server.path ["auth"; "delete"]
 

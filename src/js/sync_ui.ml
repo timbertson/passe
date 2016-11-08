@@ -2,7 +2,6 @@ open Passe
 open Passe_js
 open Common
 open React_ext
-open Passe_ui
 open Lwt
 module J = Json_ext
 module Xhr = XmlHttpRequest
@@ -157,8 +156,6 @@ let submit_form ~set_auth_state url instance {username; password} = (
 			None
 	in
 	data |> Option.map (fun data ->
-		let open Server in
-		let open Either in
 		Ui.emit instance (`error None);
 		let open Server in
 		Server.post_json ~data url |> Lwt.map (function
@@ -172,7 +169,7 @@ let submit_form ~set_auth_state url instance {username; password} = (
 	) |> Option.default (Lwt.return None)
 )
 
-let auth_loop ~sync ~set_auth_state instance (auth:Client_auth.saved_auth_state) = (
+let auth_loop ~set_auth_state instance (auth:Client_auth.saved_auth_state) = (
 	let continue = ref true in
 	let emit = Ui.emit instance in
 	while_lwt !continue do
@@ -181,7 +178,7 @@ let auth_loop ~sync ~set_auth_state instance (auth:Client_auth.saved_auth_state)
 			continue := false;
 			let open Server in
 			let response = match auth with
-				| `Saved_user (username, creds) ->
+				| `Saved_user (_username, creds) ->
 					Server.post_json ~data:creds Client_auth.token_validate_url
 				| `Saved_implicit_user _ ->
 					Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
@@ -249,7 +246,7 @@ let run_background_sync ~sync ~set_auth_state instance sync_state : (Client_auth
 		(match auth with
 			| `Logged_out | `Anonymous | `Failed_login _ -> return_unit
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
-				auth_loop ~sync ~set_auth_state instance (u:>Client_auth.saved_auth_state)
+				auth_loop ~set_auth_state instance (u:>Client_auth.saved_auth_state)
 			| `Active_user _ | `Implicit_user _ as u ->
 				sync_db_loop ~sync ~sync_state (u:>Client_auth.logged_in_user_state)
 		) >>= fun _ -> return_none
@@ -356,21 +353,21 @@ let view_sync_state = (function
 		]
 	)
 
-let emit_on_return instance action : message attr = a_onkeydown (handler (Ui.bind instance (fun state evt ->
+let emit_on_return action : message attr = a_onkeydown (handler (fun evt ->
 	evt
 		|> Event.keyboard_event
 		|> Option.map (fun evt -> evt##keyCode)
 		|> Option.filter ((=) Keycode.return)
 		|> Option.map (fun _ -> Event.handle action)
 		|> Event.optional
-)))
+))
 
-let view_login_form instance =
-	let submit_on_return = emit_on_return instance `request_login in
+let view_login_form _instance =
+	let submit_on_return = emit_on_return `request_login in
 	let track_username = track_input_contents (fun text -> `edit (`username text)) in
 	let track_password = track_input_contents (fun text -> `edit (`passe_password text)) in
 
-	fun stored_username {error; login_form=form} -> (
+	fun stored_username {error; login_form=form; _} -> (
 		let space = text " " in
 		let error_text = error |> Option.map (fun err ->
 			p ~a:[a_class "text-danger"] [

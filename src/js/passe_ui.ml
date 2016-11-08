@@ -1,5 +1,4 @@
 open Passe
-open Passe_js
 open Common
 open Lwt
 open React
@@ -174,7 +173,7 @@ end
 (* a plain DOM node widget that can't have attributes or children
  * (e.g Text / Comment node *)
 class ['a] leaf_widget ?(mechanisms=[]) (cons:unit -> #Dom.node Js.t) =
-object (self)
+object (_self)
 	inherit ['a] widget_base mechanisms (ref [])
 	method create_elem = cons ()
 end
@@ -353,12 +352,12 @@ let editable_of_signal : 'v 'elem.
 	let update_loop elem = match update with
 		| None -> Lwt.return_unit
 		| Some update ->
-			events elem (fun event _ ->
+			events elem (fun _event _ ->
 				Log.info (fun m->m "responding to input change");
 				clear_error elem;
 				begin
 					try update (get elem)
-					with err -> set_error elem
+					with _ -> set_error elem
 				end;
 				Lwt.return_unit
 			)
@@ -422,7 +421,7 @@ let signal_of_widget
 	let update elem = update (get_value elem) in
 	widget#mechanism (fun elem ->
 		update elem;
-		events elem (fun event _ ->
+		events elem (fun _event _ ->
 			update elem;
 			Lwt.return_unit
 		)

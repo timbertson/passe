@@ -20,7 +20,6 @@ let print_str sub_printer () v = match v with
 let print = print_str
 let to_string sub = print_str (fun () -> sub) ()
 let to_list = function Some x -> [x] | None -> []
-let fmt sub formatter x = Format.pp_print_string formatter (to_string sub x)
 let fmt sub formatter = function
 	| Some v ->
 		Format.pp_print_string formatter "Some(";

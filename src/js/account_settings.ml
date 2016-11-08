@@ -108,7 +108,7 @@ let current_password_length db = Store.((get_defaults db).default_length)
 let preferences_section =
 	let track_password_length = track_input_contents (fun str -> `password_length str) in
 
-	fun { preferences_error; db; password_length; password_length_input } -> (
+	fun { preferences_error; db; password_length; password_length_input; _ } -> (
 		let error_widget = preferences_error
 			|> Option.map (fun err ->
 				p ~a:[a_class "text-danger"] [
@@ -154,7 +154,7 @@ let user_delete_section =
 	let track_password_confirmation =
 		track_input_contents (fun value -> `password_confirmation value)
 	in
-	fun { user_delete_error; password_confirmation } -> (
+	fun { user_delete_error; password_confirmation; _ } -> (
 		let error_widget = user_delete_error
 			|> Option.map (fun err ->
 				p ~a:[a_class "text-danger"] [
@@ -193,14 +193,14 @@ let user_delete_section =
 		]
 	)
 
-let view_panel instance =
+let view_panel _instance =
 	let panel ~title children = Bootstrap.overlay ~cancel:`hide [Bootstrap.panel ~close:`hide ~title children] in
 	(fun state ->
 		panel ~title:"Account settings" ([
 			preferences_section state;
 			hr ()
 		] @ (match state.user with
-				| `Active_user (_, token)  | `Saved_user (_, token) -> [
+				| `Active_user _ | `Saved_user _ -> [
 					password_change_section ();
 					hr ();
 					user_delete_section state;
@@ -212,7 +212,7 @@ let view_panel instance =
 
 let button : (unit, unit) Ui.component = Ui.component
 	~eq:(Pervasives.(=))
-	~view:(fun instance state -> a ~a:[
+	~view:(fun _instance _state -> a ~a:[
 		a_class "hover-reveal link settings-button";
 		a_title "Settings";
 		a_onclick (emitter ());
@@ -243,7 +243,7 @@ let delete_account ~set_auth_state instance password token = (
 	) else None
 )
 
-let save_preferences ~sync instance { password_length; db } = (
+let save_preferences ~sync _instance { password_length; db; _ } = (
 	let current = current_password_length db in
 	let password_length = password_length |> Option.default current in
 	let saved = if current = password_length
@@ -293,7 +293,7 @@ let initial sync auth_state =
 		password_length = None;
 	} |> reset_preferences
 
-let rec update state = function
+let update state = function
 	| `password_confirmation password_confirmation -> { state with password_confirmation }
 	| `user_delete_error user_delete_error -> { state with user_delete_error }
 	| `preferences_error preferences_error -> { state with preferences_error }

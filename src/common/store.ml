@@ -171,7 +171,7 @@ module Make (Re:Re_ext.Sig) = struct
 	object (self:'self)
 		method pop key : J.json option =
 			let subject, remainder =
-				List.partition (fun (k,v) -> k = key) !pairs
+				List.partition (fun (k,_v) -> k = key) !pairs
 			in
 			match subject with
 				| [] -> None
@@ -181,7 +181,7 @@ module Make (Re:Re_ext.Sig) = struct
 				| _ -> raise (AssertionError "multiple identical keys")
 
 		method contains key =
-			find_safe (fun (k,v) -> k = key) !pairs
+			find_safe (fun (k,_v) -> k = key) !pairs
 				|> Option.is_some
 
 		method exhaust =
@@ -558,7 +558,7 @@ module Make (Re:Re_ext.Sig) = struct
 						| `Alias edits, Alias record ->
 								Some (Alias (List.fold_left apply_alias_edit record edits))
 
-						| _ ->
+						| `Domain _, Alias _ | `Alias _, Domain _ ->
 							Log.warn(fun m->m "dropping edits on mismatching types for %s" id);
 							None
 						in
@@ -689,7 +689,7 @@ module Make (Re:Re_ext.Sig) = struct
 		if n <= 0 then lst
 		else match lst with
 			| [] -> []
-			| head::tail -> drop (n-1) tail
+			| _::tail -> drop (n-1) tail
 
 	let rec take n lst =
 		if n <= 0 then []

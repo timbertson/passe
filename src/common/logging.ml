@@ -15,7 +15,7 @@ let tagging_reporter parent =
 	)}
 
 let default_reporter =
-	let pp_header fmt (lvl, src) = () in
+	let pp_header _ _ = () in
 	Logs.format_reporter ~pp_header ()
 
 let set_reporter reporter = Logs.set_reporter (tagging_reporter reporter)
