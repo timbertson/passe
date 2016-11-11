@@ -1,13 +1,8 @@
 open Vdoml
 open Passe
 open Passe_js
-(* open Lwt *)
-(* open Js *)
-(* open Dom_html *)
 open Common
 open React_ext
-(* module List = List_ext *)
-(* module J = Json_ext *)
 module Log = (val Logging.log_module "password_form")
 
 type input_target = [ `domain | `password ]
@@ -16,19 +11,22 @@ type domain_suggestions = {
 	selected : int option;
 }
 
+type generated_password = {
+	password: string;
+	visible: bool;
+	fully_selected: bool;
+}
+
 type state = {
 	domain : string;
+	domain_record : Store.domain;
+	saved_domain_record : Store.domain option;
 	db : Store.t;
 	master_password : string;
-	generated_password : string option;
+	generated_password : generated_password option;
 	active_input : input_target option;
 	domain_suggestions : domain_suggestions option;
-	domain_record : Store.domain option;
-	(* clipboard_supported : bool; *)
-	(* domain_is_active : bool; *)
-	(* master_password : string; *)
-	(* domain_record : Store.record; *)
-	(* saved_domain_info : Store.record option; *)
+	clipboard_supported : bool;
 }
 
 let eq a b =
@@ -40,6 +38,8 @@ let eq a b =
 		active_input = active_input_a;
 		domain_suggestions = domain_suggestions_a;
 		domain_record = domain_record_a;
+		saved_domain_record = saved_domain_record_a;
+		clipboard_supported = clipboard_supported_a;
 	} = a in
 	let {
 		domain = domain_b;
@@ -49,6 +49,8 @@ let eq a b =
 		active_input = active_input_b;
 		domain_suggestions = domain_suggestions_b;
 		domain_record = domain_record_b;
+		saved_domain_record = saved_domain_record_b;
+		clipboard_supported = clipboard_supported_b;
 	} = b in
 	(
 		db_a == db_b && (* don't bother deep equality checking *)
@@ -57,18 +59,25 @@ let eq a b =
 		generated_password_a = generated_password_b &&
 		active_input_a = active_input_b &&
 		domain_suggestions_a = domain_suggestions_b &&
-		domain_record_a = domain_record_b
+		domain_record_a = domain_record_b &&
+		saved_domain_record_a = saved_domain_record_b &&
+		clipboard_supported_a = clipboard_supported_b
 	)
 
-let initial_state sync = {
-	active_input = None;
-	domain = "";
-	master_password = "";
-	domain_record = None;
-	generated_password = None;
-	db = sync.Sync.db_fallback |> S.value;
-	domain_suggestions = None;
-}
+let initial_state sync =
+	let db = sync.Sync.db_fallback |> S.value in
+	let domain = "" in
+	{
+		db;
+		domain;
+		domain_record = Store.default db domain;
+		saved_domain_record = None;
+		master_password = "";
+		generated_password = None;
+		domain_suggestions = None;
+		active_input = None;
+		clipboard_supported = true;
+	}
 
 type direction = [ `up | `down ]
 type internal_message = [
@@ -79,6 +88,10 @@ type internal_message = [
 	| `accept_suggestion of string
 	| `select_cursor of direction
 	| `select_suggestion of int option
+	| `password_fully_selected of bool
+	| `clipboard_supported of bool
+	| `toggle_password_visibility
+	| `generate_password
 ]
 
 type external_state_notification = [
@@ -101,6 +114,10 @@ let string_of_message : [<message] -> string =
 	| `accept_suggestion text -> "`accept_suggestion " ^ text
 	| `select_cursor direction -> "`select_cursor " ^ (match direction with `up -> "up" | `down -> "down")
 	| `select_suggestion idx -> "`select_suggestion " ^ (Option.to_string string_of_int idx)
+	| `password_fully_selected sel -> "`password_fully_selected " ^ (string_of_bool sel)
+	| `toggle_password_visibility -> "`toggle_password_visibility"
+	| `generate_password -> "`generate_password"
+	| `clipboard_supported supported -> "`clipboard_supported " ^ (string_of_bool supported)
 
 let update_suggestions state =
 	let s = match state.active_input with
@@ -114,10 +131,16 @@ let update_suggestions state =
 	{ state with domain_suggestions = s |> Option.map (fun suggestions -> { suggestions; selected = None }) }
 
 let update_domain_record state =
-	{ state with domain_record = Store.lookup state.domain state.db }
+	let saved_domain_record = Store.lookup state.domain state.db in
+	let domain_record = saved_domain_record |> Option.default_fn
+		(fun () -> Store.default state.db state.domain) in
+	{ state with domain_record; saved_domain_record }
 
 let update state : [<message] -> state =
 	let derive_domain_data state = state |> update_suggestions |> update_domain_record in
+	let modify_generated_password state fn =
+		{ state with generated_password = state.generated_password |> Option.map fn }
+	in
 	function
 	| `clear dest -> (
 		let state = { state with generated_password = None; active_input = Some dest } in
@@ -153,16 +176,56 @@ let update state : [<message] -> state =
 			{ suggestions with selected }
 		) in
 		{ state with domain_suggestions } |> update_domain_record
+	| `password_fully_selected fully_selected ->
+		modify_generated_password state (fun password ->
+			{ password with fully_selected }
+		)
+	| `toggle_password_visibility -> 
+		modify_generated_password state (fun password ->
+			{ password with visible = not password.visible }
+		)
+	| `generate_password ->
+		{ state with generated_password = Some {
+			password = Password.generate ~domain:state.domain_record state.master_password;
+			visible = false;
+			fully_selected = true;
+		}}
+	| `clipboard_supported clipboard_supported -> { state with clipboard_supported }
 
-let view sync instance : state -> internal_message Html.html =
+let id_counter = ref 0
+let view instance : state -> internal_message Html.html =
 	let open Html in
 	let open Bootstrap in
+	let instance_id = string_of_int !id_counter in
+	let password_element_id = "password-contents-"^ instance_id in
+	incr id_counter;
 	let track_master_password = track_input_contents (fun text -> `master_password text) in
 	let track_domain_text = track_input_contents (fun text -> `domain text) in
+	let submit_on_return = handler (fun e ->
+		e |> Event.keyboard_event |> Option.bind (fun e ->
+			if e##keyCode = Keycode.return
+				then Some (Event.handle `generate_password)
+				else None
+		) |> Event.optional
+	) in
 	let focus = a_dynamic "data-focus" (fun elem _attr ->
 		Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus())
 	) in
-	let domain_keydown = Ui.bind instance (fun { domain_suggestions } e ->
+	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
+		Selection.select elem
+	) in
+	let update_selection = handler @@ Ui.bind instance (fun { generated_password; _ } e ->
+		generated_password |> Option.bind (fun { password; _ } ->
+			e##target |> Js.Opt.to_option |> Option.map (fun target ->
+				let is_selected = Selection.is_fully_selected ~length:(String.length password) target in
+				Event.return `Unhandled (`password_fully_selected is_selected)
+			)
+		) |> Event.optional
+	) in
+	let select_password_text = handler @@ fun _ ->
+		Event.handle (`password_fully_selected true)
+	in
+	let domain_keydown = handler @@ Ui.bind instance (fun { domain_suggestions; _ } e ->
 		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
 			if e##keyCode = Keycode.esc then (
@@ -202,8 +265,64 @@ let view sync instance : state -> internal_message Html.html =
 			)
 		) |> Event.optional
 	) in
-	fun { domain; db; master_password; active_input; domain_suggestions } -> (
 
+	let get_password_element () =
+		let sel = "#"^password_element_id in
+		let found = Dom_html.document##documentElement##querySelector(Js.string sel)
+			|> Js.Opt.to_option in
+		if Option.is_none found then (
+			Log.warn (fun m->m "Error locating password element %s" sel)
+		);
+		found
+	in
+
+	let update_highlight () =
+		get_password_element () |> Option.may (fun elem ->
+			Ui.emit instance (`password_fully_selected (Selection.is_fully_selected elem))
+		)
+	in
+
+	let copy_generated_password = handler (fun _ ->
+		get_password_element () |> Option.map (fun elem ->
+			Selection.select elem;
+			Ui.emit instance (`password_fully_selected true);
+			match Clipboard.triggerCopy () with
+				| Some error ->
+					Log.err (fun m->m "%s" error);
+					Event.handle (`clipboard_supported false)
+				| None ->
+					(* give a bit of UI feedback in the default case that the
+					 * selection has been copied *)
+					Event.handle (`clear `password)
+		) |> Event.optional
+	) in
+
+	let root_hooks =
+		let events = ref [] in
+		let create _ =
+			let open Dom_html in
+			let doc = Dom_html.document##documentElement in
+			events := !events @ [
+				addEventListener doc Dom_html.Event.click (handler (fun _ ->
+					update_highlight ();
+					Js._true (* continue event *)
+				)) Js._true (* use capture *)
+				;
+				addEventListener doc Dom_html.Event.keydown (handler (fun _ ->
+					Ui.emit instance (`clear `password);
+					Js._false (* stop event *)
+				)) Js._false (* use capture *);
+			]
+		in
+		let destroy _elem =
+			!events |> List.iter (Dom_html.removeEventListener);
+			events := []
+		in
+		fun node -> Ui.hook ~create ~destroy node
+	in
+
+	(fun state ->
+		let { domain; master_password; active_input; domain_suggestions; _ } = state in
 		let no_input_coersion = [
 			a_attr "autocomplete" "off";
 			a_attr "autocorrect" "off";
@@ -211,8 +330,8 @@ let view sync instance : state -> internal_message Html.html =
 		] in
 
 		let track_focus dest = [
-			a_onblur @@ emitter (`blur `domain);
-			a_onfocus @@ emitter (`blur `domain);
+			a_onblur @@ emitter (`blur dest);
+			a_onfocus @@ emitter (`blur dest);
 		] in
 
 		let domain_input = input ~a:([
@@ -222,7 +341,7 @@ let view sync instance : state -> internal_message Html.html =
 				domain_suggestions |> Option.map (fun _ -> "suggestions");
 			]);
 			a_oninput track_domain_text;
-			a_onkeydown (handler domain_keydown);
+			a_onkeydown domain_keydown;
 			a_name "domain";
 			(if active_input = Some `domain then focus else None);
 		] @ no_input_coersion @ track_focus `domain) () in
@@ -232,73 +351,12 @@ let view sync instance : state -> internal_message Html.html =
 			a_input_type `Password;
 			a_name "password";
 			a_oninput track_master_password;
+			a_onkeydown submit_on_return;
 			a_value master_password;
 			(if active_input = Some `password then focus else None);
 		] @ no_input_coersion @ track_focus `password) () in
 
-		(* let empty_domain = domain = "" in *)
-		(* let domain_record = Store.lookup domain db in *)
-		(* let saved_domain_info = match domain_record with *)
-		(* 	| Some d -> d *)
-		(* 	| None -> Store.default db domain *)
-		(* in *)
-		(* let domain_is_unknown = Option.is_none domain_record in *)
-
-	(* 	let domain_info, update_domain_info = editable_signal saved_domain_info in *)
-	(* 	let update_domain_info = fun v -> *)
-	(* 		Log.info (fun m->m "updating domain info to %s" (Store.json_string_of_domain v)); *)
-	(* 		update_domain_info v in *)
-	(*  *)
-	(*  *)
-	(* 	(* build up the generated password. *)
-	(* 	 * It tracks (master_password, domain_info), but only *)
-	(* 	 * sampled on form_submits. Whenever the inputs change or *)
-	(* 	 * clear_generated_password is triggered, the inputs are *)
-	(* 	 * overridden to be `None`, so the password is removed. *)
-	(* 	 *) *)
-	(* 	let password_input_data = S.l2 (fun a b -> (a,b)) master_password domain_info in *)
-	(* 	let password_resets, clear_generated_password = E.create () in *)
-	(* 	let password_resets = *)
-	(* 		(* reset password info to `None` when a reset is explicitly triggered, *)
-	(* 		 * or when the input data changes *) *)
-	(* 		let to_none = fun _ -> None in *)
-	(* 		E.select [ *)
-	(* 			password_resets |> E.map to_none; *)
-	(* 			S.changes password_input_data |> E.map to_none; *)
-	(* 		] in *)
-	(*  *)
-	(* 	let form_submits, submit_form = E.create () in *)
-	(* 	let password_submissions = S.sample (fun () v -> v) form_submits password_input_data *)
-	(* 		|> E.map (fun inputs -> (Some inputs)) in *)
-	(*  *)
-	(* 	let current_password = E.select [password_resets; password_submissions] *)
-	(* 		|> S.hold None *)
-	(* 		|> S.map (fun inputs -> inputs *)
-	(* 			|> Option.map (fun (password, domain) *)
-	(* 				-> Password.generate ~domain password *)
-	(* 			) *)
-	(* 		) *)
-	(* 	in *)
-	(*  *)
-	(* 	let to_html_elem : Dom.node Js.t -> Dom_html.element Js.t Js.opt = fun node -> *)
-	(* 		let elem = Dom.CoerceTo.element node in *)
-	(* 		Opt.map elem Dom_html.element *)
-	(* 	in *)
-	(*  *)
-	(* 	let upto_class cls (elem:#Dom_html.element Js.t) = *)
-	(* 		let cls = Js.string cls in *)
-	(* 		let rec up (elem:Dom_html.element Js.t) = *)
-	(* 			if (elem##classList##contains(cls) |> Js.to_bool) *)
-	(* 				then Opt.return elem *)
-	(* 				else ( *)
-	(* 					let elem = Opt.bind elem##parentNode to_html_elem in *)
-	(* 					Opt.bind elem up *)
-	(* 				) *)
-	(* 		in *)
-	(* 		up elem *)
-	(* 	in *)
-
-		let clear_btn ?right ?trigger target : internal_message html =
+		let clear_btn ?right target : internal_message html =
 
 			span ~a:[
 				a_class "link text-muted clear-btn";
@@ -379,100 +437,70 @@ let view sync instance : state -> internal_message Html.html =
 	(* 				deselect () *)
 	(* 	) in *)
 
-		let password_display = text "TODO" in
-			(* current_password |> Passe_ui.optional_signal_content (fun (p:string) -> *)
-	(* 		(* every time we display a new password, default to hidden *) *)
-	(* 		set_show_plaintext_password false; *)
-	(*  *)
-	(* 		let length = String.length p in *)
-	(*  *)
-	(* 		let string_repeat s n = Array.fold_left (^) "" (Array.make n s) in *)
-	(* 		let dummy_text = (string_repeat "•" length) in *)
-	(* 		let dummy = span ~cls:"dummy" *)
-	(* 			~children: [ *)
-	(* 				frag (Passe_ui.text_stream (show_plaintext_password |> *)
-	(* 				S.map (fun plain -> if plain then p else dummy_text))) *)
-	(* 			] *)
-	(* 			() *)
-	(* 		in *)
-	(* 		dummy#class_s "selected" is_selected; *)
-	(*  *)
-	(* 		let display = div *)
-	(* 			~cls:"password-display" *)
-	(* 			~mechanism:(fun elem -> *)
-	(* 				let child = elem##querySelector(Js.string ".secret") |> non_null in *)
-	(* 				let select () = *)
-	(* 					Selection.select child; *)
-	(* 					set_is_selected true *)
-	(* 				in *)
-	(* 				let update_highlight () = *)
-	(* 					set_is_selected @@ Selection.is_fully_selected ~length child; *)
-	(* 				in *)
-	(*  *)
-	(* 				set_select_generated_password select; *)
-	(* 				select (); *)
-	(*  *)
-	(* 				effectful_stream_mechanism show_plaintext_password (fun _ -> select ()) <&> *)
-	(* 				Lwt_js_events.clicks ~use_capture:true document (fun e _ -> *)
-	(* 					update_highlight (); *)
-	(* 					Lwt.return_unit *)
-	(* 				) <&> *)
-	(* 				Lwt_js_events.keyups ~use_capture:true document (fun e _ -> *)
-	(* 					if e##shiftKey == Js._true then *)
-	(* 						update_highlight (); *)
-	(* 					Lwt.return_unit *)
-	(* 				) <&> *)
-	(* 				Lwt_js_events.clicks ~use_capture:false elem (fun e _ -> *)
-	(* 					select (); *)
-	(* 					Lwt.return_unit *)
-	(* 				) *)
-	(* 			) ~children:[ *)
-	(* 				child span ~cls:"secret" ~text:p (); *)
-	(* 				frag dummy; *)
-	(* 			] () in *)
-	(*  *)
-	(* 		div ~cls:"popover static password-popover fade bottom in" ~attrs:["role","tooltip"] ~children:[ *)
-	(* 			child div ~cls:"arrow" (); *)
-	(* 			child div ~cls:"popover-content" ~children:[ *)
-	(* 				child table ~children:[ *)
-	(* 					child tr ~children:[ *)
-	(*  *)
-	(* 						child td ~children:[ *)
-	(* 							child h4 ~cls:"title visible-lg visible-md" ~text:"Generated: " (); *)
-	(* 						] (); *)
-	(*  *)
-	(* 						child td ~cls:"controls" ~children:[ *)
-	(* 							child span ~cls:"toggle" *)
-	(* 								~mechanism:plaintext_toggle_mech *)
-	(* 								~children:[icon "eye-open"] (); *)
-	(* 						] (); *)
-	(*  *)
-	(* 						child td ~attrs:["width","*"] ~children:[ *)
-	(* 							frag display; *)
-	(* 						] (); *)
-	(*  *)
-	(* 						(clipboard_supported |> S.map (fun supported -> *)
-	(* 							if supported then *)
-	(* 								Some (td ~cls:"controls" ~children:[ *)
-	(* 									child span ~cls:"toggle" *)
-	(* 										~mechanism:copy_generated_password_mech *)
-	(* 										~children:[icon "paperclip"] (); *)
-	(* 								] ()) *)
-	(* 							else *)
-	(* 								None *)
-	(* 						) |> Passe_ui.option_stream); *)
-	(*  *)
-	(* 						child td ~cls:"controls" ~children:[ *)
-	(* 							child span ~cls:"toggle" *)
-	(* 								~mechanism:clear_generated_password_mech *)
-	(* 								~children:[icon "remove"] (); *)
-	(* 						] (); *)
-	(* 					] (); *)
-	(* 				] (); *)
-	(* 			] (); *)
-	(* 		] (); *)
-	(* 	) |> Passe_ui.stream in *)
-	(*  *)
+		let password_display = state.generated_password |> Option.map (fun { password; visible; fully_selected } ->
+			let password_display = if visible then password else (
+				let length = String.length password in
+				let string_repeat s n = Array.fold_left (^) "" (Array.make n s) in
+				(string_repeat "•" length)
+			) in
+
+			let display = div ~a:[a_class "password-display"] [
+				span ~a:[
+					a_class "secret";
+					a_id password_element_id;
+					if fully_selected then all_text_selected else None;
+					a_onclick select_password_text;
+					a_onmouseup update_selection;
+					a_onkeyup update_selection;
+				] [text password];
+				span ~a:[
+					a_class_list (
+						[ "dummy" ] @ (if fully_selected then ["selected"] else [])
+					);
+				] [ text password_display ];
+			] in
+
+			div ~a:[
+				a_class "popover static password-popover fade bottom in";
+				a_role "tooltip";
+			] [
+				div ~a:[a_class "arrow"] [];
+				div ~a:[a_class "popover-content"] [
+					table [
+						tr [
+							td [
+								h4 ~a:[a_class "title visible-lg visible-md"] [text "Generated: "];
+							];
+
+							td ~a:[a_class "controls"] [
+								span ~a:[
+									a_class "toggle"; a_onclick (emitter `toggle_password_visibility)
+								] [icon "eye-open"];
+							];
+
+							td ~a:[a_width "*"] [ display ];
+
+							(if state.clipboard_supported
+								then td ~a:[a_class "controls"] [
+									span ~a:[
+										a_class "toggle";
+										a_onclick copy_generated_password;
+									] [icon "paperclip"];
+								]
+								else empty
+							);
+
+							td ~a:[a_class "controls"] [
+								span ~a:[
+									a_class "toggle";
+									a_onclick (emitter (`clear `password));
+								] [icon "remove"];
+							];
+						];
+					];
+				];
+			]
+		) |> Option.default empty in
 	(* 	let unchanged_domain = S.l2 (fun db_dom domain_info -> *)
 	(* 		match db_dom with *)
 	(* 			| Some db -> Store.record_eq (Domain db) (Domain domain_info) *)
@@ -549,7 +577,7 @@ let view sync instance : state -> internal_message Html.html =
 	(* 			] (); *)
 	(* 		]; *)
 	(* 	in *)
-	(*  *)
+
 		let form =
 			let left elem = col ~size:2 [elem] in
 			div ~a:[a_class "form-horizontal main-form"; a_role "form"] [
@@ -574,6 +602,7 @@ let view sync instance : state -> internal_message Html.html =
 									button ~a:[
 										a_class "btn btn-default submit";
 										a_input_type `Submit;
+										a_onclick (emitter `generate_password);
 									] [icon "play"];
 								];
 							];
@@ -586,29 +615,6 @@ let view sync instance : state -> internal_message Html.html =
 			];
 		] in
 
-	(* 	form#mechanism (fun elem -> *)
-	(* 		let submit_button = elem##querySelector(Js.string ".submit") |> non_null in *)
-	(* 		let password_input = elem##querySelector(Js.string "input.password-input") |> non_null in *)
-	(* 		let clear_password () = *)
-	(* 			set_master_password ""; *)
-	(* 			let input = elem##querySelector (Js.string "input[name=password]") in *)
-	(* 			let input = Opt.bind input Dom_html.CoerceTo.input in *)
-	(* 			let input = Opt.get input (fun () -> failwith "can't find password input") in *)
-	(* 			input##focus (); *)
-	(* 		in *)
-	(*  *)
-	(* 		let submit_form event = *)
-	(* 			Passe_ui.stop event; *)
-	(* 			Log.info (fun m->m "form submitted"); *)
-	(* 			elem##querySelectorAll(s"input") |> Dom.list_of_nodeList *)
-	(* 				|> List.iter (fun elem -> *)
-	(* 						let input = CoerceTo.input(elem) |> non_null in *)
-	(* 						input##blur() *)
-	(* 				); *)
-	(* 			submit_form (); *)
-	(* 			Lwt.return_unit *)
-	(* 		in *)
-	(*  *)
 	(* 		Lwt_js_events.keydowns ~use_capture:true elem (fun event _ -> *)
 	(* 			if (to_bool event##ctrlKey && event##keyCode = Keycode.s) then ( *)
 	(* 				stop event; *)
@@ -618,33 +624,6 @@ let view sync instance : state -> internal_message Html.html =
 	(* 				return_unit *)
 	(* 			) *)
 	(* 		) *)
-	(* 		<&> *)
-	(* 		Lwt_js_events.keydowns ~use_capture:false document (fun event _ -> *)
-	(* 			if (event##keyCode = Keycode.esc) then ( *)
-	(* 				stop event; *)
-	(* 				clear_password () *)
-	(* 			); *)
-	(* 			return_unit *)
-	(* 		) *)
-	(* 		<&> *)
-	(* 		Lwt_js_events.clicks submit_button (fun event _ -> submit_form event) *)
-	(* 		<&> *)
-	(* 		Lwt_js_events.keydowns password_input (fun event _ -> *)
-	(* 			if event##keyCode = Keycode.return then ( *)
-	(* 				submit_form event *)
-	(* 			) else return_unit *)
-	(* 		) *)
-	(* 		<&> *)
-	(* 		(while_lwt true do *)
-	(* 			lwt () = Lwt_react.E.next form_submits in *)
-	(* 			Lwt.pick [ *)
-	(* 				( *)
-	(* 					lwt _ = Lwt_react.E.next (S.changes password_input_data) in *)
-	(* 					Log.debug (fun m->m "input changed; cancelling timeout"); *)
-	(* 					return_unit *)
-	(* 				); *)
-	(* 				( *)
-	(*  *)
 	(* 					(* After generating a password, if the window stays blurred *)
 	(* 					 * for more than a few seconds we clear the master password (to prevent *)
 	(* 					 * leaving master passwords around) *)
@@ -680,7 +659,7 @@ let view sync instance : state -> internal_message Html.html =
 	(* 		done) *)
 	(*  *)
 	(* 	); *)
-		form
+		form |> root_hooks
 	)
 
-let component sync = Ui.component ~eq ~view:(view sync) ()
+let component = Ui.component ~eq ~view ()

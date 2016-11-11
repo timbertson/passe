@@ -23,7 +23,14 @@ end
 
 let doc:doc Js.t= Unsafe.variable "document"
 
-let is_fully_selected ~length node =
+let is_fully_selected ?length node =
+	let length = match length with
+		| Some l -> l
+		| None ->
+			let contents = node##textContent in
+			let length : int Js.Opt.t = Js.Opt.map contents (fun text -> text##length) in
+			Js.Opt.get length (fun () -> 0)
+	in
 	let sel = doc##getSelection() in
 	if sel##rangeCount == 1 then begin
 		let range = sel##getRangeAt(0) in
