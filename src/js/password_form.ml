@@ -29,6 +29,27 @@ type state = {
 	clipboard_supported : bool;
 }
 
+let string_of_generated_password { password; visible; fully_selected } =
+	"{ password = " ^ (mask_string password) ^
+	"; visible = " ^ (string_of_bool visible) ^
+	"; fully_selected = " ^ (string_of_bool fully_selected) ^
+	"}"
+
+let string_of_target = function
+	| `domain -> "`domain"
+	| `password -> "`password"
+
+let string_of_state state =
+	"{ domain = " ^ (quote_string state.domain) ^
+	"; saved_domain_record = " ^ (Option.to_string Store.json_string_of_domain state.saved_domain_record) ^
+	"; db = (...)" ^
+	"; domain_suggestions = (...)" ^
+	"; master_password = " ^ (mask_string state.master_password) ^
+	"; generated_password = " ^ (Option.to_string string_of_generated_password state.generated_password) ^
+	"; active_input = " ^ (Option.to_string string_of_target state.active_input) ^
+	"; clipboard_supported = " ^ (string_of_bool state.clipboard_supported) ^
+	"}"
+
 let eq a b =
 	let {
 		domain = domain_a;
@@ -80,6 +101,7 @@ let initial_state sync =
 	}
 
 type direction = [ `up | `down ]
+
 type internal_message = [
 	| `master_password of string
 	| `domain of string
@@ -103,16 +125,18 @@ type message = [
 	| external_state_notification
 ]
 
-let string_of_message : [<message] -> string =
-	let string_of_target = function `domain -> "`domain" | `password -> "`password" in
-	function
+let string_of_direction : direction -> string = function
+	| `up -> "`up"
+	| `down -> "`down"
+
+let string_of_message : [<message] -> string = function
 	| `master_password password -> "`master_password " ^ (mask_string password)
 	| `domain domain -> "`domain " ^ domain
 	| `clear target -> "`clear " ^ (string_of_target target)
 	| `blur target -> "`blur " ^ (string_of_target target)
 	| `db_changed _ -> "`db_changed"
 	| `accept_suggestion text -> "`accept_suggestion " ^ text
-	| `select_cursor direction -> "`select_cursor " ^ (match direction with `up -> "up" | `down -> "down")
+	| `select_cursor direction -> "`select_cursor " ^ (string_of_direction direction)
 	| `select_suggestion idx -> "`select_suggestion " ^ (Option.to_string string_of_int idx)
 	| `password_fully_selected sel -> "`password_fully_selected " ^ (string_of_bool sel)
 	| `toggle_password_visibility -> "`toggle_password_visibility"
@@ -158,9 +182,10 @@ let update state : [<message] -> state =
 	| `select_cursor direction ->
 			let domain_suggestions = state.domain_suggestions |> Option.map (fun suggestions ->
 				let idx = suggestions.selected |> Option.default (-1) in
+				Log.debug (fun m->m"selecting %s from current idx %d" (string_of_direction direction) idx);
 				let idx = match direction with
-					| `up -> min ((List.length suggestions.suggestions) - 1) (idx + 1)
-					| `down -> max (-1) (idx - 1)
+					| `down -> min ((List.length suggestions.suggestions) - 1) (idx + 1)
+					| `up -> max (-1) (idx - 1)
 				in
 				{ suggestions with selected = idx |> Option.non_empty ~zero:-1 }
 			) in
@@ -209,10 +234,18 @@ let view instance : state -> internal_message Html.html =
 		) |> Event.optional
 	) in
 	let focus = a_dynamic "data-focus" (fun elem _attr ->
+		Log.debug (fun m->m"focusing elment");
 		Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus())
 	) in
 	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
-		Selection.select elem
+		let open Lwt in
+		let (_:unit Lwt.t) =
+			Lwt_js.yield () >>= fun () -> return (Selection.select elem) in
+		()
+	) in
+	let select_element = handler (fun event ->
+		event |> Event.target |> Option.may Selection.select;
+		Event.handled
 	) in
 	let update_selection = handler @@ Ui.bind instance (fun { generated_password; _ } e ->
 		generated_password |> Option.bind (fun { password; _ } ->
@@ -268,12 +301,8 @@ let view instance : state -> internal_message Html.html =
 
 	let get_password_element () =
 		let sel = "#"^password_element_id in
-		let found = Dom_html.document##documentElement##querySelector(Js.string sel)
-			|> Js.Opt.to_option in
-		if Option.is_none found then (
-			Log.warn (fun m->m "Error locating password element %s" sel)
-		);
-		found
+		Dom_html.document##documentElement##querySelector(Js.string sel)
+			|> Js.Opt.to_option
 	in
 
 	let update_highlight () =
@@ -308,9 +337,14 @@ let view instance : state -> internal_message Html.html =
 					Js._true (* continue event *)
 				)) Js._true (* use capture *)
 				;
-				addEventListener doc Dom_html.Event.keydown (handler (fun _ ->
-					Ui.emit instance (`clear `password);
-					Js._false (* stop event *)
+				addEventListener doc Dom_html.Event.keydown (handler (fun e ->
+					e |> Vdoml.Event.keyboard_event |> Option.bind (fun e ->
+						if e##keyCode = Keycode.esc
+							then (
+								Ui.emit instance (`clear `password);
+								Some Js._false (* stop event *)
+							) else None
+					) |> Option.default Js._true (* continue event *)
 				)) Js._false (* use capture *);
 			]
 		in
@@ -457,6 +491,7 @@ let view instance : state -> internal_message Html.html =
 					a_class_list (
 						[ "dummy" ] @ (if fully_selected then ["selected"] else [])
 					);
+					a_onclick select_element;
 				] [ text password_display ];
 			] in
 

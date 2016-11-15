@@ -51,10 +51,11 @@ let string_of_dialog = function
 	| `about -> "`about"
 	| `account_settings -> "`account_settings"
 
-let string_of_state = function { incognito; dialog; sync_state; _ } ->
+let string_of_state = function { incognito; dialog; sync_state; password_form; _ } ->
 	"{ incognito = " ^ (string_of_bool incognito) ^
 	"; dialog = " ^ (Option.to_string string_of_dialog dialog) ^
 	"; sync_state = " ^ (Sync_ui.string_of_state sync_state) ^
+	"; password_form = " ^ (Password_form.string_of_state password_form) ^
 	" }"
 
 type message =
@@ -162,7 +163,6 @@ let account_settings_message (msg:Account_settings.message) = match msg with
 	| #Account_settings.internal_message as msg -> Account_settings msg
 
 let update ~sync ~storage_provider = fun state message ->
-	Log.debug (fun m->m "message: %s" (string_of_message message));
 	let state = match message with
 		| Toggle_incognito ->
 			let incognito = not state.incognito in
@@ -192,7 +192,12 @@ let update ~sync ~storage_provider = fun state message ->
 			}
 		| Hacky_state_override state -> state
 	in
-	Log.debug (fun m->m " -> state: %s" (string_of_state state));
+	let () = match message with
+		| Hacky_state_override _ -> () (* don't bother *)
+		| message ->
+			Log.debug (fun m->m "message: %s" (string_of_message message));
+			Log.debug (fun m->m " -> state: %s" (string_of_state state))
+	in
 	state
 
 let initial_state sync =
