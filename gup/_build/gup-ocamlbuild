@@ -26,7 +26,7 @@ gup --always
 
 FLAGS=""
 if [ "$build_type" = dev ]; then
-	FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45"
+	FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45-6"
 fi
 
 if [ "$compile_mode" = 'mirage-xen' ]; then

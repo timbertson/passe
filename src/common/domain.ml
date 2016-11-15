@@ -1,6 +1,4 @@
 module Make (Re:Re_ext.Sig) = struct
-	open Re
-
 	type t = string
 	let raw s = s
 
