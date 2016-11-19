@@ -20,6 +20,7 @@ type t = {
 	sync_state: Sync_ui.state;
 	password_form: Password_form.state;
 	account_settings: Account_settings.state option;
+	show_debug : bool;
 }
 
 let eq a b =
@@ -29,6 +30,7 @@ let eq a b =
 		sync_state = sync_state_a;
 		password_form = password_form_a;
 		account_settings = account_settings_a;
+		show_debug = show_debug_a;
 	} = a in
 	let {
 		incognito = incognito_b;
@@ -36,13 +38,15 @@ let eq a b =
 		sync_state = sync_state_b;
 		password_form = password_form_b;
 		account_settings = account_settings_b;
+		show_debug = show_debug_b;
 	} = b in
 	(
 		incognito_a = incognito_b &&
 		dialog_a = dialog_b &&
 		sync_state_a = sync_state_b &&
 		Password_form.eq password_form_a password_form_b &&
-		account_settings_a = account_settings_b
+		account_settings_a = account_settings_b &&
+		show_debug_a = show_debug_b
 	)
 
 let string_of_dialog = function
@@ -89,21 +93,13 @@ let logo () =
 	let open Html in
 	img ~src:"/res/images/footer.png" ~a:[a_class "footer-logo"] ()
 
-let db_display sync : #Dom_html.element Passe_ui.widget =
-	let contents:string signal = sync.Sync.stored_json |> S.map (fun json ->
-		json
-			|> Option.map (J.to_string)
-			|> Option.default "<no DB>"
-	) in
-
-	let display = Passe_ui.div ~cls:"db"
-		~children:[
-			Passe_ui.text_stream contents
-		] () in
-
-	Passe_ui.div ~cls:"db-editor" ~children:[
-		Passe_ui.frag display;
-	] ()
+let db_display db =
+	let open Html in
+	div ~a:[a_class "db-editor"] [
+		div ~a:[a_class "db"] [
+			text (Store.to_json_string db);
+		]
+	]
 
 let view_footer incognito =
 	let open Html in
@@ -209,8 +205,9 @@ let external_messages ((sync, password_form, account_settings):external_state) :
 		(Account_settings.external_messages account_settings |> List.map account_settings_message);
 	]
 
-let initial : external_state -> t = fun (sync_state, password_form_state, _account_settings_state) ->
+let initial ~show_debug : external_state -> t = fun (sync_state, password_form_state, _account_settings_state) ->
 	{
+		show_debug;
 		incognito = false;
 		dialog = None;
 		account_settings = None;
@@ -294,35 +291,26 @@ let view sync instance =
 				view_footer state.incognito
 			];
 			div ~a:[a_class "container"] [ logo () ];
+			if state.show_debug
+				then db_display state.password_form.Password_form.db
+				else empty
+			;
 		];
 	]
 
-let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js.t) =
-	let module Tasks = Ui.Tasks in
+let component ~show_debug ~tasks ~storage_provider (sync:Sync.state) =
 	let external_state = external_state sync in
 	let external_messages = external_state |> S.map external_messages in
-	let initial_state = initial (S.value external_state) in
+	let initial_state = initial ~show_debug (S.value external_state) in
 	let update = update ~sync ~storage_provider in
 
-	let tasks = Tasks.init () in
-	Tasks.async tasks (fun instance ->
+	Ui.Tasks.async tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 		external_messages |> S.changes |> Lwt_react.E.to_stream |> Lwt_stream.iter (fun messages ->
 			messages |> List.iter (Ui.emit instance)
 		)
 	);
-
-	let del child = Dom.removeChild container child in
-	List.iter del (container##childNodes |> Dom.list_of_nodeList);
-
-	let component = Ui.root_component ~eq ~update ~view:(view sync) initial_state in
-	let all_content = Passe_ui.div ~children:[
-		Passe_ui.frag (Passe_ui.vdoml ~tasks component)
-	] () in
-	Passe_ui.withContent container all_content (fun _ ->
-		lwt () = Passe_ui.pause () in
-		Lwt.return_unit
-	)
+	Ui.root_component ~eq ~update ~view:(view sync) initial_state
 
 let print_exc context e =
 	Log.err (fun m->m "Uncaught %s Error: %s\n%s"
@@ -333,53 +321,43 @@ let print_exc context e =
 
 let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 
-let main ~storage_provider sync = (
-	try_lwt (
-		let main_elem = (document##getElementById (s"main")) in
-		check (Opt.test main_elem) "main_elem not found!";
-		let main_elem = Opt.get main_elem (fun _ -> raise Fail) in
-		let offline_actions =
-			if Lazy.force Passe_env_js.offline_access then [
-				App_cache.update_monitor (fun () ->
-					Log.info (fun m->m "appcache update ready");
-					let busy = document##body##querySelector(Js.string"input:focus")
-						|> Opt.to_option
-						|> Option.map (fun elem ->
-								let value = (Js.Unsafe.get elem (Js.string"value")) in
-								value##length > 0
-						) |> Option.default false
-					in
-					begin if busy then
-						Log.warn (fun m->m "Not reloading; active input is nonempty")
-					else
-						Dom_html.window##location##reload()
-					end;
-					return_unit)
-			] else (
-				Log.info (fun m->m "Offline access disabled");
-				[]
-			)
-		in
-		Lwt.join ([ show_form ~storage_provider sync main_elem ] @ offline_actions)
-	) with e -> (
-		print_exc "Toplevel" e;
-		return_unit
-	)
+let main ~show_debug ~storage_provider sync = (
+	let tasks = Ui.Tasks.init () in
+	if Lazy.force Passe_env_js.offline_access
+		then Ui.Tasks.async tasks (fun _instance ->
+			App_cache.update_monitor (fun () ->
+				Log.info (fun m->m "appcache update ready");
+				let busy = document##body##querySelector(Js.string"input:focus")
+					|> Opt.to_option
+					|> Option.map (fun elem ->
+							let value = (Js.Unsafe.get elem (Js.string"value")) in
+							value##length > 0
+					) |> Option.default false
+				in
+				begin if busy then
+					Log.warn (fun m->m "Not reloading; active input is nonempty")
+				else
+					Dom_html.window##location##reload()
+				end;
+				return_unit)
+		)
+		else Log.info (fun m->m "Offline access disabled");
+	Ui.main ~tasks ~root:"main" (component ~show_debug ~tasks ~storage_provider sync) ()
 )
 
 let () = (
 	Logging.set_reporter (Logs_browser.console_reporter ());
 	Log.app (fun m->m "passe %s" (Version.pretty ()));
-	let app_level, vdoml_level = (
+	let app_level, vdoml_level, show_debug = (
 		let uri = !Server.root_url in
 		let open Logs in
 		match Uri.fragment uri with
-		| Some "trace" -> (Debug, Some Debug)
-		| Some "debug" -> (Debug, Some Info)
-		| Some "info" -> (Info, None)
+		| Some "trace" -> (Debug, Some Debug, true)
+		| Some "debug" -> (Debug, Some Info, true)
+		| Some "info" -> (Info, None, false)
 		| _ -> (match Uri.host uri with
-			| Some "localhost" -> (Info, None)
-			| _ -> (Warning, None)
+			| Some "localhost" -> (Info, None, false)
+			| _ -> (Warning, None, false)
 		)
 	) in
 	Logs.set_level ~all:true (Some app_level);
@@ -397,7 +375,7 @@ let () = (
 			Opt.iter !listener Dom_events.stop_listen;
 			Lwt.async (fun () ->
 				initial_auth >>= fun initial_auth ->
-				main ~storage_provider Sync.(build {
+				main ~show_debug ~storage_provider Sync.(build {
 					env_initial_auth = initial_auth;
 					env_config_provider = config_provider
 				})
