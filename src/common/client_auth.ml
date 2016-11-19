@@ -113,6 +113,15 @@ module Make (Server:Server.Sig) = struct
 		| `Saved_implicit_user (_, id)
 			-> Some id
 
+	let confirmed_uid_of_state (auth: auth_state) = match auth with
+		| `Anonymous | `Logged_out | `Failed_login _ -> None
+
+		| `Saved_user (id, _)
+		| `Active_user (id, _)
+		| `Implicit_user (_, id)
+		| `Saved_implicit_user (_, id)
+			-> Some id
+
 	let uid_of_authenticated (auth: authenticated_user_state) = match auth with
 		| `Saved_user (id, _)
 		| `Active_user (id, _)

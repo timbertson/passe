@@ -24,6 +24,8 @@ type state = {
 	ui: ui_state;
 }
 
+type external_state = Sync.sync_state * Client_auth.auth_state
+
 let string_of_login_form = function { username; password } ->
 	"{ username = " ^ (Option.to_string quote_string username) ^
 	"; password = " ^ (Option.to_string mask_string password) ^
@@ -114,7 +116,7 @@ let events_of_signal s =
 	emit (S.value s);
 	E.select [e; S.changes s]
 
-let sync_state sync = 
+let sync_state sync =
 	let last_sync_signal = sync.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
@@ -276,13 +278,12 @@ let command sync instance : (state, message) Ui.command_fn  = (
 
 	(* kick off initial background syc *)
 	background_sync (Some (S.value sync.Sync.auth_state)) |> Ui.async instance;
-	Passe_ui.emit_changes instance sync_state (fun s -> `sync_state s);
 
 	fun state message -> match message with
 		| `request_logout token -> Some (logout token)
 		| `request_login -> Some (login state.ui.login_form)
 		| `request_signup -> Some (signup state.ui.login_form)
-		| `auth_state auth -> Some (background_sync (Some auth))
+		| `auth_state auth when auth <> state.auth_state -> Some (background_sync (Some auth))
 		| `request_sync -> Some (background_sync None)
 		| _ -> None
 )
@@ -311,7 +312,9 @@ let update state (message:internal_message) =
 	| `request_sync | `request_logout _ | `request_login | `request_signup
 		-> state
 
-let initial_state sync = {
+let initial ((sync_state, auth_state):external_state) = {
+	auth_state;
+	sync_state;
 	ui = {
 		error = None;
 		busy = false;
@@ -320,8 +323,6 @@ let initial_state sync = {
 			password = None;
 		};
 	};
-	auth_state = sync.Sync.auth_state |> S.value;
-	sync_state = sync_state sync |> S.value;
 }
 
 type sync_state = {
@@ -490,6 +491,14 @@ let view instance =
 			| `Anonymous -> view_anonymous ()
 			| `Saved_user _ | `Saved_implicit_user _ as auth -> view_saved_user auth ui
 			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth sync_state
+
+let pair a b = a,b
+let external_state sync : external_state React.signal =
+	let open Sync in S.l2 (fun a b -> a,b)
+	(sync_state sync)
+	sync.auth_state
+
+let external_messages (sync, auth) = [ `sync_state sync; `auth_state auth ]
 
 let component sync : (state, message) Ui.component =
 	let command = command sync in

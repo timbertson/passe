@@ -1,7 +1,6 @@
 open Passe
 open Passe_js
 open Common
-open React_ext
 module Log = (val Logging.log_module "account_settings")
 
 open Vdoml
@@ -260,7 +259,6 @@ let save_preferences ~sync _instance { password_length; db; _ } = (
 let panel_command sync instance =
 	let set_auth_state = sync.Sync.set_auth_state in
 	let delete_account = delete_account ~set_auth_state in
-	Passe_ui.emit_changes instance sync.Sync.db_fallback (fun db -> `db_changed db);
 	(fun state msg -> match msg with
 		| `delete_account ->
 			Client_auth.token_of_authenticated state.user
@@ -281,8 +279,11 @@ let reset_preferences state =
 		preferences_error = None;
 	}
 
-let initial sync auth_state =
-	let db = S.value sync.Sync.db_fallback in
+type external_state = Store.t
+let external_state sync : external_state React.signal = sync.Sync.db_fallback
+let external_messages db = [ `db_changed db ]
+
+let initial db auth_state =
 	{
 		user = auth_state;
 		user_delete_error = None;

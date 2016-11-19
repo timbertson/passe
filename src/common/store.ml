@@ -119,7 +119,9 @@ module Make (Re:Re_ext.Sig) = struct
 		composite: db_view Lazy.t;
 	}
 
-	let record_eq:record -> record -> bool = fun a b -> a = b
+	let domain_eq:domain -> domain -> bool = (=)
+
+	let record_eq:record -> record -> bool = (=)
 	let core_eq a b =
 		(a.version = b.version) &&
 		(StringMap.equal record_eq a.records b.records)

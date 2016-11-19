@@ -11,8 +11,6 @@ module J = Json_ext
 module Log = (val Logging.log_module "main")
 
 let s = Js.string
-let non_empty_string : string -> string option = Option.non_empty ~zero:""
-let default_empty_string : string option -> string = Option.default ""
 
 exception Fail
 type dialog_type = [ `about | `account_settings ]
@@ -64,7 +62,7 @@ type message =
 	| Show_account_settings
 	| Dismiss_overlay
 	| Sync of Sync_ui.internal_message
-	| Password_form of Password_form.internal_message
+	| Password_form of Password_form.message
 	| Account_settings of Account_settings.internal_message
 	| Auth_state of Client_auth.auth_state
 	| Hacky_state_override of t (* Remove me, obviously *)
@@ -153,60 +151,71 @@ let view_footer incognito =
  * removing messages which need to be handled by this component *)
 let sync_ui_message (msg:Sync_ui.message) = match msg with
 	| `show_account_settings -> Show_account_settings
-	| `auth_state auth -> Auth_state auth
 	| #Sync_ui.internal_message as msg -> Sync msg
 
-let password_form_message (msg:Password_form.internal_message) = Password_form msg
+let password_form_message (msg:Password_form.message) = Password_form msg
 
 let account_settings_message (msg:Account_settings.message) = match msg with
 	| `hide -> Dismiss_overlay
 	| #Account_settings.internal_message as msg -> Account_settings msg
 
-let update ~sync ~storage_provider = fun state message ->
-	let state = match message with
-		| Toggle_incognito ->
-			let incognito = not state.incognito in
-			storage_provider#set_persistent incognito;
-			{ state with incognito }
-		| Show_about_dialog ->
-			{ state with dialog = Some `about }
-		| Show_account_settings ->
-			{ state with dialog = Some `account_settings }
-		| Dismiss_overlay ->
-			{ state with dialog = None }
-		| Auth_state auth ->
-			let account_settings = auth
-				|> Client_auth.authenticated_of_user_state
-				|> Option.map (Account_settings.initial sync)
-			in
-			let sync_state = Sync_ui.update state.sync_state (`auth_state auth) in
-			{ state with sync_state; account_settings }
-		| Sync msg ->
-			{ state with sync_state = Sync_ui.update state.sync_state msg }
-		| Password_form msg ->
-			{ state with password_form = Password_form.update state.password_form msg }
-		| Account_settings msg ->
-			{ state with
-				account_settings = state.account_settings
-					|> Option.map (fun state -> Account_settings.update state msg);
-			}
-		| Hacky_state_override state -> state
-	in
-	let () = match message with
-		| Hacky_state_override _ -> () (* don't bother *)
-		| message ->
-			Log.debug (fun m->m "message: %s" (string_of_message message));
-			Log.debug (fun m->m " -> state: %s" (string_of_state state))
-	in
-	state
+let update ~sync ~storage_provider =
+	let account_settings_signal = Account_settings.external_state sync in
+	fun state message -> (
+		Log.info (fun m->m "message: %s" (string_of_message message));
+		let update_password_form = Password_form.update sync in
+		let state = match message with
+			| Toggle_incognito ->
+				let incognito = not state.incognito in
+				storage_provider#set_persistent incognito;
+				{ state with incognito }
+			| Show_about_dialog ->
+				{ state with dialog = Some `about }
+			| Show_account_settings ->
+				{ state with dialog = Some `account_settings }
+			| Dismiss_overlay ->
+				{ state with dialog = None }
+			| Auth_state auth ->
+				let account_settings = auth
+					|> Client_auth.authenticated_of_user_state
+					|> Option.map (Account_settings.initial (S.value account_settings_signal))
+				in
+				{ state with account_settings }
+			| Sync msg ->
+				{ state with sync_state = Sync_ui.update state.sync_state msg }
+			| Password_form msg ->
+				{ state with password_form = update_password_form state.password_form msg }
+			| Account_settings msg ->
+				{ state with
+					account_settings = state.account_settings
+						|> Option.map (fun state -> Account_settings.update state msg);
+				}
+			| Hacky_state_override state -> state
+		in
+		Log.debug (fun m->m " -> state: %s" (string_of_state state));
+		state
+	)
 
-let initial_state sync =
+type external_state = Sync_ui.external_state * Password_form.external_state * Account_settings.external_state
+let external_state sync : external_state React.signal = S.l3 (fun a b c -> a,b,c)
+	(Sync_ui.external_state sync)
+	(Password_form.external_state sync)
+	(Account_settings.external_state sync)
+
+let external_messages ((sync, password_form, account_settings):external_state) : message list =
+	List.concat [
+		(Sync_ui.external_messages sync |> List.map sync_ui_message);
+		(Password_form.external_messages password_form |> List.map password_form_message);
+		(Account_settings.external_messages account_settings |> List.map account_settings_message);
+	]
+
+let initial : external_state -> t = fun (sync_state, password_form_state, _account_settings_state) ->
 	{
 		incognito = false;
 		dialog = None;
-		sync_state = Sync_ui.initial_state sync;
 		account_settings = None;
-		password_form = Password_form.initial_state sync;
+		sync_state = Sync_ui.initial sync_state;
+		password_form = Password_form.initial password_form_state;
 	}
 
 (* XXX Hack for connecting multiple vdoml trees to the same state *)
@@ -239,15 +248,6 @@ let gen_updater ~sync ~storage_provider =
 		update
 	)
 
-let view _instance = fun { incognito; _ } ->
-	let open Html in
-	div [
-		div ~a:[a_class "container footer"] [
-			view_footer incognito
-		];
-		div ~a:[a_class "container"] [ logo () ];
-	]
-
 let view_overlay sync instance =
 	let account_settings_panel = Ui.child ~message:account_settings_message
 		(Account_settings.panel sync) instance in
@@ -272,50 +272,53 @@ let view_overlay sync instance =
 					|> Option.default (text "Not logged in")
 	)
 
+let view sync instance =
+	let open Html in
+	let view_overlay = view_overlay sync instance in
+	let view_sync = Ui.child
+		~message:sync_ui_message
+		(Sync_ui.component sync) instance in
+
+	let view_password_form = Ui.child
+		~message:password_form_message
+		Password_form.component instance in
+
+	fun state -> div [
+		view_overlay state;
+		div ~a:[a_class "container main"] [
+			view_sync state.sync_state;
+			view_password_form state.password_form;
+		];
+		div [
+			div ~a:[a_class "container footer"] [
+				view_footer state.incognito
+			];
+			div ~a:[a_class "container"] [ logo () ];
+		];
+	]
+
 let show_form ~storage_provider (sync:Sync.state) (container:Dom_html.element Js.t) =
 	let module Tasks = Ui.Tasks in
-	let gen_updater = gen_updater ~sync ~storage_provider in
-	let initial_state = initial_state sync in
+	let external_state = external_state sync in
+	let external_messages = external_state |> S.map external_messages in
+	let initial_state = initial (S.value external_state) in
+	let update = update ~sync ~storage_provider in
 
-	let main_tasks = Tasks.init () in
-	let main_component = Ui.root_component ~eq ~update:(gen_updater main_tasks) ~view initial_state in
-	Tasks.sync main_tasks (fun instance ->
-		Passe_ui.emit_changes instance sync.Sync.auth_state (fun s -> Auth_state s);
-	);
-
-
-	let overlay_tasks = Tasks.init () in
-	let overlay_component = Ui.root_component ~eq ~update:(gen_updater overlay_tasks) ~view:(view_overlay sync) initial_state in
-	Tasks.sync overlay_tasks (fun instance ->
+	let tasks = Tasks.init () in
+	Tasks.async tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
+		external_messages |> S.changes |> Lwt_react.E.to_stream |> Lwt_stream.iter (fun messages ->
+			messages |> List.iter (Ui.emit instance)
+		)
 	);
-
-	let sync_tasks = Tasks.init () in
-	let sync_component = Sync_ui.component sync in
-	let sync_component = Ui.root_component ~eq ~update:(gen_updater sync_tasks) ~view:(fun instance ->
-		let child = Ui.child ~message:sync_ui_message sync_component instance in
-		fun state -> child state.sync_state
-	) initial_state in
-
-	let password_form_tasks = Tasks.init () in
-	let password_form_component = Password_form.component in
-	let password_form_component = Ui.root_component ~eq ~update:(gen_updater password_form_tasks) ~view:(fun instance ->
-		let child = Ui.child ~message:password_form_message password_form_component instance in
-		fun state -> child state.password_form
-	) initial_state in
 
 	let del child = Dom.removeChild container child in
 	List.iter del (container##childNodes |> Dom.list_of_nodeList);
-	let all_content = Passe_ui.div
-		~children:[
-			Passe_ui.frag (Passe_ui.vdoml ~tasks:overlay_tasks overlay_component);
-			Passe_ui.child Passe_ui.div ~cls:"container main" ~children:[
-				Passe_ui.frag (Passe_ui.vdoml ~tasks:sync_tasks sync_component);
-				Passe_ui.frag (Passe_ui.vdoml ~tasks:password_form_tasks password_form_component);
-			] ();
-			Passe_ui.frag (Passe_ui.vdoml ~tasks:main_tasks main_component);
-		] () in
-	(* all_content#append @@ db_display sync; *)
+
+	let component = Ui.root_component ~eq ~update ~view:(view sync) initial_state in
+	let all_content = Passe_ui.div ~children:[
+		Passe_ui.frag (Passe_ui.vdoml ~tasks component)
+	] () in
 	Passe_ui.withContent container all_content (fun _ ->
 		lwt () = Passe_ui.pause () in
 		Lwt.return_unit
