@@ -70,7 +70,6 @@ type message =
 	| Password_form of Password_form.message
 	| Account_settings of Account_settings.internal_message
 	| Auth_state of Client_auth.auth_state
-	| Hacky_state_override of t (* Remove me, obviously *)
 
 let string_of_message = function
 	| Toggle_incognito -> "Toggle_incognito"
@@ -81,7 +80,6 @@ let string_of_message = function
 	| Password_form msg -> "Password_form " ^ (Password_form.string_of_message msg)
 	| Auth_state auth -> "Auth_state " ^ (Client_auth.string_of_auth_state auth)
 	| Account_settings msg -> "Account_settings " ^ (Account_settings.string_of_message msg)
-	| Hacky_state_override _ -> "Hacky_state_override (...)"
 
 let check cond = Printf.ksprintf (function s ->
 	if cond then () else raise (AssertionError s)
@@ -189,7 +187,6 @@ let update ~sync ~storage_provider =
 					account_settings = state.account_settings
 						|> Option.map (fun state -> Account_settings.update state msg);
 				}
-			| Hacky_state_override state -> state
 		in
 		Log.debug (fun m->m " -> state: %s" (string_of_state state));
 		state
