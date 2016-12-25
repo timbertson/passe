@@ -53,11 +53,12 @@ let string_of_dialog = function
 	| `about -> "`about"
 	| `account_settings -> "`account_settings"
 
-let string_of_state = function { incognito; dialog; sync_state; password_form; _ } ->
+let string_of_state = function { incognito; dialog; sync_state; password_form; account_settings; _ } ->
 	"{ incognito = " ^ (string_of_bool incognito) ^
 	"; dialog = " ^ (Option.to_string string_of_dialog dialog) ^
 	"; sync_state = " ^ (Sync_ui.string_of_state sync_state) ^
 	"; password_form = " ^ (Password_form.string_of_state password_form) ^
+	"; account_settings = " ^ (Option.to_string Account_settings.string_of_state account_settings) ^
 	" }"
 
 type message =
@@ -155,6 +156,11 @@ let account_settings_message (msg:Account_settings.message) = match msg with
 	| `hide -> Dismiss_overlay
 	| #Account_settings.internal_message as msg -> Account_settings msg
 
+let reset_account_settings auth_state account_settings_state =
+	auth_state
+		|> Client_auth.authenticated_of_user_state
+		|> Option.map (Account_settings.initial (account_settings_state))
+
 let update ~sync ~storage_provider =
 	let account_settings_signal = Account_settings.external_state sync in
 	fun state message -> (
@@ -172,10 +178,7 @@ let update ~sync ~storage_provider =
 			| Dismiss_overlay ->
 				{ state with dialog = None }
 			| Auth_state auth ->
-				let account_settings = auth
-					|> Client_auth.authenticated_of_user_state
-					|> Option.map (Account_settings.initial (S.value account_settings_signal))
-				in
+				let account_settings = reset_account_settings auth (S.value account_settings_signal) in
 				{ state with account_settings }
 			| Sync msg ->
 				{ state with sync_state = Sync_ui.update state.sync_state msg }
@@ -192,58 +195,50 @@ let update ~sync ~storage_provider =
 		state
 	)
 
-type external_state = Sync_ui.external_state * Password_form.external_state * Account_settings.external_state
-let external_state sync : external_state React.signal = S.l3 (fun a b c -> a,b,c)
+let command ~sync instance =
+	let emit = Ui.emit instance % sync_ui_message in
+	let do_async = Ui.async instance in
+	let sync_ui_command = Sync_ui.command ~sync ~do_async ~emit in
+	(fun state message ->
+		match message with
+			| Sync msg -> sync_ui_command state.sync_state msg
+			| _ -> None
+	)
+
+type toplevel_external_state = Client_auth.auth_state
+let toplevel_external_state sync = sync.Sync.auth_state
+let toplevel_external_messages auth_state =
+	[ Auth_state auth_state ]
+
+type external_state =
+	toplevel_external_state
+	* Sync_ui.external_state
+	* Password_form.external_state
+	* Account_settings.external_state
+
+let external_state sync : external_state React.signal = S.l4 (fun a b c d -> a,b,c,d)
+	(toplevel_external_state sync)
 	(Sync_ui.external_state sync)
 	(Password_form.external_state sync)
 	(Account_settings.external_state sync)
 
-let external_messages ((sync, password_form, account_settings):external_state) : message list =
+let external_messages ((toplevel, sync, password_form, account_settings):external_state) : message list =
 	List.concat [
+		(toplevel_external_messages toplevel);
 		(Sync_ui.external_messages sync |> List.map sync_ui_message);
 		(Password_form.external_messages password_form |> List.map password_form_message);
 		(Account_settings.external_messages account_settings |> List.map account_settings_message);
 	]
 
-let initial ~show_debug : external_state -> t = fun (sync_state, password_form_state, _account_settings_state) ->
+let initial ~show_debug : external_state -> t = fun (auth_state, sync_state, password_form_state, account_settings_state) ->
 	{
 		show_debug;
 		incognito = false;
 		dialog = None;
-		account_settings = None;
+		account_settings = reset_account_settings auth_state account_settings_state;
 		sync_state = Sync_ui.initial sync_state;
 		password_form = Password_form.initial password_form_state;
 	}
-
-(* XXX Hack for connecting multiple vdoml trees to the same state *)
-let gen_updater ~sync ~storage_provider =
-	let open Vdoml in
-	let toplevel_ui_instances = ref [] in
-	let update = update ~sync ~storage_provider in
-	fun (tasks:(t, message) Ui.Tasks.t) -> (
-		let instance = ref None in
-		Ui.Tasks.sync tasks (fun inst ->
-			toplevel_ui_instances := inst :: !toplevel_ui_instances;
-			instance := Some inst
-		);
-		let update state message = (
-			let state = update state message in
-			match message with
-				| Hacky_state_override _ -> state
-				| _ -> (
-					(* propagate to peers *)
-					let () = match !instance with
-						| None -> ()
-						| Some instance -> !toplevel_ui_instances |> List.iter (fun dest ->
-							(* phys equality *)
-							if dest != instance then Ui.emit dest (Hacky_state_override state)
-						)
-					in
-					state
-				)
-		) in
-		update
-	)
 
 let view_overlay sync instance =
 	let account_settings_panel = Ui.child ~message:account_settings_message
@@ -255,18 +250,23 @@ let view_overlay sync instance =
 			elem##innerHTML <- Js.string (
 				About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
 			) in
-		match dialog with
-			| None -> text ""
-			| Some `about ->
-				overlay [
-					Bootstrap.panel ~close:Dismiss_overlay ~title:"About Passé" [
-						div [] |> Ui.hook ~create:inject_html
-					]
+		dialog |> Option.map (fun dialog ->
+			overlay [(match dialog with
+			| `about ->
+				Bootstrap.panel ~close:Dismiss_overlay ~title:"About Passé" [
+					div [] |> Ui.hook ~create:inject_html
 				]
-			| Some `account_settings ->
+			| `account_settings ->
 				account_settings
 					|> Option.map account_settings_panel
-					|> Option.default (text "Not logged in")
+					|> Option.default_fn (fun () ->
+						Bootstrap.panel ~close:Dismiss_overlay ~title:"Error" [
+							text "You are not logged in."
+						]
+					)
+					
+			)]
+		) |> Option.default empty
 	)
 
 let view sync instance =
@@ -274,7 +274,7 @@ let view sync instance =
 	let view_overlay = view_overlay sync instance in
 	let view_sync = Ui.child
 		~message:sync_ui_message
-		(Sync_ui.component sync) instance in
+		Sync_ui.component instance in
 
 	let view_password_form = Ui.child
 		~message:password_form_message
@@ -303,6 +303,7 @@ let component ~show_debug ~tasks ~storage_provider (sync:Sync.state) =
 	let external_messages = external_state |> S.map external_messages in
 	let initial_state = initial ~show_debug (S.value external_state) in
 	let update = update ~sync ~storage_provider in
+	let command = command ~sync in
 
 	Ui.Tasks.async tasks (fun instance ->
 		Bootstrap.install_overlay_handler instance Dismiss_overlay;
@@ -310,7 +311,7 @@ let component ~show_debug ~tasks ~storage_provider (sync:Sync.state) =
 			messages |> List.iter (Ui.emit instance)
 		)
 	);
-	Ui.root_component ~eq ~update ~view:(view sync) initial_state
+	Ui.root_component ~eq ~update ~command ~view:(view sync) initial_state
 
 let print_exc context e =
 	Log.err (fun m->m "Uncaught %s Error: %s\n%s"

@@ -145,7 +145,7 @@ let logout ~set_auth_state = fun token -> (
 			return_unit
 )
 
-let submit_form ~set_auth_state url instance {username; password} = (
+let submit_form ~set_auth_state ~emit url {username; password} = (
 	Log.info (fun m->m "form submitted");
 	let data = match username, password with
 		| Some username, Some password ->
@@ -154,26 +154,24 @@ let submit_form ~set_auth_state url instance {username; password} = (
 				"password", `String password;
 			])
 		| _ ->
-			Ui.emit instance (`error (Some "Username and password required"));
+			emit (`error (Some "Username and password required"));
 			None
 	in
 	data |> Option.map (fun data ->
-		Ui.emit instance (`error None);
+		emit (`error None);
 		let open Server in
 		Server.post_json ~data url |> Lwt.map (function
 			| OK response ->
-				set_auth_state (`Active_user (Auth.get_response_credentials response));
-				None
+				set_auth_state (`Active_user (Auth.get_response_credentials response))
 			| Failed (_, message, _) ->
-				Some (`error (Some message))
+				emit (`error (Some message))
 			| Unauthorized _ -> assert false
 		)
-	) |> Option.default (Lwt.return None)
+	) |> Option.default (Lwt.return_unit)
 )
 
-let auth_loop ~set_auth_state instance (auth:Client_auth.saved_auth_state) = (
+let auth_loop ~set_auth_state ~emit (auth:Client_auth.saved_auth_state) = (
 	let continue = ref true in
-	let emit = Ui.emit instance in
 	while_lwt !continue do
 		emit (`busy true);
 		try_lwt (
@@ -240,50 +238,68 @@ let sync_db_loop ~sync ~sync_state auth =
 		]
 	done
 
-let run_background_sync ~sync ~set_auth_state instance sync_state : (Client_auth.auth_state option -> message option Lwt.t) =
+let run_background_sync ~sync ~set_auth_state ~emit sync_state : (Client_auth.auth_state option -> unit Lwt.t) =
 	let last_auth = ref None in
 	let run = (fun auth ->
 		last_auth := Some auth;
-		Log.info (fun m->m "run_background_sync called");
+		Log.info (fun m->m "run_background_sync called with auth: %s" (Client_auth.string_of_auth_state auth));
 		(match auth with
 			| `Logged_out | `Anonymous | `Failed_login _ -> return_unit
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
-				auth_loop ~set_auth_state instance (u:>Client_auth.saved_auth_state)
+				auth_loop ~set_auth_state ~emit (u:>Client_auth.saved_auth_state)
 			| `Active_user _ | `Implicit_user _ as u ->
 				sync_db_loop ~sync ~sync_state (u:>Client_auth.logged_in_user_state)
-		) >>= fun _ -> return_none
+		) >>= fun _ -> return_unit
 	) in
 	fun auth -> auth
 		|> Option.or_ !last_auth
 		|> Option.map run
-		|> Option.default Lwt.return_none
+		|> Option.default Lwt.return_unit
 
-let command sync instance : (state, message) Ui.command_fn  = (
+(* note: not attached to this instance, since it needs to respond to
+ * events that come from above this component *)
+(* TODO: should vdoml have some standard way of distributing
+ * commands for this sort of case? *)
+let command ~sync ~do_async ~emit : (state, internal_message) Ui.command_fn  = (
 	let set_auth_state = sync.Sync.set_auth_state in
 	let logout = Ui.supplantable (fun token ->
-		logout ~set_auth_state token |> Lwt.map (fun _ -> None)
-	) instance in
+		logout ~set_auth_state token
+	) in
 
 	let login = Ui.supplantable (fun login_form ->
-		submit_form ~set_auth_state Client_auth.login_url instance login_form
-	) instance in
+		submit_form ~set_auth_state ~emit Client_auth.login_url login_form
+	) in
 
 	let signup = Ui.supplantable (fun login_form ->
-		submit_form ~set_auth_state Client_auth.signup_url instance login_form
-	) instance in
+		submit_form ~set_auth_state ~emit Client_auth.signup_url login_form
+	) in
 
 	let sync_state = sync_state sync in
 	let background_sync = Ui.supplantable
-		(run_background_sync ~sync ~set_auth_state instance sync_state) instance in
+		(run_background_sync ~sync ~set_auth_state ~emit sync_state) in
+
+	let latest_auth = ref None in
+	let background_sync auth =
+		latest_auth := auth;
+		background_sync auth
+	in
 
 	(* kick off initial background syc *)
-	background_sync (Some (S.value sync.Sync.auth_state)) |> Ui.async instance;
+	background_sync (Some (S.value sync.Sync.auth_state)) |> do_async;
 
-	fun state message -> match message with
+	fun state message ->
+		match message with
 		| `request_logout token -> Some (logout token)
 		| `request_login -> Some (login state.ui.login_form)
 		| `request_signup -> Some (signup state.ui.login_form)
-		| `auth_state auth when auth <> state.auth_state -> Some (background_sync (Some auth))
+		| `auth_state auth ->
+			if !latest_auth <> (Some auth) then (
+				Log.debug (fun m->m"resetting background_sync with new auth state %s" (Client_auth.string_of_auth_state auth));
+				Some (background_sync (Some auth))
+			) else (
+				Log.debug (fun m->m"ignoring duplicate auth state %s" (Client_auth.string_of_auth_state auth));
+				None
+			)
 		| `request_sync -> Some (background_sync None)
 		| _ -> None
 )
@@ -500,6 +516,5 @@ let external_state sync : external_state React.signal =
 
 let external_messages (sync, auth) = [ `sync_state sync; `auth_state auth ]
 
-let component sync : (state, message) Ui.component =
-	let command = command sync in
-	Ui.component ~eq:(=) ~command ~view ()
+let component : (state, message) Ui.component =
+	Ui.component ~eq:(=) ~view ()

@@ -38,6 +38,10 @@ let string_of_message : internal_message -> string = function
 	| `password_length len -> "`password_length " ^ len
 	| `db_changed _ -> "`db_changed"
 
+let string_of_state : state -> string = fun { user; _ } ->
+	"{ user = " ^ (Client_auth.string_of_auth_state (user:>Client_auth.auth_state)) ^
+	" }"
+
 type message = [
 	| internal_message
 	| `hide
