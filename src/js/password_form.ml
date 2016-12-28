@@ -3,6 +3,7 @@ open Passe
 open Passe_js
 open Common
 open React_ext
+open Js_util
 module Log = (val Logging.log_module "password_form")
 
 type input_target = [ `domain | `password ]
@@ -91,12 +92,11 @@ let external_state sync : external_state React.signal = let open Sync in S.l2 (f
 let external_messages (db, domain_form) = [ `db_changed db ] @
 	(Domain_form.external_messages domain_form |> List.map domain_form_message)
 
-let initial ((db, domain_form_state):external_state) =
-	let domain = "" in
+let initial ((db, domain_form_state):external_state) domain_text =
 	{
 		db;
-		domain;
-		domain_form = Domain_form.initial domain_form_state domain;
+		domain = domain_text;
+		domain_form = Domain_form.initial domain_form_state domain_text;
 		master_password = "";
 		generated_password = None;
 		domain_suggestions = None;
@@ -110,7 +110,9 @@ type message = [
 	| `master_password of string
 	| `domain of string
 	| `clear of input_target
+	| `cancel
 	| `blur of input_target
+	| `focus of input_target
 	| `accept_suggestion of string
 	| `select_cursor of direction
 	| `select_suggestion of int option
@@ -130,7 +132,9 @@ let string_of_message : message -> string = function
 	| `master_password password -> "`master_password " ^ (mask_string password)
 	| `domain domain -> "`domain " ^ domain
 	| `clear target -> "`clear " ^ (string_of_target target)
+	| `cancel -> "`cancel"
 	| `blur target -> "`blur " ^ (string_of_target target)
+	| `focus target -> "`focus " ^ (string_of_target target)
 	| `db_changed _ -> "`db_changed"
 	| `accept_suggestion text -> "`accept_suggestion " ^ text
 	| `select_cursor direction -> "`select_cursor " ^ (string_of_direction direction)
@@ -152,32 +156,51 @@ let update_suggestions state =
 	in
 	{ state with domain_suggestions = s |> Option.map (fun suggestions -> { suggestions; selected = None }) }
 
-let update sync : state -> message -> state =
+let update : state -> message -> state =
 	let update_domain_form state =
 		{ state with domain_form =
-			Domain_form.update sync state.domain_form (Domain_form.Domain_changed state.domain)
+			Domain_form.update state.domain_form (Domain_form.Domain_changed state.domain)
 		}
 	in
 	let derive_domain_data state = state |> update_suggestions |> update_domain_form in
+	let clear_generated_password state = { state with generated_password = None } in
 	let modify_generated_password state fn =
 		{ state with generated_password = state.generated_password |> Option.map fn }
 	in
+	let select_input target state = { state with active_input = Some target } in
 
-	(fun state -> function
-		| `clear dest -> (
-			let state = { state with generated_password = None; active_input = Some dest } in
-			match dest with
-				| `domain -> { state with domain = "" }
-				| `password -> { state with master_password = "" }
-			)
+	let rec update = (fun state -> function
+		| `clear `password -> update state (`master_password "") |> select_input `password
+		| `clear `domain -> update state (`domain "") |> select_input `domain
+		| `cancel ->
+			if state.generated_password <> None then
+				update state (`clear `password)
+			else
+				if state.master_password = "" && state.active_input = Some `password
+					then update state (`clear `domain)
+					else update state (`master_password "")
+		| `focus dest -> { state with active_input = Some dest }
 		| `blur dest ->
 				if state.active_input = Some dest
 					then { state with active_input = None }
-					else state
-		| `domain domain -> { state with domain; active_input = Some `domain } |> derive_domain_data
+					else (
+						Log.debug (fun m->m "received blur for %s, but active_input = %s"
+							(string_of_target dest)
+							(Option.to_string string_of_target state.active_input)
+						);
+						state
+					)
+		| `domain domain ->
+			{ state with domain }
+				|> derive_domain_data
+				|> clear_generated_password
+
+		| `master_password master_password ->
+			{ state with master_password }
+				|> clear_generated_password
+
 		| `db_changed db -> { state with db } |> update_suggestions
-		| `domain_form msg -> { state with domain_form = Domain_form.update sync state.domain_form msg }
-		| `master_password master_password -> { state with master_password }
+		| `domain_form msg -> { state with domain_form = Domain_form.update state.domain_form msg }
 		| `select_cursor direction ->
 				let domain_suggestions = state.domain_suggestions |> Option.map (fun suggestions ->
 					let idx = suggestions.selected |> Option.default (-1) in
@@ -217,7 +240,13 @@ let update sync : state -> message -> state =
 				fully_selected = true;
 			}}
 		| `clipboard_supported clipboard_supported -> { state with clipboard_supported }
-	)
+	) in
+	update
+
+let command ~sync state = function
+	| `domain_form msg ->
+			Domain_form.command ~sync state.domain_form msg
+	| _ -> None
 
 let id_counter = ref 0
 let view instance : state -> message Html.html =
@@ -329,34 +358,22 @@ let view instance : state -> message Html.html =
 		) |> Event.optional
 	) in
 
-	let root_hooks =
-		let events = ref [] in
-		let create _ =
-			let open Dom_html in
-			let doc = Dom_html.document##documentElement in
-			events := !events @ [
-				addEventListener doc Dom_html.Event.click (handler (fun _ ->
-					update_highlight ();
-					Js._true (* continue event *)
-				)) Js._true (* use capture *)
-				;
-				addEventListener doc Dom_html.Event.keydown (handler (fun e ->
-					e |> Vdoml.Event.keyboard_event |> Option.bind (fun e ->
-						if e##keyCode = Keycode.esc
-							then (
-								Ui.emit instance (`clear `password);
-								Some Js._false (* stop event *)
-							) else None
-					) |> Option.default Js._true (* continue event *)
-				)) Js._false (* use capture *);
-			]
-		in
-		let destroy _elem =
-			!events |> List.iter (Dom_html.removeEventListener);
-			events := []
-		in
-		fun node -> Ui.hook ~create ~destroy node
-	in
+	let root_hooks = with_global_listeners (fun () ->
+		[
+			global_event_listener Dom_html.Event.click (fun _ ->
+				update_highlight ();
+			);
+			global_event_listener Dom_html.Event.keydown (fun e ->
+				e |> Vdoml.Event.keyboard_event |> Option.may (fun e ->
+					if e##keyCode = Keycode.esc
+						then (
+							Dom.preventDefault e;
+							Ui.emit instance `cancel
+						)
+				)
+			);
+		] @ (Domain_form.global_listeners instance domain_form_message)
+	) in
 
 	(fun state ->
 		let { domain; master_password; active_input; domain_suggestions; _ } = state in
@@ -368,7 +385,7 @@ let view instance : state -> message Html.html =
 
 		let track_focus dest = [
 			a_onblur @@ emitter (`blur dest);
-			a_onfocus @@ emitter (`blur dest);
+			a_onfocus @@ emitter (`focus dest);
 		] in
 
 		let domain_input = input ~a:([

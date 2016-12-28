@@ -6,6 +6,7 @@ open React_ext
 open Vdoml
 open Html
 open Bootstrap
+open Js_util
 
 module Log = (val Logging.log_module "domain_form")
 type modified_record = {
@@ -109,39 +110,38 @@ let initial (db, user) domain_text =
 		db; user; domain = New (Store.default db domain_text);
 	}
 
-let update sync state =
+let command ~sync =
 	let modify_domain original current =
 		let as_record = Option.map (fun d -> Store.Domain d) in
 		let (_saved:bool) = Sync.save_change ~state:sync
 			~original:(original |> as_record) (current |> as_record) in
 		()
 	in
+	fun state message -> let () = match message with
+		| Delete ->
+			(match state.domain with
+				| New _ -> ()
+				| Modified { original; _ } | Saved original ->
+					modify_domain (Some original) None
+			)
+		| Save ->
+			(match state.domain with
+				| Saved _ -> ()
+				| Modified { original; current } ->
+					modify_domain (Some original) (Some current)
+				| New current ->
+					modify_domain None (Some current)
+			)
+		| _ -> ()
+	in None
 
+let update state =
 	(function
 		| Domain_changed text ->
 			{ state with domain = match Store.lookup text state.db with
 				| Some domain -> Saved domain
 				| None -> New (Store.default state.db text)
 			}
-		| Delete ->
-			let () = (match state.domain with
-				| New _ -> ()
-				| Modified { original; _ } | Saved original ->
-					modify_domain (Some original) None
-			) in
-			update_domain state (Store.default state.db (domain_text_of_record state.domain))
-
-		| Save ->
-			let domain = (match state.domain with
-				| Saved domain -> domain
-				| Modified { original; current } ->
-					modify_domain (Some original) (Some current);
-					current
-				| New current ->
-					modify_domain None (Some current);
-					current
-			) in
-			{ state with domain = Saved domain }
 
 		| Edit edit ->
 			let current = current_of_state state in
@@ -155,6 +155,16 @@ let update sync state =
 
 		| External_state (db, user) ->
 			update_domain { state with db; user } (current_of_state state)
+
+		(* These two are handled mainly by `change`, triggers `External_state` message.
+		 * The exception is that we also clear out modifications when we delete
+		 * a domain from the db *)
+		| Save -> state
+		| Delete ->
+			let domain = New (
+				Store.default state.db (domain_text_of_record state.domain)
+			) in
+			{ state with domain }
 	)
 
 let non_empty_string : string -> string option = Option.non_empty ~zero:""
@@ -246,5 +256,17 @@ let view _instance =
 			]
 		)
 	)
+
+let global_listeners instance map_msg = [
+		global_event_listener Dom_html.Event.click (fun e ->
+			e |> Vdoml.Event.keyboard_event |> Option.may (fun e ->
+				if (Js.to_bool e##ctrlKey && e##keyCode = Keycode.s) then (
+					Dom.preventDefault e;
+					Dom_html.stopPropagation e;
+					Ui.emit instance (map_msg Save)
+				);
+			)
+		)
+	]
 
 let component = Ui.component ~view ~eq ()

@@ -163,7 +163,6 @@ let update ~sync ~storage_provider =
 	let account_settings_signal = Account_settings.external_state sync in
 	fun state message -> (
 		Log.info (fun m->m "message: %s" (string_of_message message));
-		let update_password_form = Password_form.update sync in
 		let state = match message with
 			| Toggle_incognito ->
 				let incognito = not state.incognito in
@@ -181,7 +180,7 @@ let update ~sync ~storage_provider =
 			| Sync msg ->
 				{ state with sync_state = Sync_ui.update state.sync_state msg }
 			| Password_form msg ->
-				{ state with password_form = update_password_form state.password_form msg }
+				{ state with password_form = Password_form.update state.password_form msg }
 			| Account_settings msg ->
 				{ state with
 					account_settings = state.account_settings
@@ -196,9 +195,11 @@ let command ~sync instance =
 	let emit = Ui.emit instance % sync_ui_message in
 	let do_async = Ui.async instance in
 	let sync_ui_command = Sync_ui.command ~sync ~do_async ~emit in
+	let password_form_command = Password_form.command ~sync in
 	(fun state message ->
 		match message with
 			| Sync msg -> sync_ui_command state.sync_state msg
+			| Password_form msg -> password_form_command state.password_form msg
 			| _ -> None
 	)
 
@@ -227,20 +228,26 @@ let external_messages ((toplevel, sync, password_form, account_settings):externa
 		(Account_settings.external_messages account_settings |> List.map account_settings_message);
 	]
 
-let initial ~show_debug : external_state -> t = fun (auth_state, sync_state, password_form_state, account_settings_state) ->
+let initial ~show_debug : external_state -> t = fun (
+		auth_state,
+		sync_state,
+		password_form_state,
+		account_settings_state
+	) ->
+		let domain_text = "" in
 	{
 		show_debug;
 		incognito = false;
 		dialog = None;
 		account_settings = reset_account_settings auth_state account_settings_state;
 		sync_state = Sync_ui.initial sync_state;
-		password_form = Password_form.initial password_form_state;
+		password_form = Password_form.initial password_form_state domain_text;
 	}
 
 let view_overlay sync instance =
 	let account_settings_panel = Ui.child ~message:account_settings_message
 		(Account_settings.panel sync) instance in
-	let overlay = Bootstrap.overlay ~cancel:Dismiss_overlay in
+	let overlay = Bootstrap.overlay instance ~cancel:Dismiss_overlay in
 	(fun { dialog; account_settings; _ } ->
 		let open Html in
 		let inject_html elem =
@@ -303,7 +310,6 @@ let component ~show_debug ~tasks ~storage_provider (sync:Sync.state) =
 	let command = command ~sync in
 
 	Ui.Tasks.async tasks (fun instance ->
-		Bootstrap.install_overlay_handler instance Dismiss_overlay;
 		external_messages |> S.changes |> Lwt_react.E.to_stream |> Lwt_stream.iter (fun messages ->
 			messages |> List.iter (Ui.emit instance)
 		)

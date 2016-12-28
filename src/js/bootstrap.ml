@@ -3,7 +3,7 @@ open Passe
 open Common
 open Vdoml
 open Html
-open Lwt
+open Js_util
 
 let icon name = let open Vdoml.Html in i ~a:[a_class ("glyphicon glyphicon-"^name)] []
 
@@ -75,17 +75,17 @@ let row scale ?collapse ?cls children =
 		)
 	)
 
-let install_overlay_handler instance cancel =
-	let document = Dom_html.document##documentElement in
-	Vdoml.Ui.async instance (Lwt_js_events.keydowns ~use_capture:true document (fun event _ ->
-		(* Console.console##log(event); *)
-		if (event##keyCode == Keycode.esc) then (
-			Vdoml.Ui.emit instance cancel
+let overlay instance ~cancel =
+	let hooks = with_global_listeners (fun () -> [
+		Js_util.global_event_listener Dom_html.Event.keydown (fun event ->
+			event |> Vdoml.Event.keyboard_event |> Option.may (fun event ->
+				if (event##keyCode == Keycode.esc) then (
+					Dom.preventDefault event;
+					Vdoml.Ui.emit instance cancel
+				)
+			)
 		);
-		return_unit
-	))
-
-let overlay ~cancel =
+	]) in
 	let onclick = handler (fun evt ->
 		let is_overlay = Event.target evt |> Option.map (fun target ->
 			target##classList##contains(Js.string "overlay") |> Js.to_bool
@@ -95,7 +95,8 @@ let overlay ~cancel =
 			else None
 		) |> Event.optional
 	) in
-	fun content -> div ~a:[a_class "overlay"; a_onclick onclick] content
+	fun content ->
+		div ~a:[a_class "overlay"; a_onclick onclick] content |> hooks
 
 let panel ~title ?close children =
 	let _title = title in

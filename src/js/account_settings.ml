@@ -196,8 +196,9 @@ let user_delete_section =
 		]
 	)
 
-let view_panel _instance =
-	let panel ~title children = Bootstrap.overlay ~cancel:`hide [Bootstrap.panel ~close:`hide ~title children] in
+let view_panel instance =
+	let overlay = Bootstrap.overlay instance ~cancel:`hide in
+	let panel ~title children = overlay [Bootstrap.panel ~close:`hide ~title children] in
 	(fun state ->
 		panel ~title:"Account settings" ([
 			preferences_section state;
