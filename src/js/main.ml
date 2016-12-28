@@ -192,10 +192,9 @@ let update ~sync ~storage_provider =
 	)
 
 let command ~sync instance =
-	let emit = Ui.emit instance % sync_ui_message in
 	let do_async = Ui.async instance in
-	let sync_ui_command = Sync_ui.command ~sync ~do_async ~emit in
-	let password_form_command = Password_form.command ~sync in
+	let sync_ui_command = Sync_ui.command ~sync ~do_async ~emit:(Ui.emit instance % sync_ui_message) in
+	let password_form_command = Password_form.command ~sync ~emit:(Ui.emit instance % password_form_message) in
 	(fun state message ->
 		match message with
 			| Sync msg -> sync_ui_command state.sync_state msg

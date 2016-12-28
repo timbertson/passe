@@ -1,10 +1,17 @@
-let global_event_listener event handler =
-	let doc = Dom_html.document##documentElement in
-	Dom.addEventListener doc event (Dom.handler (fun e ->
+let global_event_listener ?(target:#Dom_html.eventTarget Js.t option) ?capture event handler =
+	let target = match target with
+		| Some target -> (target:>Dom_html.eventTarget Js.t)
+		| None -> (Dom_html.document##documentElement:>Dom_html.eventTarget Js.t)
+	in
+	let use_capture = match capture with
+		| Some x -> x
+		| None -> true
+	in
+	Dom.addEventListener target event (Dom.handler (fun e ->
 		handler e;
 		Js._true (* continue event *)
 	))
-	Js._true (* use capture *)
+	(Js.bool use_capture)
 
 let with_global_listeners builder =
 	let events = ref [] in

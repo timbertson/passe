@@ -113,6 +113,8 @@ type message = [
 	| `cancel
 	| `blur of input_target
 	| `focus of input_target
+	| `window_blur
+	| `window_focus
 	| `accept_suggestion of string
 	| `select_cursor of direction
 	| `select_suggestion of int option
@@ -135,6 +137,8 @@ let string_of_message : message -> string = function
 	| `cancel -> "`cancel"
 	| `blur target -> "`blur " ^ (string_of_target target)
 	| `focus target -> "`focus " ^ (string_of_target target)
+	| `window_blur -> "`window_blur"
+	| `window_focus -> "`window_focus"
 	| `db_changed _ -> "`db_changed"
 	| `accept_suggestion text -> "`accept_suggestion " ^ text
 	| `select_cursor direction -> "`select_cursor " ^ (string_of_direction direction)
@@ -154,7 +158,9 @@ let update_suggestions state =
 		)
 		| _ -> None
 	in
-	{ state with domain_suggestions = s |> Option.map (fun suggestions -> { suggestions; selected = None }) }
+	{ state with
+		domain_suggestions = s |> Option.map (fun suggestions -> { suggestions; selected = None })
+	}
 
 let update : state -> message -> state =
 	let update_domain_form state =
@@ -190,6 +196,7 @@ let update : state -> message -> state =
 						);
 						state
 					)
+
 		| `domain domain ->
 			{ state with domain }
 				|> derive_domain_data
@@ -240,13 +247,41 @@ let update : state -> message -> state =
 				fully_selected = true;
 			}}
 		| `clipboard_supported clipboard_supported -> { state with clipboard_supported }
+
+		(* used for command only: *)
+		| `window_focus | `window_blur -> state
 	) in
 	update
 
-let command ~sync state = function
-	| `domain_form msg ->
-			Domain_form.command ~sync state.domain_form msg
-	| _ -> None
+let command ~sync ~emit =
+	let blur_timeout = 5.0 in
+	let timeout_generated_password = let open Lwt in Ui.supplantable (function
+		| false -> return_unit
+		| true ->
+			lwt () = Lwt_js.sleep blur_timeout in
+			Log.info (fun m->m "clearing generated password");
+			(* cancels this branch because the other one is waiting
+			 * on `password_input_data` changes *)
+			emit `cancel;
+			return_unit
+	) in
+
+	fun state msg -> match msg with
+		| `domain_form msg ->
+				Domain_form.command ~sync state.domain_form msg
+
+		(* After generating a password, if the window stays blurred
+		 * for more than a few seconds we clear the master password (to prevent
+		 * leaving master passwords around)
+		 *)
+		| `window_blur when state.generated_password <> None ->
+			Log.debug (fun m->m "window blurred; clearing pwd in %fs" blur_timeout);
+			Some (timeout_generated_password true)
+		| `window_focus | `master_password _ | `domain _ | `focus _ ->
+			Log.debug (fun m->m "window back in focus or change made; clearing timeout");
+			Some (timeout_generated_password false)
+
+		| _ -> None
 
 let id_counter = ref 0
 let view instance : state -> message Html.html =
@@ -371,6 +406,12 @@ let view instance : state -> message Html.html =
 							Ui.emit instance `cancel
 						)
 				)
+			);
+			global_event_listener ~target:Dom_html.window ~capture:false Dom_html.Event.blur (fun _ ->
+				Ui.emit instance `window_blur
+			);
+			global_event_listener ~target:Dom_html.window ~capture:false Dom_html.Event.focus (fun _ ->
+				Ui.emit instance `window_focus
 			);
 		] @ (Domain_form.global_listeners instance domain_form_message)
 	) in
