@@ -69,7 +69,6 @@ type message =
 	| Sync of Sync_ui.internal_message
 	| Password_form of Password_form.message
 	| Account_settings of Account_settings.internal_message
-	| Auth_state of Client_auth.auth_state
 
 let string_of_message = function
 	| Toggle_incognito -> "Toggle_incognito"
@@ -78,7 +77,6 @@ let string_of_message = function
 	| Dismiss_overlay -> "Dismiss_overlay"
 	| Sync msg -> "Sync " ^ (Sync_ui.string_of_message msg)
 	| Password_form msg -> "Password_form " ^ (Password_form.string_of_message msg)
-	| Auth_state auth -> "Auth_state " ^ (Client_auth.string_of_auth_state auth)
 	| Account_settings msg -> "Account_settings " ^ (Account_settings.string_of_message msg)
 
 let check cond = Printf.ksprintf (function s ->
@@ -161,6 +159,7 @@ let reset_account_settings auth_state account_settings_state =
 
 let update ~sync ~storage_provider =
 	let account_settings_signal = Account_settings.external_state sync in
+	let auth_signal = sync.Sync.auth_state in
 	fun state message -> (
 		Log.info (fun m->m "message: %s" (string_of_message message));
 		let state = match message with
@@ -171,12 +170,10 @@ let update ~sync ~storage_provider =
 			| Show_about_dialog ->
 				{ state with dialog = Some `about }
 			| Show_account_settings ->
-				{ state with dialog = Some `account_settings }
+				let account_settings = reset_account_settings (S.value auth_signal) (S.value account_settings_signal) in
+				{ state with dialog = Some `account_settings; account_settings }
 			| Dismiss_overlay ->
 				{ state with dialog = None }
-			| Auth_state auth ->
-				let account_settings = reset_account_settings auth (S.value account_settings_signal) in
-				{ state with account_settings }
 			| Sync msg ->
 				{ state with sync_state = Sync_ui.update state.sync_state msg }
 			| Password_form msg ->
@@ -202,43 +199,35 @@ let command ~sync instance =
 			| _ -> None
 	)
 
-type toplevel_external_state = Client_auth.auth_state
-let toplevel_external_state sync = sync.Sync.auth_state
-let toplevel_external_messages auth_state =
-	[ Auth_state auth_state ]
 
 type external_state =
-	toplevel_external_state
-	* Sync_ui.external_state
+	Sync_ui.external_state
 	* Password_form.external_state
 	* Account_settings.external_state
 
-let external_state sync : external_state React.signal = S.l4 (fun a b c d -> a,b,c,d)
-	(toplevel_external_state sync)
+let external_state sync : external_state React.signal = S.l3 (fun a b c -> a,b,c)
 	(Sync_ui.external_state sync)
 	(Password_form.external_state sync)
 	(Account_settings.external_state sync)
 
-let external_messages ((toplevel, sync, password_form, account_settings):external_state) : message list =
+let external_messages ((sync, password_form, account_settings):external_state) : message list =
 	List.concat [
-		(toplevel_external_messages toplevel);
 		(Sync_ui.external_messages sync |> List.map sync_ui_message);
 		(Password_form.external_messages password_form |> List.map password_form_message);
 		(Account_settings.external_messages account_settings |> List.map account_settings_message);
 	]
 
 let initial ~show_debug : external_state -> t = fun (
-		auth_state,
 		sync_state,
 		password_form_state,
-		account_settings_state
+		_account_settings_state
 	) ->
 		let domain_text = "" in
 	{
 		show_debug;
 		incognito = false;
 		dialog = None;
-		account_settings = reset_account_settings auth_state account_settings_state;
+		account_settings = None;
 		sync_state = Sync_ui.initial sync_state;
 		password_form = Password_form.initial password_form_state domain_text;
 	}
