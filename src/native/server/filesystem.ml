@@ -34,7 +34,7 @@ module type FSCommonSig = sig
 
 	val mkdir : t -> string -> unit result Lwt.t
 
-	(* TODO foo_exn versions of all the above functinos for convenience? *)
+	(* TODO foo_exn versions of all the above functions for convenience? *)
 
 end
 

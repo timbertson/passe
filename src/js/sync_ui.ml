@@ -16,6 +16,7 @@ type ui_state = {
 	error: error_message option;
 	busy: bool;
 	login_form: login_form;
+	sync_time_desc: string option;
 }
 
 type state = {
@@ -31,10 +32,11 @@ let string_of_login_form = function { username; password } ->
 	"; password = " ^ (Option.to_string mask_string password) ^
 	" }"
 
-let string_of_ui_state = function { error; busy; login_form } ->
+let string_of_ui_state = function { error; busy; login_form; sync_time_desc } ->
 	"{ error = " ^ (Option.to_string quote_string error) ^
 	"; busy = " ^ (string_of_bool busy) ^
 	"; login_form = " ^ (string_of_login_form login_form) ^
+	"; sync_time_desc = " ^ (Option.to_string quote_string sync_time_desc) ^
 	" }"
 
 let string_of_state = function { auth_state; sync_state; ui } ->
@@ -55,6 +57,7 @@ type internal_ui_message = [
 	| `request_logout of J.json
 	| `request_login
 	| `request_signup
+	| `sync_time_desc of string option
 	| `edit of field
 ]
 
@@ -85,6 +88,7 @@ let string_of_field : field -> string = function
 let string_of_message : ([<message]) -> string = function
 	| `auth_state s -> "`auth_state " ^ (Client_auth.string_of_auth_state s)
 	| `sync_state s -> "`sync_state " ^ (Sync.string_of_sync_state s)
+	| `sync_time_desc s -> "`sync_time_desc " ^ (Option.to_string quote_string s)
 	| `error err -> "`error " ^ (Option.to_string quote_string err)
 	| `busy b -> "`busy " ^ (string_of_bool b)
 	| `request_sync -> "`request_sync"
@@ -212,19 +216,9 @@ let auth_loop ~set_auth_state ~emit (auth:Client_auth.saved_auth_state) = (
 
 let sync_db_loop ~sync ~sync_state auth =
 	(* used when signed in, to periodically sync DB state *)
-	let run_sync auth =
-		try_lwt
-			sync.run_sync auth
-		with e -> begin
-			Log.err (fun m->m "%s" (Printexc.to_string e));
-			(* XXX todo: remove this when we track down the error *)
-			raise e
-		end
-	in
-
 	while_lwt true do
 		Log.info (fun m->m "sync loop running..");
-		lwt () = run_sync (auth:>Client_auth.authenticated_user_state) in
+		lwt () = sync.run_sync (auth:>Client_auth.authenticated_user_state) in
 		let next_change = (sync_state
 			|> events_of_signal
 			|> E.filter (function | Local_changes _ -> true | _ -> false)
@@ -238,6 +232,24 @@ let sync_db_loop ~sync ~sync_state auth =
 		]
 	done
 
+let update_sync_time ~sync_state ~emit () =
+	while_lwt true do
+		let next_change = sync_state |> events_of_signal |> Lwt_react.E.next in
+		let () = match S.value sync_state with
+			| Uptodate | Syncing | Local_changes _ ->
+				emit (`sync_time_desc None)
+			| Updated_at date ->
+				let now = Date.time () in
+				let time_diff = max 0.0 (now -. date) in
+				let desc = (Date.human_time_span_desc time_diff) ^ " ago" in
+				emit (`sync_time_desc (Some desc))
+		in
+		Lwt.pick [
+			next_change |> Lwt.map ignore;
+			Lwt_js.sleep 60.0;
+		]
+	done
+
 let run_background_sync ~sync ~set_auth_state ~emit sync_state : (Client_auth.auth_state option -> unit Lwt.t) =
 	let last_auth = ref None in
 	let run = (fun auth ->
@@ -248,7 +260,10 @@ let run_background_sync ~sync ~set_auth_state ~emit sync_state : (Client_auth.au
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
 				auth_loop ~set_auth_state ~emit (u:>Client_auth.saved_auth_state)
 			| `Active_user _ | `Implicit_user _ as u ->
-				sync_db_loop ~sync ~sync_state (u:>Client_auth.logged_in_user_state)
+				Lwt.pick [
+					sync_db_loop ~sync ~sync_state (u:>Client_auth.logged_in_user_state);
+					update_sync_time ~sync_state ~emit ();
+				]
 		) >>= fun _ -> return_unit
 	) in
 	fun auth -> auth
@@ -308,6 +323,7 @@ let update state (message:internal_message) =
 	let update_ui state message = match message with
 		| `error error -> { state with error }
 		| `busy busy -> { state with busy }
+		| `sync_time_desc sync_time_desc -> { state with sync_time_desc }
 		| `edit field -> (match field with
 			| `username u -> { state with login_form = { state.login_form with username = Some u } }
 			| `passe_password p -> { state with login_form = { state.login_form with password = Some p } }
@@ -322,7 +338,7 @@ let update state (message:internal_message) =
 			};
 		}
 	| `sync_state sync_state -> { state with sync_state }
-	| `error _ | `busy _ | `edit _ as message -> { state with ui = update_ui state.ui message }
+	| `error _ | `busy _ | `edit _ | `sync_time_desc _ as message -> { state with ui = update_ui state.ui message }
 
 	(* used only for `command` side effects *)
 	| `request_sync | `request_logout _ | `request_login | `request_signup
@@ -332,6 +348,7 @@ let initial ((sync_state, auth_state):external_state) = {
 	auth_state;
 	sync_state;
 	ui = {
+		sync_time_desc = None;
 		error = None;
 		busy = false;
 		login_form = {
@@ -346,22 +363,20 @@ type sync_state = {
 	sync_auth : Client_auth.auth_state;
 }
 
-
-
 open Html
 open Bootstrap
 
-let view_sync_state = (function
+let view_sync_state ~sync_time_desc = (function
 	| Uptodate -> text "";
-	| Updated_at date ->
-			let now = Date.time () in
-			let time_diff = max 0.0 (now -. date) in
-			a ~a:[
+	| Updated_at _ ->
+			let attrs = [
 				a_onclick (emitter `request_sync);
 				a_class "link has-tooltip";
-				(* TODO: relative time will never actually be updated... Need to put it in state? *)
-				a_title ("Last sync " ^ (Date.human_time_span_desc time_diff) ^ " ago");
-			] [icon "refresh"]
+			] @ (match sync_time_desc with
+				| Some desc -> [a_title ("Last sync " ^ desc)]
+				| None -> []
+			) in
+			a ~a:attrs [icon "refresh"]
 	| Syncing ->
 		span ~a:[a_class "syncing"] [icon "refresh"]
 	| Local_changes count ->
@@ -457,14 +472,14 @@ let view_logged_in_user instance =
 		Account_settings.button
 		instance
 	in
-	fun (auth:Client_auth.authenticated_user_state) sync_state ->
+	fun (auth:Client_auth.authenticated_user_state) { sync_time_desc; _} sync_state ->
 		let username = Client_auth.name_of_authenticated auth in
 		div ~a:[a_class "account-status alert alert-success"] ([
 			span ~a:[a_class "user"] [text username];
 		] @ (optional_logout_ui auth) @ [
 			span ~a:[a_class "online"] [
 				account_settings_button ();
-				view_sync_state sync_state;
+				view_sync_state ~sync_time_desc sync_state;
 			];
 		]
 	)
@@ -506,7 +521,7 @@ let view instance =
 			| `Failed_login username -> view_login_form (Some username) ui
 			| `Anonymous -> view_anonymous ()
 			| `Saved_user _ | `Saved_implicit_user _ as auth -> view_saved_user auth ui
-			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth sync_state
+			| `Active_user _ | `Implicit_user _ as auth -> view_logged_in_user auth ui sync_state
 
 let pair a b = a,b
 let external_state sync : external_state React.signal =
