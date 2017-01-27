@@ -149,17 +149,17 @@ let logout ~set_auth_state = fun token -> (
 			return_unit
 )
 
-let submit_form ~set_auth_state ~emit url {username; password} = (
+let submit_form ~set_auth_state ~emit url auth_state {username; password} = (
 	Log.info (fun m->m "form submitted");
+	let username = username |> Option.or_ (Client_auth.uid_of_state auth_state) in
 	let data = match username, password with
 		| Some username, Some password ->
 			Some (`Assoc [
 				"user", `String username;
 				"password", `String password;
 			])
-		| _ ->
-			emit (`error (Some "Username and password required"));
-			None
+		| None, _ -> emit (`error (Some "Username required")); None
+		| _, None -> emit (`error (Some "Password required")); None
 	in
 	data |> Option.map (fun data ->
 		emit (`error None);
@@ -281,12 +281,14 @@ let command ~sync ~do_async ~emit : (state, internal_message) Ui.command_fn  = (
 		logout ~set_auth_state token
 	) in
 
-	let login = Ui.supplantable (fun login_form ->
-		submit_form ~set_auth_state ~emit Client_auth.login_url login_form
+	let login = Ui.supplantable (fun (state:state) ->
+		submit_form ~set_auth_state ~emit Client_auth.login_url
+			state.auth_state state.ui.login_form
 	) in
 
-	let signup = Ui.supplantable (fun login_form ->
-		submit_form ~set_auth_state ~emit Client_auth.signup_url login_form
+	let signup = Ui.supplantable (fun (state:state) ->
+		submit_form ~set_auth_state ~emit Client_auth.signup_url
+			state.auth_state state.ui.login_form
 	) in
 
 	let sync_state = sync_state sync in
@@ -305,8 +307,8 @@ let command ~sync ~do_async ~emit : (state, internal_message) Ui.command_fn  = (
 	fun state message ->
 		match message with
 		| `request_logout token -> Some (logout token)
-		| `request_login -> Some (login state.ui.login_form)
-		| `request_signup -> Some (signup state.ui.login_form)
+		| `request_login -> Some (login state)
+		| `request_signup -> Some (signup state)
 		| `auth_state auth ->
 			if !latest_auth <> (Some auth) then (
 				Log.debug (fun m->m"resetting background_sync with new auth state %s" (Client_auth.string_of_auth_state auth));
