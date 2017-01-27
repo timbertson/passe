@@ -3,22 +3,21 @@ open Passe_unix
 open Common
 open Lwt
 open Lwt_react
-open LTerm_style
 
 module Log = (val Logging.log_module "ui")
 
 class password_prompt term text = object(self)
-	inherit LTerm_read_line.read_password () as super
+	inherit LTerm_read_line.read_password ()
 	inherit [Zed_utf8.t] LTerm_read_line.term term
 	initializer
 		self#set_prompt (S.const (LTerm_text.of_string text))
 end
 
 class plain_prompt term text = object(self)
-	inherit LTerm_read_line.read_line () as super
+	inherit LTerm_read_line.read_line ()
 	inherit [Zed_utf8.t] LTerm_read_line.term term
 
-	method show_box = false
+	method! show_box = false
 
 	initializer
 		self#set_prompt (S.const (LTerm_text.of_string text))
@@ -88,7 +87,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 	(* Exit when the user presses Ctrl+X *)
 	let waiter, wakener = wait () in
 	let cancel () = wakeup wakener (); true in
-	frame#on_event (let open LTerm_key in function
+	frame#on_event (function
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Escape } -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = true; meta = false; shift = false; code = LTerm_key.Char ch } when ch = UChar.of_char 'c' -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Enter } ->
@@ -200,7 +199,7 @@ let lterm_reporter term =
 		Format.formatter_of_buffer b, flush
 	in
 
-	let lterm_print src level ~over k msgf =
+	let lterm_print _src _level ~over k msgf =
 		let k _ =
 			Lwt_main.run (
 				let contents = flush () in
@@ -209,7 +208,7 @@ let lterm_reporter term =
 			over ();
 			k ()
 		in
-		msgf @@ fun ?header ?tags fmt ->
+		msgf @@ fun ?header ?tags:_tags fmt ->
 		match header with
 		| None -> Format.kfprintf k ppf ("@[" ^^ fmt ^^ "@]@.")
 		| Some h -> Format.kfprintf k ppf ("[%s] @[" ^^ fmt ^^ "@]@.") h
@@ -242,7 +241,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 			| Some d -> return d
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
-		let domain_text = Domain.guess domain in
+		let domain_text = Domain.guess domain |> Option.force in
 		let get_stored () = user_db () |> Option.bind (Store.lookup domain_text) in
 		let get_domain db stored = stored |> Option.default (Store.default db domain_text) in
 

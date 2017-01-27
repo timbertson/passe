@@ -14,7 +14,6 @@ module Log = (val Logging.log_module "passe")
 let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
-	open OptParse
 	let generate ~use_clipboard ~one_time ~edit env args =
 		let domain = match args with
 			| [] -> None
@@ -50,7 +49,7 @@ module Actions = struct
 		let open Store in
 		match S.value (state.Sync.db_signal) with
 		| None -> raise @@ SafeError "No current user; try --sync first"
-		| Some db -> begin
+		| Some _db -> begin
 			let db = state.Sync.db_fallback in
 			let get_defaults db = Store.get_defaults (S.value db) in
 			let fields = [{
