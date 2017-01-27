@@ -1,0 +1,15 @@
+{
+  "fetch": {
+    "args": {
+      "owner": "timbertson",
+      "repo": "vdoml",
+      "rev": "a80a206ba546319415280b767296d9417e3b7d57",
+      "sha256": "0az9q5kjf9ahh201sinb45360nhwvp9kkdg8dq4dkrvigsv51f7v"
+    },
+    "fn": "fetchFromGitHub",
+    "owner": "timbertson",
+    "repo": "vdoml",
+    "rev": "a80a206ba546319415280b767296d9417e3b7d57",
+    "type": "fetchFromGitHub"
+  }
+}

@@ -1,11 +1,7 @@
 { pkgs ? import <nixpkgs> {}}:
 with pkgs; let
 	devRepo = builtins.getEnv "VDOML_DEVEL";
-	src = fetchgit {
-		"url" = "https://github.com/timbertson/vdoml.git";
-		"sha256" = "TODO";
-		"rev" = "TODO";
-	};
+	src = nix-update-source.fetch ./vdoml.json;
 in
 if devRepo != "" then
 	let toPath = s: /. + s; in
