@@ -149,10 +149,19 @@ let string_of_message : message -> string = function
 	| `clipboard_supported supported -> "`clipboard_supported " ^ (string_of_bool supported)
 	| `domain_form msg -> "`domain_form " ^ (Domain_form.string_of_message msg)
 
+let add_canonical_tld_suggestion input suggestions =
+	match Domain.guess input with
+		| None -> suggestions
+		| Some suggestion ->
+			if List.mem suggestion suggestions
+				then suggestions
+				else suggestion :: suggestions
+
 let update_suggestions state =
 	let s = match state.active_input with
 		| Some `domain -> if state.domain = "" then None else (
 			Store.keys_like state.db state.domain
+			|> add_canonical_tld_suggestion state.domain
 			|> List.filter ((<>) state.domain)
 			|> Option.non_empty ~zero:[]
 		)

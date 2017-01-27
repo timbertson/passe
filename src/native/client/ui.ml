@@ -242,7 +242,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 			| Some d -> return d
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
-		lwt domain_text = (Domain.guess domain) in
+		let domain_text = Domain.guess domain in
 		let get_stored () = user_db () |> Option.bind (Store.lookup domain_text) in
 		let get_domain db stored = stored |> Option.default (Store.default db domain_text) in
 
