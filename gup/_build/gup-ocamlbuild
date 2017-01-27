@@ -35,19 +35,12 @@ elif [ "$build_type" = dev ]; then
 	FLAGS="$FLAGS -lflags -g"
 fi
 
-rainbow="$(which rainbow 2>/dev/null || true)"
-if [ -z "$rainbow" ]; then
-	rainbow="ocamlbuild"
-else
-	rainbow="$rainbow -- ocamlbuild"
-fi
-
 # for debugging
 # ocamlbuild $ocamlbuild_args -use-ocamlfind -show-tags "$target"
 
 set -x
 
-$rainbow $ocamlbuild_args \
+ocamlbuild $ocamlbuild_args \
 	-build-dir "$BUILDDIR" -use-ocamlfind $FLAGS "$target"
 popd >/dev/null
 
