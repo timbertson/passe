@@ -62,18 +62,14 @@ in
 stdenv.mkDerivation (commonAttrs // (
 	if target == "client" then {} else let
 		nodeEnv = pkgs.callPackage ./node-env.nix {};
-		npm_deps = (pkgs.callPackage ./npm-deps.nix { inherit nodeEnv; }).package;
-		bootstrap = npm_deps.by-spec.bootstrap."3.2.0";
-		lessc = npm_deps.by-spec.less."*";
-		lessc_plugins = [
-			npm_deps.by-spec."less-plugin-clean-css"."*"
-		];
-		node_modules = "${npm_deps}/lib/node_modules/passe-deps/node_modules";
+		npm_deps = (pkgs.callPackage ./npm-deps.nix { inherit nodeEnv; });
+		nodePath = pkg: "${pkg}/lib/node_modules";
+		bootstrap = npm_deps."bootstrap-3.2.0";
 
-	in ({
-		LESSC = "${node_modules}/.bin/lessc";
-		TWITTER_BOOTSTRAP = "${node_modules}/bootstrap";
-		NODE_PATH = node_modules;
+	in with npm_deps; ({
+		LESSC = "${less}/bin/lessc";
+		TWITTER_BOOTSTRAP = "${nodePath bootstrap}/bootstrap";
+		NODE_PATH = lib.concatMapStringsSep ":" nodePath [ less less-plugin-clean-css bootstrap ];
 		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
 	})
 ))

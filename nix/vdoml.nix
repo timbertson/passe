@@ -9,4 +9,4 @@ if devRepo != "" then
 		inherit pkgs;
 		src = toPath "${devRepo}/nix/local.tgz";
 	}
-else callPackage "${src}/nix" {} { inherit pkgs src; }
+else callPackage "${src}/nix" { inherit pkgs src; }
