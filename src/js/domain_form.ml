@@ -7,6 +7,7 @@ open Vdoml
 open Html
 open Bootstrap
 open Js_util
+module Keycode = Keycode_ext
 
 module Log = (val Logging.log_module "domain_form")
 type modified_record = {
