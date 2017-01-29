@@ -1,10 +1,13 @@
 env:
-  matrix:
-   - PASSE_TARGET=client
-   - PASSE_TARGET=server
-   - PASSE_TARGET=devel
-   - PASSE_TARGET=mirage-unix
-   - PASSE_TARGET=mirage-xen
+ - PASSE_TARGET=client
+ - PASSE_TARGET=server
+ - PASSE_TARGET=devel
+ - PASSE_TARGET=mirage-unix
+ - PASSE_TARGET=mirage-xen
+matrix:
+  allow_failures:
+  - env: PASSE_TARGET=mirage-unix
+  - env: PASSE_TARGET=mirage-xen
 script:
  - "tools/travis-build.sh"
 notifications:
