@@ -1,7 +1,7 @@
-{ pkgs ? import <nixpkgs> {}}:
+{ pkgs, opam2nix}:
 with pkgs; let
 	devRepo = builtins.getEnv "VDOML_DEVEL";
-	src = nix-update-source.fetch ./vdoml.json;
+	src = (nix-update-source.fetch ./vdoml.json).src;
 in
 if devRepo != "" then
 	let toPath = s: /. + s; in
@@ -9,4 +9,4 @@ if devRepo != "" then
 		inherit pkgs;
 		src = toPath "${devRepo}/nix/local.tgz";
 	}
-else callPackage "${src}/nix" { inherit pkgs src; }
+else callPackage "${src}/nix" { inherit pkgs src opam2nix; }

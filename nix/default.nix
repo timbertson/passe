@@ -38,7 +38,7 @@ let
 		installPhase = "./install.sh ${buildDir} $out";
 
 		passthru = rec {
-			inherit (opamDepsFile) opam2nix-packages names selections selectionsFile ;
+			inherit (opamDepsFile) opam2nix names selections selectionsFile vdoml;
 			selectionNames = lib.attrNames selections;
 		};
 		buildInputs = [

@@ -1,8 +1,8 @@
 {target, pkgs}:
 with pkgs;
 let
-	opam2nix-packages = callPackage ./opam2nix-packages.nix {};
-	vdoml = callPackage ./vdoml.nix {};
+	opam2nix = callPackage ./opam2nix-packages.nix {};
+	vdoml = callPackage ./vdoml.nix { inherit opam2nix; };
 	names = import (./opam-deps + "/${target}.nix" );
 	opamArgs = {
 		packages = names;
@@ -46,9 +46,9 @@ let
 	};
 in
 rec {
-	inherit names opam2nix-packages;
-	deps = opam2nix-packages.build opamArgs;
-	selectionsFile = opam2nix-packages.selectionsFileLax opamArgs;
-	selections = opam2nix-packages.importSelectionsFile selectionsFile opamArgs;
+	inherit names opam2nix vdoml;
+	deps = opam2nix.build opamArgs;
+	selectionsFile = opam2nix.selectionsFileLax opamArgs;
+	selections = opam2nix.importSelectionsFile selectionsFile opamArgs;
 }
 
