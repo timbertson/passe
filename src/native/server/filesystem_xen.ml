@@ -19,9 +19,9 @@ module Journal = struct
 		Lwt.return (match ch with
 			| Some '2' -> (name, `secondary)
 			| Some '1' | None -> (name, `primary)
-			| other -> failwith "Unexpected character in journal")
+			| _other -> failwith "Unexpected character in journal")
 	
-	let byte (name, ext) = match ext with `primary -> '1' | `secondary -> '2'
+	let byte (_name, ext) = match ext with `primary -> '1' | `secondary -> '2'
 
 	let string_of_name (name, ext) =
 		match ext with

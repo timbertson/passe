@@ -1,0 +1,9 @@
+#!bash -eu
+"$(nix-build --no-out-link -A nix-update-source '<nixpkgs>')/bin/nix-update-source" \
+	-o "$1" \
+	--set type fetchFromGitHub \
+	--set repo vdoml \
+	--set owner timbertson \
+	--set rev "$(env GIT_DIR=../../vdoml/.git git rev-parse origin/master)" \
+;
+

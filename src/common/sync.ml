@@ -15,6 +15,12 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 		| Updated_at of date
 		| Syncing
 		| Local_changes of int
+	
+	let string_of_sync_state = function
+		| Uptodate -> "Uptodate"
+		| Updated_at d -> "Updated_at " ^ (string_of_float d)
+		| Syncing -> "Syncing"
+		| Local_changes i -> "Local_changes " ^ (string_of_int i)
 
 	let local_db_for_user config_provider uid =
 		config_provider.Config.field ("db_"^uid)
@@ -223,7 +229,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 				match !running_sync with
 					| Some (future,_) -> future
 					| None -> begin
-						let (future, sync_complete) as task = Lwt.wait () in
+						let (_future, sync_complete) as task = Lwt.wait () in
 						let finish err =
 							running_sync := None;
 							set_busy false;

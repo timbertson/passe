@@ -1,8 +1,7 @@
 open Filesystem
 module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 	type write_commit = Common.write_commit
-	let readable fs name = Lwt.return name
-
+	let readable _fs name = Lwt.return name
 
 	let with_writable fs dest fn =
 		let tmpname = dest ^ ".tmp" in

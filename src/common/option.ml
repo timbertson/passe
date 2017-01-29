@@ -19,7 +19,7 @@ let print_str sub_printer () v = match v with
 
 let print = print_str
 let to_string sub = print_str (fun () -> sub) ()
-let fmt sub formatter x = Format.pp_print_string formatter (to_string sub x)
+let to_list = function Some x -> [x] | None -> []
 let fmt sub formatter = function
 	| Some v ->
 		Format.pp_print_string formatter "Some(";
@@ -31,6 +31,10 @@ let fmt sub formatter = function
 let bind fn opt = match opt with
 	| Some v -> fn v
 	| None -> None
+
+let filter fn = function
+	| Some x as rv when fn x -> rv
+	| Some _ | None -> None
 
 let or_fn fn opt = match opt with
 	| Some _ as v -> v

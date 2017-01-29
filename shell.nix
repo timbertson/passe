@@ -10,10 +10,7 @@ lib.overrideDerivation (
 		}
 	) (orig: {
 	# add some dev utils
-	buildInputs = orig.buildInputs ++ [
-		nodePackages.npm2nix
-		git
-	] ++ (
+	buildInputs = orig.buildInputs ++ (
 		if (builtins.getEnv "PASSE_SANDSTORM") == "1" then (
 			with sandstormPackages; [
 				sandstorm-spk

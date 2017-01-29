@@ -23,7 +23,6 @@ module type Sig = sig
 	val version : string
 end
 module Make(Re:Re_ext.Sig) = struct
-	open Re
 	let version="$(cat ../../VERSION)"
 	let commit = $commit
 	let parse v =
@@ -37,7 +36,7 @@ module Make(Re:Re_ext.Sig) = struct
 			| maj :: min :: patch :: _ -> (maj, min, patch)
 			| _ -> raise (Common.AssertionError ("unparseable version: " ^ v))
 
-	let minor (maj, min, patch) = (maj, min)
+	let minor (maj, min, _patch) = (maj, min)
 
 	let pretty () = match commit with
 		| Some c -> version ^ "-" ^ c

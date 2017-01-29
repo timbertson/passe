@@ -237,8 +237,6 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 			| `DB_user of db_user
 		]
 
-		let display_name t = t.display_name
-
 		let uid_of_string x = x
 		let string_of_uid x = x
 

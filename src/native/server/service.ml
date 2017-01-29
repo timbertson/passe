@@ -1,5 +1,4 @@
 open Passe
-open Common
 open Lwt
 open Astring
 module Header = Cohttp.Header
@@ -145,7 +144,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 
 	let make_db fs data_root = new Auth.storage fs (Filename.concat data_root "users.db.json")
 
-	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc ~development = fun sock req body ->
+	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc ~development = fun _sock req body ->
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 
@@ -282,7 +281,6 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 					| Some u -> fn u
 			in
 			let authorized_db fn =
-				let open Auth.User in
 				authorized (function
 					| `DB_user u -> fn u
 					| `Sandstorm_user _ -> respond_forbidden ()

@@ -34,7 +34,7 @@ module type FSCommonSig = sig
 
 	val mkdir : t -> string -> unit result Lwt.t
 
-	(* TODO foo_exn versions of all the above functinos for convenience? *)
+	(* TODO foo_exn versions of all the above functions for convenience? *)
 
 end
 
@@ -89,7 +89,7 @@ module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 		Log.debug (fun m->m "%s operation failed: %s" desc errmsg);
 		raise (Error (match e with
 			| `No_directory_entry (parent,ent) -> ENOENT (Filename.concat parent ent)
-			| e -> FS_ERROR errmsg
+			| _ -> FS_ERROR errmsg
 		))
 
 	let unwrap desc op =

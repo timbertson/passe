@@ -2,7 +2,7 @@
 (import ./server.nix) ++
 (import ./mirage-unix.nix) ++
 [
-	"labltk"
+	# "labltk"
 	"utop"
 ]
 

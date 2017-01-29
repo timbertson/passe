@@ -1,6 +1,4 @@
-open Lwt
 open Common
-open Either
 module J = Json_ext
 
 (* TODO: hide these type implementations behind signature *)
@@ -115,6 +113,15 @@ module Make (Server:Server.Sig) = struct
 		| `Saved_implicit_user (_, id)
 			-> Some id
 
+	let confirmed_uid_of_state (auth: auth_state) = match auth with
+		| `Anonymous | `Logged_out | `Failed_login _ -> None
+
+		| `Saved_user (id, _)
+		| `Active_user (id, _)
+		| `Implicit_user (_, id)
+		| `Saved_implicit_user (_, id)
+			-> Some id
+
 	let uid_of_authenticated (auth: authenticated_user_state) = match auth with
 		| `Saved_user (id, _)
 		| `Active_user (id, _)
@@ -128,6 +135,10 @@ module Make (Server:Server.Sig) = struct
 	let token_of_authenticated (auth: authenticated_user_state) = match auth with
 		| `Active_user (_, token) | `Saved_user (_, token) -> Some token
 		| `Implicit_user _ | `Saved_implicit_user _ -> None
+	
+	let authenticated_of_user_state (auth: auth_state) = match auth with
+		| #authenticated_user_state as state -> Some state
+		| _ -> None
 
 	let username_key = "user"
 
@@ -145,7 +156,6 @@ module Make (Server:Server.Sig) = struct
 	let signup_url = Server.path ["auth"; "signup"]
 	let logout_url = Server.path ["auth"; "logout"]
 	let token_validate_url = Server.path ["auth"; "validate"]
-	let logout_url = Server.path ["auth"; "logout"]
 	let change_password_url = Server.path ["auth"; "change-password"]
 	let delete_user_url = Server.path ["auth"; "delete"]
 

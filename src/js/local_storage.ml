@@ -1,7 +1,5 @@
 open Passe
-open Passe_js
 open Js
-open React_ext
 open Common
 module Json = Json_ext
 module Log = (val Logging.log_module "local_storage")
@@ -18,7 +16,7 @@ end
 
 class in_memory_provider : base =
   let root = ref StringMap.empty in
-  object (self)
+  object (_self)
   method get key = try Some(StringMap.find key !root) with Not_found -> None
   method set key value = root := StringMap.add key value !root
   method delete key = root := StringMap.remove key !root
@@ -78,7 +76,7 @@ and provider do_persist =
   let persistent = ((new browser_provider):>base) in
   let ephemeral = ((new in_memory_provider):>base) in
   let active: base ref = ref (if do_persist then persistent else ephemeral) in
-  object (self : #Config.provider_t)
+  object (_self : #Config.provider_t)
   inherit Config.base_provider
 
   method _erase_all =

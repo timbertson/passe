@@ -25,17 +25,14 @@ fi
 gup --always
 
 FLAGS=""
+if [ "$build_type" = dev ]; then
+	FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45-6-58"
+fi
+
 if [ "$compile_mode" = 'mirage-xen' ]; then
 	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"
 elif [ "$build_type" = dev ]; then
 	FLAGS="$FLAGS -lflags -g"
-fi
-
-rainbow="$(which rainbow 2>/dev/null || true)"
-if [ -z "$rainbow" ]; then
-	rainbow="ocamlbuild"
-else
-	rainbow="$rainbow -- ocamlbuild"
 fi
 
 # for debugging
@@ -43,8 +40,7 @@ fi
 
 set -x
 
-$rainbow $ocamlbuild_args \
-	-cflag -warn-error -cflag +A \
+ocamlbuild $ocamlbuild_args \
 	-build-dir "$BUILDDIR" -use-ocamlfind $FLAGS "$target"
 popd >/dev/null
 

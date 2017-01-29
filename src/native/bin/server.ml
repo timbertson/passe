@@ -1,6 +1,5 @@
 open Batteries
 open Passe
-open Common
 open Lwt
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
@@ -33,7 +32,6 @@ module Timed_log = Passe_server.Timed_log.Make(Clock)
 module Log = (val Logging.log_module "service")
 
 let start_server ~host ~port ~development ~document_root ~data_root () =
-	let open Cohttp_lwt_unix in
 	Log.info (fun m->m "Listening on: %s %d" host port);
 	let document_root = abs document_root
 	and data_root = abs data_root in

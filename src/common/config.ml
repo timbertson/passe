@@ -11,7 +11,7 @@ let access key root = root |> Option.bind (J.get_field key)
 class child parent key =
 	let s = parent#signal |> S.map opt_as_object in
 	let signal = lazy (s |> S.map (access key)) in
-	object (self)
+	object (_self)
 	method get = S.value s |> access key
 	method save ?(step:step option) newval =
 		Log.debug (fun m->m "saving key: %s" key);
