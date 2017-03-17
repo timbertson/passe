@@ -2,6 +2,7 @@
 	"batteries"
 	"cohttp"
 	"js_of_ocaml"
+	"ptime"
 	"lambda-term"
 	"logs"
 	{"lwt" = ">=1.5.0"; }
@@ -11,6 +12,7 @@
 	"mirage-fs-unix"
 	"mirage-types"
 	"ocamlfind"
+	"ocamlbuild"
 	"ounit"
 	"react"
 	"sha"

@@ -1,6 +1,5 @@
 open Batteries
 open Passe
-open Lwt
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
@@ -15,20 +14,14 @@ module HTTP = Cohttp_lwt_unix.Server
 
 module Fs = struct
 	include Passe_server.Filesystem.Make(FS_unix)(Passe_server.Filesystem_unix.Atomic)
-	(* XXX it'd be nice to use unwrap_lwt, but trying to constraint the Filesystem
-	 * so that `error` = `Fs.error` runs afoul of something a lot like
-	 * https://blogs.janestreet.com/using-with-type-on-a-variant-type/
-	 *)
-	let connect () = match_lwt FS_unix.connect "/" with
-		| `Ok fs -> return fs
-		| _ -> failwith "fs.connect() failed"
+	let connect () = FS_unix.connect "/"
 end
 
-module Auth = Passe_server.Auth.Make(Clock)(Passe_server.Hash_bcrypt)(Fs)
-module Unix_server = Passe_server.Service.Make(Fs)(HTTP)(Auth)(Re_native)
+module Auth = Passe_server.Auth.Make(Pclock)(Passe_server.Hash_bcrypt)(Fs)
+module Unix_server = Passe_server.Service.Make(Pclock)(Fs)(HTTP)(Auth)(Re_native)
 open Unix_server
 module Version = Version.Make(Re_native)
-module Timed_log = Passe_server.Timed_log.Make(Clock)
+module Timed_log = Passe_server.Timed_log.Make(Pclock)
 module Log = (val Logging.log_module "service")
 
 let start_server ~host ~port ~development ~document_root ~data_root () =
@@ -40,12 +33,14 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 	lwt fs = Fs.connect () in
-	let user_db = make_db fs data_root in
+	lwt clock = Pclock.connect () in
+	let user_db = make_db clock fs data_root in
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
 		~document_root
 		~data_root:(ref data_root)
 		~user_db:(ref user_db)
+		~clock
 		~fs
 		~enable_rc
 		~development
@@ -102,12 +97,14 @@ let main () =
 		Logs.app log_version;
 		exit 0
 	end;
-	if (Opt.get timestamp) then
+	if (Opt.get timestamp) then (
+		let clock = Pclock.connect () |> Lwt_main.run in
 		Logs.set_reporter @@
 			(* TODO: this order seems backwards... *)
 			Logging.tagging_reporter @@
-			Timed_log.reporter @@
-			Logging.default_reporter;
+			Timed_log.reporter ~clock @@
+			Logging.default_reporter
+	);
 	
 	let log_level = Logging.(apply_verbosity (default_verbosity + !verbosity)) in
 	Logs.(app (fun m -> m " ( Log level: %a )" pp_level log_level));
@@ -122,7 +119,7 @@ let main () =
 		| "any" -> "0.0.0.0"
 		| h -> h
 	in
-	Lwt_unix.run (start_server
+	Lwt_main.run (start_server
 		~port:(Opt.get port)
 		~host
 		~development:(Opt.get development)

@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, opam2nix }:
 { src,
 	version,
 	target,
@@ -18,7 +18,7 @@ let
 		else if target == "client" then [ (build target) ]
 		else [ (build "www") (build target) ];
 
-	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs;});
+	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs opam2nix;});
 
 	commonAttrs = {
 		inherit src;

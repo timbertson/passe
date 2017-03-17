@@ -1,38 +1,50 @@
 open Lwt
+open Result
+
 module Log = (val Passe.Logging.log_module "fs")
 module type FS = sig
-	include V1_LWT.FS with type page_aligned_buffer = Cstruct.t
+	include Mirage_fs_lwt.S
+		with type +'a io = 'a Lwt.t
+		(* with type error := Mirage_fs.error *)
+		(* and type write_error := Mirage_fs.write_error *)
+	(* with type page_aligned_buffer = Cstruct.t *)
 end
+
+(* type error = Mirage_fs.error *)
+(* type write_error = Mirage_fs.write_error *)
+type stat = Mirage_fs.stat
 
 module type FSCommonSig = sig
 	include FS
-	type 'a result = [ `Ok of 'a | `Error of error ]
 	type write_instruction = [ `Output of string | `Rollback ]
 	type write_commit = [ `Commit | `Rollback ]
 	type exception_reason =
-		| ENOENT of string
+		| ENOENT
 		| FS_ERROR of string
 
-	exception Error of exception_reason
+	exception FsError of exception_reason
 
 	val fail : string -> error -> 'a
+	val fail_write : string -> write_error -> 'a
 
-	val unwrap : string -> 'a result -> 'a
+	val unwrap : string -> ('a, error) result -> 'a
+	val unwrap_write : string -> ('a, write_error) result -> 'a
 
-	val unwrap_lwt : string -> 'a result Lwt.t -> 'a Lwt.t
+	val unwrap_lwt : string -> ('a, error) result Lwt.t -> 'a Lwt.t
+	val unwrap_write_lwt : string -> ('a, write_error) result Lwt.t -> 'a Lwt.t
 
 	(* shouldn't this be in the mirage FS signature? *)
-	val error_message : error -> string
+	(* val error_message : error -> string *)
 
-	val destroy_if_exists : t -> string -> unit result Lwt.t
+	val destroy_if_exists : t -> string -> (unit, write_error) result Lwt.t
 
 	val ensure_empty : t -> string -> unit Lwt.t
 
 	val ensure_exists : t -> string -> unit Lwt.t
 
-	val stat : t -> string -> stat result Lwt.t
+	val stat : t -> string -> (stat, error) result Lwt.t
 
-	val mkdir : t -> string -> unit result Lwt.t
+	val mkdir : t -> string -> (unit, write_error) result Lwt.t
 
 	(* TODO foo_exn versions of all the above functions for convenience? *)
 
@@ -59,54 +71,52 @@ module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 
 	type write_instruction = [ `Output of string | `Rollback ]
 	type write_commit = [ `Commit | `Rollback ]
-	type 'a result = [ `Ok of 'a | `Error of error ]
 	type exception_reason =
-		| ENOENT of string
+		| ENOENT
 		| FS_ERROR of string
 
-	exception Error of exception_reason
+	exception FsError of exception_reason
 
-	let error_message = function
-		(* XXX this is supposed to be in the mirage FS interface? *)
-		| `Block_device _ -> "Block_device error"
-		| `Directory_not_empty x -> "Directory_not_empty " ^ x
-		| `File_already_exists x -> "File_already_exists " ^ x
-		| `Format_not_recognised x -> "Format_not_recognised " ^ x
-		| `Is_a_directory x -> "Is_a_directory " ^ x
-		| `No_directory_entry (parent,dir) -> "No_directory_entry " ^ parent ^ "/" ^ dir
-		| `No_space -> "No_space"
-		| `Not_a_directory x -> "Not_a_directory " ^ x
-		| `Unknown_error x -> "Unknown_error " ^ x
+	let _error_message pp e = Format.asprintf "%a" pp e
+	(* let error_message = _error_message pp_error *)
+	(* let error_message_write = _error_message pp_write_error *)
 
 	let () = Printexc.register_printer (function
-		| Error (ENOENT e) -> Some ("ENOENT: " ^ e)
-		| Error (FS_ERROR e) -> Some ("FS_ERROR: " ^ e)
+		| FsError ENOENT -> Some "ENOENT"
+		| FsError (FS_ERROR e) -> Some ("FS_ERROR: " ^ e)
 		| _ -> None
 	)
 
-	let fail desc e =
-		let errmsg = error_message e in
+	let _fail pp desc e =
+		let errmsg = _error_message pp e in
 		Log.debug (fun m->m "%s operation failed: %s" desc errmsg);
-		raise (Error (match e with
-			| `No_directory_entry (parent,ent) -> ENOENT (Filename.concat parent ent)
+		raise (FsError (match e with
+			| `No_directory_entry -> ENOENT
 			| _ -> FS_ERROR errmsg
 		))
 
-	let unwrap desc op =
-		match op with
-		| `Ok x -> x
-		| `Error e -> fail desc e
+	let fail = _fail pp_error
+	let fail_write = _fail pp_write_error
+
+	let unwrap desc = function
+		| Ok x -> x
+		| Error e -> fail desc e
+
+	let unwrap_write desc = function
+		| Ok x -> x
+		| Error e -> fail_write desc e
 
 	let unwrap_lwt desc = Lwt.map (unwrap desc)
+	let unwrap_write_lwt desc = Lwt.map (unwrap_write desc)
 
 	(* returns whether the file was created *)
 	let _ensure_exists fs path =
 		match_lwt stat fs path with
-			| `Ok _ -> return_false
-			| `Error (`No_directory_entry (_,_)) ->
-					lwt () = create fs path |> unwrap_lwt "create" in
+			| Ok _ -> return_false
+			| Error `No_directory_entry ->
+					lwt () = create fs path |> unwrap_write_lwt "create" in
 					return_true
-			| `Error e -> fail "stat" e
+			| Error err -> fail "stat" err
 
 	let ensure_exists fs path =
 		lwt (_created:bool) = _ensure_exists fs path in
@@ -117,14 +127,14 @@ module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 		lwt created = _ensure_exists fs path in
 		if not created then begin
 			(* recreate to truncate *)
-			lwt () = destroy fs path |> unwrap_lwt "destroy" in
-			create fs path |> unwrap_lwt "create"
+			lwt () = destroy fs path |> unwrap_write_lwt "destroy" in
+			create fs path |> unwrap_write_lwt "create"
 		end else return_unit
 	
 	let destroy_if_exists fs path =
 		match_lwt destroy fs path with
-			| `Ok _ | `Error (`No_directory_entry (_,_)) -> return (`Ok ())
-			| `Error _ as e -> return e
+			| Ok _ | Error `No_directory_entry -> return (Ok ())
+			| Error _ as e -> return e
 end
 
 module StringMap = Map.Make(String)
@@ -179,7 +189,7 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 						let prev_offset = !offset in
 						offset := !offset + size;
 						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path prev_offset);
-						unwrap_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
+						unwrap_write_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
 			) in
 			let () = match !result with
 				| `Commit -> Log.debug (fun m->m "comitting file write: %s" path)
@@ -201,7 +211,7 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 				lwt chunks = Common.read fs path !offset max_chunk_size in
 				let () = match chunks with
 				(* TODO: mutate `rv` rather than allocating each chunk *)
-					| `Ok chunks ->
+					| Ok chunks ->
 						chunks |> List.iter (fun chunk ->
 							let chunk = Cstruct.to_string chunk in
 							chunk_size := !chunk_size + String.length chunk;
@@ -209,7 +219,7 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 						);
 						Log.debug (fun m->m "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset !chunk_size);
 						offset := !offset + !chunk_size
-					| `Error e -> fail "read" e
+					| Error e -> fail "read" e
 				in
 				return (
 					if !chunk_size = 0 then None else (Some !rv)

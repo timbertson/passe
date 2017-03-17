@@ -49,6 +49,7 @@ let lines_stream stream =
 
 module type Sig = sig
 	module Fs : Filesystem.Sig
+	module Clock : Mirage_types.PCLOCK
 	module Token : sig
 		type sensitive_token
 		type stored_token
@@ -71,7 +72,8 @@ module type Sig = sig
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
-	class storage : Fs.t -> string -> object
+	class storage : Clock.t -> Fs.t -> string -> object
+		method clock : Clock.t
 		method modify :
 			(User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t)
 			-> unit Lwt.t
@@ -86,9 +88,11 @@ module type Sig = sig
 	val delete_user : storage:storage -> User.db_user -> string -> bool Lwt.t
 end
 
-module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
+module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 	module Fs = Fs
+	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
+	let time_float clock = Clock.now_d_ps clock |> Ptime.v |> Ptime.to_float_s
 
 	let mandatory = J.mandatory
 
@@ -107,7 +111,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 		a.stored_contents = b.stored_contents && eq a.stored_metadata b.stored_metadata
 
 	type date = float
-	let one_day = 1.0 *. (60.0 *. 60.0 *. 24.0)
+	let two_weeks = Ptime.Span.v (14, 0L)
 
 	module type BYTES = sig
 		type t
@@ -188,14 +192,14 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 				("contents", Bytes.to_json t.sensitive_contents);
 			]
 		
-		let create ~username () : sensitive_token Lwt.t =
-			let now = Clock.time () in
-			let expires = now +. (14.0 *. one_day) in
+		let create ~clock ~username () : sensitive_token Lwt.t =
+			let now = Clock.now_d_ps clock |> Ptime.v in
+			let expires : Ptime.t = Ptime.add_span now two_weeks |> Option.force in
 			lwt contents = random_bytes 20 in
 			return {
 				sensitive_contents = contents;
 				sensitive_metadata = {
-					expires = expires;
+					expires = expires |> Ptime.to_float_s;
 					user = username;
 				}
 			}
@@ -287,7 +291,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 				}
 			}
 
-		let gen_token user password : (db_user * Token.sensitive_token) option Lwt.t =
+		let gen_token ~clock user password : (db_user * Token.sensitive_token) option Lwt.t =
 			let token_alg = user.password.stored_metadata.alg in
 			(* Important: use the hash algorithm corresponding to the _stored_ password.
 			 * If it's an old algo, we'll update it (after validating)
@@ -298,7 +302,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 					Log.info (fun m->m "upgrading password for %s" user.name);
 					latest_password_format password
 				) else return user.password in
-				lwt new_token = Token.create ~username:user.name () in
+				lwt new_token = Token.create ~clock ~username:user.name () in
 				let tokens = Token.hash new_token :: user.active_tokens in
 
 				(* limit number of historical tokens to 10 per user *)
@@ -344,9 +348,9 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 				("tokens", `List (u.active_tokens |> List.map (Token.to_stored_json)));
 			]
 		
-		let create ~username password =
+		let create ~clock ~username password =
 			validate_username username;
-			lwt token = Token.create ~username () in
+			lwt token = Token.create ~clock ~username () in
 			lwt stored_password = latest_password_format password in
 			let stored_token = Token.hash token in
 			let user = {
@@ -377,14 +381,15 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 
 	end
 
-	class storage fs filename =
+	class storage clock fs filename =
 		let lock = Lwt_mutex.create () in
 		let () = Log.info (fun m->m "storage located at %s" filename) in
 
 		object (self)
+		method clock = clock
 		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
-				let now = Clock.time () in
+				let now = time_float clock in
 				let num_written = ref 0 in
 				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
 
@@ -447,7 +452,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 						lwt (_:string option) = Lwt_stream.peek lines in
 						opened := true;
 						return db_users
-					with Fs.Error (Fs.ENOENT _) when not !opened -> (
+					with Fs.FsError Fs.ENOENT when not !opened -> (
 						Log.debug (fun m->m "Ignoring missing user DB");
 						return (Lwt_stream.of_list [])
 					)
@@ -470,7 +475,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 					if user.User.name = username then raise Conflict ;
 					write_user user
 				) in
-				lwt (new_user, token) = User.create ~username password in
+				lwt (new_user, token) = User.create ~clock:storage#clock ~username password in
 				lwt () = write_user new_user in
 				result := Some (`Created token);
 				return `Commit
@@ -505,7 +510,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 			try_lwt
 				lwt () = users |> Lwt_stream.iter_s (fun user ->
 					if user.User.name = username then
-						match_lwt User.gen_token user password with
+						match_lwt User.gen_token ~clock:storage#clock user password with
 							| Some (user, token) ->
 								created := Some token;
 								write_user user
@@ -525,7 +530,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 	let validate ~(storage:storage) token : User.db_user option Lwt.t =
 		let info = token.sensitive_metadata in
 		let expires = info.Token.expires in
-		if expires < Clock.time () then
+		if expires < time_float storage#clock then
 			return_none
 		else (
 			lwt user = get_user ~storage (info.Token.user) in
@@ -539,7 +544,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 	let logout ~(storage:storage) token : unit Lwt.t =
 		let info = token.sensitive_metadata in
 		let expires = info.Token.expires in
-		if expires < Clock.time () then
+		if expires < time_float storage#clock then
 			return_unit
 		else (
 			let username = info.Token.user in
@@ -560,14 +565,14 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 		)
 
 	let change_password ~(storage:storage) user old new_password : Token.sensitive_token option Lwt.t =
-		match_lwt User.gen_token user old with
+		match_lwt User.gen_token ~clock:storage#clock user old with
 			| None -> return None
 			| Some _ ->
 				let ret = ref None in
 				lwt () = storage#modify (fun users write_user ->
 					lwt () = users |> Lwt_stream.iter_s (fun db_user ->
 						lwt db_user = if db_user.User.name = user.User.name then (
-							lwt new_user,token = User.create ~username:db_user.User.name new_password in
+							lwt new_user,token = User.create ~clock:storage#clock ~username:db_user.User.name new_password in
 							ret := Some token;
 							let open User in
 
@@ -586,7 +591,7 @@ module Make (Clock:V1.CLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 				return !ret
 
 	let delete_user ~(storage:storage) user password : bool Lwt.t =
-		match_lwt User.gen_token user password with
+		match_lwt User.gen_token ~clock:storage#clock user password with
 			| None -> return false
 			| Some _ ->
 				let deleted = ref false in

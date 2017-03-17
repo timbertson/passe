@@ -1,7 +1,6 @@
-{target, pkgs}:
+{target, pkgs, opam2nix }:
 with pkgs;
 let
-	opam2nix = callPackage ./opam2nix-packages.nix {};
 	vdoml = callPackage ./vdoml.nix { inherit opam2nix; };
 	names = import (./opam-deps + "/${target}.nix" );
 	opamArgs = {
@@ -28,6 +27,11 @@ let
 								rev = "cfa8f2277435f1d085cb437f99f928c93d0b2933";
 								sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
 							};
+					});
+
+					ocb-stubblr = lib.overrideDerivation sels.ocb-stubblr (o: {
+						# TODO: https://github.com/pqwy/ocb-stubblr/pull/10
+						patches = [ ./stubblr.patch ];
 					});
 
 					lwt = lib.overrideDerivation sels.lwt (o: {

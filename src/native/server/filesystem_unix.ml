@@ -5,7 +5,7 @@ module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 
 	let with_writable fs dest fn =
 		let tmpname = dest ^ ".tmp" in
-		let cleanup () = Common.unwrap_lwt "destroy" (Common.destroy_if_exists fs tmpname) in
+		let cleanup () = Common.unwrap_write_lwt "destroy" (Common.destroy_if_exists fs tmpname) in
 		lwt () = Common.ensure_empty fs tmpname in
 		try_lwt
 			lwt result = fn tmpname in

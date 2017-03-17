@@ -1,17 +1,19 @@
-module Make(C:V1.CLOCK) = struct
-	let fmt_timestamp x =
-		let open C in
-		let tm = gmtime x in
+module Make(Clock:Mirage_types.PCLOCK) = struct
+	let fmt_timestamp time =
+		let ptime = Ptime.v time in
+		let (year,month,day),((hour,minute,second), _tz) = Ptime.to_date_time ptime in
 		Printf.sprintf "%04d-%02d-%02d %02d:%02d.%02d"
-		(tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday tm.tm_hour tm.tm_min tm.tm_sec
+			year month day hour minute second
 
-	let reporter parent =
-		{ Logs.report = (fun src level ~over k user_msgf ->
-			let now = C.time () in
-			parent.Logs.report src level ~over k (fun outer_msgf ->
-				user_msgf (fun ?header ?tags fmt ->
-					outer_msgf ?header ?tags ("%s @[" ^^ fmt ^^ "@]") (fmt_timestamp now)
+	let reporter ~clock parent =
+		Logs.({
+			report = (fun src level ~over k user_msgf ->
+				let now = Clock.now_d_ps clock in
+				parent.report src level ~over k (fun outer_msgf ->
+					user_msgf (fun ?header ?tags fmt ->
+						outer_msgf ?header ?tags ("%s @[" ^^ fmt ^^ "@]") (fmt_timestamp now)
+					)
 				)
 			)
-		)}
+		})
 end

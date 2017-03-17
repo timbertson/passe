@@ -54,7 +54,7 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs) (Re:Re_ext.Sig) = struct
+module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs and module Clock = Clock) (Re:Re_ext.Sig) = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
 
@@ -142,9 +142,9 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 	let respond_forbidden () =
 		respond_json ~status:`Forbidden ~body:(`Assoc [("reason",`String "Request forbidden")]) ()
 
-	let make_db fs data_root = new Auth.storage fs (Filename.concat data_root "users.db.json")
+	let make_db clock fs data_root = new Auth.storage clock fs (Filename.concat data_root "users.db.json")
 
-	let handler ~document_root ~data_root ~user_db ~fs ~enable_rc ~development = fun _sock req body ->
+	let handler ~document_root ~data_root ~user_db ~clock ~fs ~enable_rc ~development = fun _sock req body ->
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 
@@ -152,14 +152,14 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 		let override_data_root = (fun newroot ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
 			data_root := newroot;
-			user_db := make_db fs newroot;
+			user_db := make_db clock fs newroot;
 			let dbdir = Filename.dirname (db_path_for newroot (Auth.User.uid_of_string "null")) in
 			match_lwt Fs.stat fs dbdir with
-				| `Ok _ -> return_unit
-				| `Error `No_directory_entry (_,_) -> begin
-					Fs.unwrap_lwt "mkdir" (Fs.mkdir fs dbdir)
+				| Ok _ -> return_unit
+				| Error `No_directory_entry -> begin
+					Fs.unwrap_write_lwt "mkdir" (Fs.mkdir fs dbdir)
 				end
-				| `Error e -> Fs.fail "stat" e
+				| Error e -> Fs.fail "stat" e
 		) in
 
 		let data_root = !data_root and user_db = !user_db in
@@ -168,7 +168,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 		let wipe_user_db = (fun uid ->
 			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
 			let path = db_path_for uid in
-			Fs.destroy_if_exists fs path |> Fs.unwrap_lwt "destroy"
+			Fs.destroy_if_exists fs path |> Fs.unwrap_write_lwt "destroy"
 		) in
 
 		let resolve_file path =
@@ -185,9 +185,9 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 							let full = (Path.concat docroot path) in
 							lwt stat = Fs.stat fs full in
 							return (match stat with
-								| `Ok _ -> `Ok full
-								| `Error (`No_directory_entry (_,_)) -> `Not_found
-								| `Error _ -> `Internal_error
+								| Ok _ -> `Ok full
+								| Error `No_directory_entry -> `Not_found
+								| Error _ -> `Internal_error
 							)
 						) else (
 							return `Invalid_path
@@ -224,7 +224,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
 						return (Some ("\"" ^ (digest ) ^ "\""))
 					)
-				with Fs.Error (Fs.ENOENT _) -> return_none
+				with Fs.FsError Fs.ENOENT -> return_none
 			in
 
 			let headers = headers |> Option.default_fn Header.init
@@ -248,7 +248,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 							~status:`OK
 							~body:(Cohttp_lwt_body.of_stream contents) ()
 					)
-				with Fs.Error (Fs.ENOENT _) ->
+				with Fs.FsError Fs.ENOENT ->
 					Server.respond
 						~body:Cohttp_lwt_body.empty
 						~status:`Not_found ()
@@ -266,7 +266,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 				lwt contents = Fs.read_file fs path in
 				(* Log.debug (fun m->m "read file contents: %s" contents); *)
 				return (Some contents)
-			with Fs.Error (Fs.ENOENT _) -> return_none
+			with Fs.FsError Fs.ENOENT -> return_none
 		in
 
 		try_lwt
@@ -433,7 +433,7 @@ module Make (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with 
 										Log.warn (fun m->m "deleted user %s" (User.string_of_uid uid));
 										lwt () =
 											Fs.destroy_if_exists fs (db_path_for uid)
-											|> Fs.unwrap_lwt "destroy" in
+											|> Fs.unwrap_write_lwt "destroy" in
 										respond_json ~status:`OK ~body:(J.empty) ()
 									) else
 										respond_error "Couldn't delete user (wrong password?)"

@@ -8,14 +8,14 @@ let
 	src = fetchgit 	{
 		"url" = "https://github.com/timbertson/opam2nix-packages.git";
 		"fetchSubmodules" = false;
-		"sha256" = "1jh8jw9r9120b5b7h70hrrva6pbyhdkg66kjyzzmimzing7ki9d4";
-		"rev" = "97470eeeb6a4534c305790f4d02bf3860234ce85";
+		"sha256" = "0ksj4bys5ci53iypf678d531444dykdcvxl7iy75bwila2sw70rd";
+		"rev" = "9636765ca43dedeeecab1ddcf47a59fa23778f9c";
 	};
 	opam2nix = fetchgit 	{
 		"url" = "https://github.com/timbertson/opam2nix.git";
 		"fetchSubmodules" = false;
-		"sha256" = "0w13aabqwqvkrxvd98c2fpfran7si2rmqjym0lpdwns8mwghdw1v";
-		"rev" = "aaa902104e1a98b6d907420549580537d1feee8e";
+		"sha256" = "0vf0k0y817fc8x9h1rg26ngvz3wyvwx600qh9p98dk3mai88cyga";
+		"rev" = "96c8d83a3262917562b243ebb5d0a8da0c7335a3";
 	};
 in
 if devRepo != "" then

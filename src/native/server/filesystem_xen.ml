@@ -39,11 +39,11 @@ module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 	let try_read_char fs name =
 		lwt result = Common.read fs name 0 1 in
 		match result with
-			| `Ok chunks ->
+			| Ok chunks ->
 					let chunk = chunks |> List.filter (fun chunk -> Cstruct.len chunk > 0) |> List.hd in
 					Lwt.return (Some (Cstruct.get_char chunk 0))
-			| `Error `No_directory_entry (_,_) -> Lwt.return_none
-			| `Error e -> Common.fail "read" e
+			| Error `No_directory_entry -> Lwt.return_none
+			| Error e -> Common.fail "read" e
 
 	let readable fs name =
 		lwt name = Journal.dereference ~try_read_char:(try_read_char fs) name in
@@ -54,7 +54,7 @@ module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 		lwt newdest = Journal.writeable_name ~try_read_char:(try_read_char fs) dest in
 		let newdest_s = newdest |> Journal.string_of_name in
 		lwt () = Common.ensure_empty fs newdest_s in
-		let cleanup () = Common.destroy_if_exists fs newdest_s |> Common.unwrap_lwt "destroy" in
+		let cleanup () = Common.destroy_if_exists fs newdest_s |> Common.unwrap_write_lwt "destroy" in
 		lwt result = try_lwt
 				fn newdest_s
 			with e -> begin
@@ -68,7 +68,7 @@ module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 				let journal_byte = Cstruct.create 1 in
 				Cstruct.set_char journal_byte 0 (Journal.byte newdest);
 				lwt () = Common.ensure_exists fs journal in
-				lwt () = Common.write fs journal 0 journal_byte |> Common.unwrap_lwt "write" in
-				lwt () = Common.destroy_if_exists fs (Journal.cruft newdest |> Journal.string_of_name) |> Common.unwrap_lwt "destroy" in
+				lwt () = Common.write fs journal 0 journal_byte |> Common.unwrap_write_lwt "write" in
+				lwt () = Common.destroy_if_exists fs (Journal.cruft newdest |> Journal.string_of_name) |> Common.unwrap_write_lwt "destroy" in
 				Lwt.return_unit
 end
