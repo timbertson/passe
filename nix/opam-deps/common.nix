@@ -11,6 +11,7 @@
 	"mirage-clock-unix"
 	"mirage-fs-unix"
 	"mirage-types"
+	"mirage-types-lwt"
 	"ocamlfind"
 	"ocamlbuild"
 	"ounit"
