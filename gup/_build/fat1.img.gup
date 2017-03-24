@@ -1,11 +1,10 @@
 #!bash
-set -eux
-gup --always
+set -eu
 which fat
 
 dest="$1"
 
-fat create "$dest" 5MiB
+fat create --unbuffered "$dest" 5MiB
 tmp="$(mktemp -d)"
 trap "rm -rf $tmp" EXIT
 
@@ -21,19 +20,19 @@ function add_in {
       cp -rLv --no-preserve=mode "$build/$f" "$f"
     done
   popd
-  fat add "$dest" "$prefix"
+  fat add --unbuffered "$dest" "$prefix"
 }
 
 function add_dir {
   mkdir -p "$@"
-  fat add "$dest" "$@"
+  fat add --unbuffered "$dest" "$@"
 }
 
 gup -u www
 
 cd ..
 
-fat add "$dest" data
+fat add --unbuffered "$dest" data
 
 cd "$tmp"
 

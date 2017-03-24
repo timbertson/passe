@@ -2,16 +2,12 @@ open Passe
 open Tyxml
 module J = Json_ext
 
-let string_of_html h = 
-	let b = Buffer.create 255 in
-	let fmt = Format.formatter_of_buffer b in
-	Html.pp () fmt h;
-	Format.pp_print_flush fmt ();
-	Buffer.contents b
+let string_of_html h =
+	Format.asprintf "%a" (Html.pp ()) h
 
 let safe_string_of_json o = o |> J.to_string |> Str.global_replace (Str.regexp "/") "\\u003c"
 
-let html ~implicit_auth ~offline_access () =
+let html ~implicit_auth ~offline_access () : Html.doc =
 	let open Html in
 	let html_attrs = if offline_access
 		then [ a_manifest "index.appcache" ]

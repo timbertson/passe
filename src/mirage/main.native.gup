@@ -1,4 +1,6 @@
 #!bash -eu
 cd "$(dirname "$2")"
+gup --always
 gup -u .configure
-ln -s .configure/main.ml "$1"
+mirage build
+touch "$2"

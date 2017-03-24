@@ -1,0 +1,10 @@
+# mirage makes a lot of guff...
+/mirage-*/.configure
+/mirage-*/passe
+/mirage-*/key_gen.ml
+/mirage-*/main.native
+/mirage-*/mirage-unikernel-*.opam
+/mirage-*/myocamlbuild.ml
+/mirage-*/.mirage.config
+/mirage-*/Makefile
+/mirage-*/_build/

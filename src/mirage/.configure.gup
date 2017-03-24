@@ -3,16 +3,20 @@
 # stuff I don't (yet) want, so do it somewhere else
 # and ignore the results.
 source="$(dirname "$(readlink -f "$2")")"
-conf="$source/.configure"
-mkdir -p "$1"
-cd "$1"
-mkdir -p bin
-
-# mirage calls `opam` with `--no-opam`. Stub it out
-ln -sfn "$(which true)" bin/opam
-
-gup -u "$(readlink -f "$source/config.ml")"
-ln -sfn "$source/config.ml" .
 target="$(basename "$source")"
 target="${target##mirage-}"
-env PATH="$PWD/bin:$PATH" mirage configure --target "$target" --no-opam --no-opam-version-check --no-depext
+
+conf="$source/.configure"
+
+mirage clean # mirage doesn't always pick up config changes
+gup -u config.ml
+
+configArgs=""
+if [ "$target" == "unix" ]; then
+	configArgs="--net socket"
+fi
+
+mirage configure --target "$target" $configArgs
+# configure succeeds when it shouldn't - check for valid output:
+[ -f _build/config.cmxs ]
+touch "$1"

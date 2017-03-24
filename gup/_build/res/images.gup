@@ -1,2 +1,2 @@
 #!bash -eu
-ln -s ../../images .
+ln -sfn ../../images .

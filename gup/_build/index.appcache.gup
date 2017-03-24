@@ -9,16 +9,18 @@ try:
 		filenames = os.listdir(dir)
 		return [ os.path.join(dir, fname) for fname in filenames ]
 
+	subprocess.check_call(["gup", "-u", 'res/fonts', 'res/images'])
+
 	listed_sources = [
 		"js/main.js",
 		"res/css/style.css",
 		"res/fonts/glyphicons-halflings-regular.woff",
 	] + paths_in('res/images')
+
 	sources = listed_sources + [
 		"../src/native/server/index.ml",
 	]
 
-	subprocess.check_call(["gup", "-u", 'res/fonts'])
 	subprocess.check_call(["gup", "-u"] + sources)
 
 	import hashlib

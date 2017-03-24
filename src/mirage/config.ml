@@ -1,31 +1,24 @@
 open Mirage
 
-let handler = foreign "Unikernel.Main" (console @-> conduit @-> fs @-> clock @-> job)
+let main = impl @@ object
+  inherit [_] foreign ~packages:[] "Unikernel.Main" (conduit @-> fs @-> pclock @-> job)
+  method packages =
+    let open Functoria in
+    let base = [
+      package "nocrypto" ; (* triggers entropy initialization *)
+      package "safepass" ;
+      package "sha";
+    ] in
+    Key.(if_ is_unix) base (base @ [package "zarith-xen"])
+end
 
 let () =
   let console = default_console in
 
-  let fs = match get_mode() with
-    (* XXX fat_of_files doesn't seem to work on Xen, because actual xen attaches devices with an aio: prefix. So we fake it a bit: *)
-    | `Xen -> fat (block_of_file "aio:fat1.img")
-    | _ -> fat (block_of_file "_build/fat1.img")
-  in
-  let stack = match get_mode() with
-    (* | `Xen -> direct_stackv4_with_dhcp console tap0 *)
-    | `Xen -> direct_stackv4_with_default_ipv4 console tap0
-    | _ -> socket_stackv4 default_console [Ipaddr.V4.any]
-  in
+  let fs = fat @@ block_of_file "fat1.img" in
+  let stack = generic_stackv4 default_network in
   let conduit = conduit_direct ~tls:false stack in
-  add_to_ocamlfind_libraries ([
-    (* XXX what's the logic of adding libraries here? I think it's only needed
-     * when those libraries have stublibs or native c libs which are used during linking *)
-    "nocrypto" ; (* triggers entropy initialization *)
-    "safepass" ;
-    "sha";
-  ] @ (match get_mode() with
-    | `Xen -> [ "zarith-xen" ]
-    | _ -> []
-  ));
-  register "console" [
-    handler $ console $ conduit $ fs $ default_clock
+  let target = Mirage_key.target in
+  register "main" [
+    main $ conduit $ fs $ default_posix_clock
   ]

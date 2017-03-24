@@ -142,7 +142,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 	let respond_forbidden () =
 		respond_json ~status:`Forbidden ~body:(`Assoc [("reason",`String "Request forbidden")]) ()
 
-	let make_db clock fs data_root = new Auth.storage clock fs (Filename.concat data_root "users.db.json")
+	let make_db ~clock ~fs data_root = new Auth.storage clock fs (Filename.concat data_root "users.db.json")
 
 	let handler ~document_root ~data_root ~user_db ~clock ~fs ~enable_rc ~development = fun _sock req body ->
 		let module AuthContext = (val auth_context) in
