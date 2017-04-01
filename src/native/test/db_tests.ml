@@ -25,7 +25,7 @@ let suite = "db" >:::
 	let entry = { default_domain "example.com" with note = Some "note"; } in
 	[
 	"parsing changes" >::: [
-		"dropping an optional value" >:: (fun ctx ->
+		"dropping an optional value" >:: (fun _ctx ->
 			let db = { empty with core = { empty_core with
 				records = StringMap.empty |> StringMap.add "example.com" (Domain entry)
 			}} in
@@ -40,7 +40,7 @@ let suite = "db" >:::
 	];
 
 	"record parsing" >::: [
-		"fails on unknown fields when parsing a record" >:: (fun ctx ->
+		"fails on unknown fields when parsing a record" >:: (fun _ctx ->
 			let json = ("example.com", `Assoc [
 				"length", `Int 10;
 				"type", `String "domain";
@@ -58,18 +58,18 @@ let suite = "db" >:::
 		let new_key = "note" in
 		let json_change key v = `List [`String key; `String v] in
 		[
-		"understands both old and new-style note changes" >:: (fun ctx ->
+		"understands both old and new-style note changes" >:: (fun _ctx ->
 			let open DomainFieldChange in
 			parse (json_change old_key "n") |> assert_equal (`Note (Some "n"));
 			parse (json_change new_key "n") |> assert_equal (`Note (Some "n"));
 		);
 
-		"generates old-style note" >:: (fun ctx ->
+		"generates old-style note" >:: (fun _ctx ->
 			(* we can't generate new-style hints until all clients support it *)
 			Format.json_of_field_change (`Note (Some "n")) |> J.assert_equal (json_change old_key "n")
 		);
 
-		"saves note in old field" >:: (fun ctx ->
+		"saves note in old field" >:: (fun _ctx ->
 			(* parsing ignores unknown fields, so we can just save both for future compat *)
 			Format.json_of_record (Domain entry) |> J.assert_equal (`Assoc [
 				("example.com", `Assoc [

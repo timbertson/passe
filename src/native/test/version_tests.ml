@@ -3,11 +3,13 @@ open OUnit2
 
 module Version = struct
 	include Version
-	let assert_equal = assert_equal ~printer:(fun (a,b,c) ->
-		"("^ (
-			[a;b;c] |> List.map string_of_int |> String.concat ","
-		)^")")
+	include MakeAssert(struct
+		type t = int * int * int
+		let cmp = None
+		let printer (a,b,c) = I.L.printer ~brackets:("(",")") [a;b;c]
+	end)
 end
+
 open Version
 
 let suite = "version" >::: [

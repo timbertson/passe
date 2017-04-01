@@ -1,6 +1,5 @@
-open Batteries
 open Passe
-open OUnit2
+open Common
 open Test_common
 
 let post_json ?token ~data url = Server.post_json ?token ~data url |> Lwt_main.run
@@ -32,7 +31,7 @@ module Response = struct
 		| r -> assert_failure ("Expected OK, got " ^ (string_of_response r))
 
 	let assert_ok = let open Server in function
-		| OK r -> ()
+		| OK _ -> ()
 		| r -> assert_failure ("Expected OK, got " ^ (string_of_response r))
 end
 
@@ -68,7 +67,7 @@ end
 
 (* module-wide setup *)
 let (>::) desc test =
-	let setup ctx =
+	let setup _ctx =
 		Log.info (fun m->m "Wiping user db: %s" test_username);
 		post_json
 		~data:(`Assoc ["user", `String test_username])
