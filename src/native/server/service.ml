@@ -5,6 +5,7 @@ module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
 module Path = FilePath.UnixPath
+module Str = Re_str
 
 let slash = Str.regexp "/"
 
@@ -54,7 +55,7 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Auth:Auth.Sig with module Fs = Fs and module Clock = Clock) (Re:Re_ext.Sig) = struct
+module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Server_config:Server_config.Sig) (Auth:Auth.Sig with module Fs = Fs and module Clock = Clock) (Re:Re_ext.Sig) = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
 
@@ -110,7 +111,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 
 	module Log = (val Logging.log_module "service")
 	let auth_context : (module AuthContext) =
-		if (try Unix.getenv "SANDSTORM" = "1" with Not_found -> false) then (
+		if (Server_config.is_sandstorm ()) then (
 			Log.info (fun m->m "SANDSTORM=1; using sandstorm auth mode");
 			(module SandstormAuth)
 		) else (
@@ -152,7 +153,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 		let override_data_root = (fun newroot ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
 			data_root := newroot;
-			user_db := make_db clock fs newroot;
+			user_db := make_db ~clock ~fs newroot;
 			let dbdir = Filename.dirname (db_path_for newroot (Auth.User.uid_of_string "null")) in
 			match_lwt Fs.stat fs dbdir with
 				| Ok _ -> return_unit
@@ -175,7 +176,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 			let docroot = Path.make_filename [document_root] in
 			Log.debug (fun m->m "Normalizing path %s against %s" (String.concat ~sep:", " path) (Path.string_of_filename docroot));
 			assert (not (Path.is_relative docroot));
-			if path |> any (fun part -> String.is_prefix "." part)
+			if path |> any (fun part -> String.is_prefix ~affix:"." part)
 				then (
 					return `Invalid_path
 				) else (
@@ -197,7 +198,8 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 
 		let _serve_file ?headers contents =
 			let file_ext = match contents with
-				| `File fullpath -> Some (snd (BatString.rsplit fullpath "."))
+				| `File fullpath ->
+						String.cut ~rev:true ~sep:"." fullpath |> Option.map snd
 				| `Dynamic (ext, _) -> Some ext
 			in
 			let content_type = file_ext |> Option.map (function
@@ -218,10 +220,14 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 			in
 			lwt latest_etag =
 				try_lwt
+					let open Nocrypto.Hash in
+					(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
 					iter_file_chunks (fun chunks ->
-						let hash = Sha256.init () in
-						lwt () = chunks |> Lwt_stream.iter (Sha256.update_string hash) in
-						let digest = hash |> Sha256.finalize |> Sha256.to_bin |> Base64.encode in
+						let hash = SHA256.init () in
+						lwt () = Lwt_stream.iter (fun chunk ->
+							SHA256.feed hash (Cstruct.of_string chunk)
+						) chunks in
+						let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
 						return (Some ("\"" ^ (digest ) ^ "\""))
 					)
 				with Fs.FsError Fs.ENOENT -> return_none
@@ -319,7 +325,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 							let h = (Cohttp.Request.headers req) in
 							(* redirect http -> https on openshift *)
 							begin match (Header.get h "host", Header.get h "x-forwarded-proto") with
-								| (Some host, Some "http") when BatString.ends_with host ".rhcloud.com" ->
+								| (Some host, Some "http") when String.is_suffix ~affix:".rhcloud.com" host ->
 									let dest = Uri.with_scheme uri (Some "https") in
 									Server.respond_redirect dest ()
 								| _ ->

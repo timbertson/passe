@@ -2,6 +2,7 @@ open Passe
 open Common
 module J = Json_ext
 open Lwt
+module Str = Re_str
 module Base64 = B64
 
 type 'a either = [
@@ -170,7 +171,13 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		}
 
 		let hash (t:sensitive_token) : stored_token =
-			let sha256 : string -> string = (Sha256.to_hex % Sha256.string) in
+			let sha256 : string -> string = fun str ->
+				str
+					|> Cstruct.of_string
+					|> Nocrypto.Hash.SHA256.digest
+					|> Hex.of_cstruct
+					|> Hash.string_of_hex
+			in
 			let hashed_contents = Bytes.lift sha256 t.sensitive_contents in
 			{
 				stored_contents = hashed_contents;
@@ -307,7 +314,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 
 				(* limit number of historical tokens to 10 per user *)
 				let tokens = if List.length tokens > max_tokens
-					then BatList.take max_tokens tokens
+					then List.take max_tokens tokens
 					else tokens
 				in
 				let user = { user with active_tokens = tokens; password = password } in

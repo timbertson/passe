@@ -1,4 +1,3 @@
-open Batteries
 open Passe
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
@@ -18,7 +17,7 @@ module Fs = struct
 end
 
 module Auth = Passe_server.Auth.Make(Pclock)(Passe_server.Hash_bcrypt)(Fs)
-module Unix_server = Passe_server.Service.Make(Pclock)(Fs)(HTTP)(Auth)(Re_native)
+module Unix_server = Passe_server.Service.Make(Pclock)(Fs)(HTTP)(Passe_server.Server_config_unix)(Auth)(Re_native)
 open Unix_server
 module Version = Version.Make(Re_native)
 module Timed_log = Passe_server.Timed_log.Make(Pclock)
@@ -54,7 +53,6 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 
 
 let main () =
-	let open Extlib in
 	let open OptParse in
 	let open OptParser in
 
@@ -128,4 +126,4 @@ let main () =
 	())
 
 
-let () = Printexc.pass main ()
+let () = Printexc.print main ()

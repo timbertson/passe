@@ -26,7 +26,7 @@ module Make(Re:Re_ext.Sig) = struct
 	let version="$(cat ../../VERSION)"
 	let commit = $commit
 	let parse v =
-		let dot = Re.(regexp (quote ".")) in
+		let dot = Re.(regexp_string ".") in
 		let v =
 			try String.sub v 0 (String.rindex v '-')
 			with Not_found -> v in

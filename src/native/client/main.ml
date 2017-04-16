@@ -3,8 +3,6 @@ let print_exc dest exc =
 
 open Passe
 open Passe_unix
-open Batteries
-open Extlib
 open React_ext
 module Json = Yojson.Safe
 open Common
@@ -65,7 +63,8 @@ module Actions = struct
 
 			match args with
 				| [] ->
-					Log.app (fun m->m "# Current config for %s:" (state.Sync.current_uid |> S.value |> Option.get));
+					Log.app (fun m->m "# Current config for %s:"
+						(state.Sync.current_uid |> S.value |> Option.force));
 					fields |> List.iter print_field
 
 				| [key] ->

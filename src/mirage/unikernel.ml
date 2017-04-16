@@ -3,7 +3,7 @@ module Main (CON:Conduit_mirage.S) (Fs:Passe_server.Filesystem.FS) (Clock:Mirage
   module PasseFS = Passe_server.Filesystem.Make(Fs)(Passe_server.Filesystem_xen.Atomic)
   module Cohttp_server = Cohttp
   module Auth = Passe_server.Auth.Make(Clock)(Passe_server.Hash_bcrypt)(PasseFS)
-  module Service = Passe_server.Service.Make(Clock)(PasseFS)(Cohttp_server)(Auth)(Passe.Re_native)
+  module Service = Passe_server.Service.Make(Clock)(PasseFS)(Cohttp_server)(Passe_server.Server_config_mirage)(Auth)(Passe.Re_native)
   module Timed_log = Passe_server.Timed_log.Make(Clock)
 
   let start conduit fs clock =

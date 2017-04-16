@@ -1,7 +1,6 @@
 type t = Regexp.regexp
 let split = Regexp.split
 let regexp = Regexp.regexp
-let quote = Regexp.quote
 let regexp_string = Regexp.regexp_string
 let replace_first r by s = Regexp.replace_first r s by
 let string_match r s = Regexp.string_match r s 0 |> Option.is_some

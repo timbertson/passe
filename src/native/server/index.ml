@@ -1,5 +1,6 @@
 open Passe
 open Tyxml
+module Str = Re_str
 module J = Json_ext
 
 let string_of_html h =

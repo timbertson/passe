@@ -7,9 +7,8 @@ let main = impl @@ object
     let base = [
       package "nocrypto" ; (* triggers entropy initialization *)
       package "safepass" ;
-      package "sha";
     ] in
-    Key.(if_ is_unix) base (base @ [package "zarith-xen"])
+    Key.(if_ is_unix) base (base @ [package "zarith-freestanding"])
 end
 
 let () =

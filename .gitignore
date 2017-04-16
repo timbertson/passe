@@ -1,5 +1,6 @@
 /_build
 /_build.prod
+/src/mirage-ukvm/_build-ukvm
 *.mlpack
 /node_modules/
 /data/

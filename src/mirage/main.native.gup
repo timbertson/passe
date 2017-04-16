@@ -2,5 +2,5 @@
 cd "$(dirname "$2")"
 gup --always
 gup -u .configure
-mirage build
+mirage build # --verbose --verbose
 touch "$2"

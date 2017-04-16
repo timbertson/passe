@@ -9,6 +9,7 @@ let
 	# client (client-only)
 	# server (unix server)
 	# mirage-xen (xen mirage microkernel)
+	# mirage-ukvm (ukvm mirage microkernel)
 	# mirage-unix (unix mirage microkernel, mainly for testing)
 	# devel (client + server, plus local development utils)
 

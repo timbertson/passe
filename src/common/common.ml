@@ -12,6 +12,17 @@ module StringMap = struct
 	let from_pairs pairs = List.fold_left (fun map (k,v) -> add k v map) empty pairs
 end
 
+module List = struct
+	include List
+	let take n l =
+		let rec _take rev_results n l =
+			if n <= 0 then List.rev rev_results else match l with
+				| [] -> List.rev rev_results
+				| head::tail -> _take (head::rev_results) (n-1) tail
+		in
+		_take [] n l
+end
+
 let startswith big sml = String.sub big 0 (String.length sml) = sml
 
 let find_safe fn l = try Some (List.find fn l) with Not_found -> None

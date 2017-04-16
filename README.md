@@ -107,15 +107,16 @@ If you don't have `nix`, you'll need:
 
  - [opam](http://opam.ocamlpro.com/) (for ocaml dependencies)
  - [nodejs](https://nodejs.org/) (for the less compiler + twitter bootstrap sources)
- - then run: `opam install camlp4 batteries yojson ssl cohttp lambda-term uri lwt sha safepass js_of_ocaml`
+ - then use `opam` to install dependencies. You can see the current set of dependencies by
+   looking at `./nix/opam-deps/*.nix`. Unless you're building a unikernel, you can ignore
+   the dependencies from `mirage-*.nix` files (but note that you'll still need the `mirage-*`
+   packages which appear in `common.nix` etc, since they provide necessary type definitions.
 
 ### Building:
 
-**Note:*** Building Passé requires [nix](http://nixos.org/nix/)
-
 To just build everything, run:
 
-	$ make result
+	$ make
 
 This will build your current workspace from scratch.
 

@@ -1,5 +1,3 @@
-main.ml
-key_gen.ml
-.mirage.config
+.configure
 src/passe_server.mlpack
 src/passe.mlpack

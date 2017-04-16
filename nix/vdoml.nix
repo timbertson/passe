@@ -3,7 +3,7 @@ with pkgs; let
 	devRepo = builtins.getEnv "VDOML_DEVEL";
 	src = (nix-update-source.fetch ./vdoml.json).src;
 in
-if devRepo != "" then
+if devRepo != "" && builtins.pathExists devRepo then
 	let toPath = s: /. + s; in
 	callPackage "${devRepo}/nix" {
 		inherit pkgs;

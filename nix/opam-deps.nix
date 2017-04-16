@@ -7,27 +7,50 @@ let
 		packages = names;
 		ocamlAttr = "ocaml_4_03";
 		extraRepos = [
-			# ../safepass-xen/opam-repo
 			vdoml.opam2nix.repo
 		];
 		overrides = {super, self}: {
 			opamSelection = let
-				mirage-platform-src = fetchgit {
-					url = "https://github.com/timbertson/mirage-platform";
-					rev = "623d1184278e929e35efad2b4ab86fccceae20de";
-					sha256 = "d2a5427d2b9aeef236c1e4ce9ae0275c8e9db878ca202a93b8c4dd96598b3e50";
-				};
 				sels = super.opamSelection;
+
+				# TODO: upstream
+				disableHardening = pkg: lib.overrideDerivation pkg (o: {
+					hardeningDisable = ["stackprotector" "format"];
+				});
+
 				commonOverrides = {
-					safepass = lib.overrideDerivation sels.safepass (o: {
-						src = if builtins.pathExists ("${builtins.getEnv "PWD"}/safepass-xen/nix/local.tgz")
-							then ../safepass-xen/nix/local.tgz
-							else fetchgit {
-								url = "https://github.com/timbertson/ocaml-safepass.git";
-								rev = "cfa8f2277435f1d085cb437f99f928c93d0b2933";
-								sha256 = "099fd01a224c18930d262a75d895dbd9a0183fe6c6f17b96f8b1059db34c9680";
-							};
+					mirage = lib.overrideDerivation sels.mirage (o: {
+						src = fetchgit {
+							"url" = "https://github.com/timbertson/mirage.git";
+							"rev" = "4aee6d57e02fc0e7adaafae185fb18efab12e640";
+							"sha256" = "1n54chakxamqg8irhj8mw8f21g29d8z2xi7vwhczlva2z9m4zxwx";
+						};
 					});
+
+					nocrypto = disableHardening sels.nocrypto;
+					mirage-solo5 = disableHardening sels.mirage-solo5;
+					mirage-entropy = disableHardening sels.mirage-entropy;
+
+					ocaml-freestanding = disableHardening (lib.overrideDerivation sels.ocaml-freestanding (o: {
+						configurePhase = ''
+							sed -i -e '/export PKG_CONFIG_PATH/d' configure.sh
+							sed -i -e 's/cp .*ocamlfind query ocaml-src.*/\0; chmod -R u+rwX build/' Makefile
+						'';
+					}));
+
+					zarith-freestanding = disableHardening (lib.overrideDerivation sels.zarith-freestanding (o: {
+						configurePhase = ''
+							sed -i -E -e '/PKG_CONFIG_PATH|opam config var prefix/d' mirage-build.sh
+							sed -i -e 's|`opam config var prefix`|"$out"; mkdir -p "$out/lib/zarith/"|' mirage-install.sh
+							sed -i -e 's|lib/zarith/|lib/zarith-freestanding/|' mirage-install.sh
+						'';
+					}));
+
+					gmp-freestanding = disableHardening (lib.overrideDerivation sels.gmp-freestanding (o: {
+						installPhase = o.installPhase + '';
+							touch $OCAMLFIND_DESTDIR/gmp-freestanding/META
+						'';
+					}));
 
 					ocb-stubblr = lib.overrideDerivation sels.ocb-stubblr (o: {
 						# TODO: https://github.com/pqwy/ocb-stubblr/pull/10

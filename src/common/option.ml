@@ -49,6 +49,7 @@ let some x = Some x
 let is_some = function Some _ -> true | None -> false
 let is_none = function Some _ -> false | None -> true
 let get default = function Some x -> x | None -> default
+let get_exn v exn = match v with Some x -> x | None -> raise exn
 let force = function Some x -> x | None -> raise Not_found
 
 let non_empty ~zero v = if v = zero then None else Some v

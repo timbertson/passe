@@ -11,12 +11,16 @@ let _register (module Impl: Sig) =
 	let () = _impls := StringMap.add Impl.alg (module Impl : Sig) !_impls in
 	()
 
+let string_of_hex : Hex.t -> string = function
+	| `Hex s -> s
+
 module Hash_sha256 = struct
-	type t = Sha256.t
-	let serialize : t -> string = Sha256.to_hex
+	open Nocrypto.Hash
+	type t = Cstruct.t
+	let serialize : t -> string = fun t -> Hex.of_cstruct t |> string_of_hex
 	let hash ~count:(_count:int) ~(seed:string) s : t =
 		prerr_endline "WARN: sha256 implementation is not cryptographically strong; use for development only";
-		Sha256.string (seed ^ s)
+		SHA256.digest (seed ^ s |> Cstruct.of_string)
 	let alg = "sha256"
 end
 let () = _register (module Hash_sha256)
