@@ -2,143 +2,69 @@ open Lwt
 module Xhr = XmlHttpRequest
 module J = Json_ext
 module Version = Version.Make(Re_js)
-module Server_common = Server_common.Make(Version)
-include Server_common
 
-module Log = (val Logging.log_module "sync")
-exception Unsupported_protocol
+module Impl : Server_common.IMPL = struct
+	let root_url =
+		let open Url in
+		match Url.Current.get () with
+			| Some (Http _ as u)
+			| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
+			| None | Some (File _) -> raise Server_common.Unsupported_protocol
 
-let root_url =
-	let open Url in
-	ref (match Url.Current.get () with
-		| Some (Http _ as u)
-		| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
-		| None | Some (File _) -> raise Unsupported_protocol
-	)
+	type headers = (string * string) list
+	type response = string Xhr.generic_http_frame
+	let init_headers () = []
+	let set_header h k v = (k,v)::h
 
-let json_content_type = "application/json"
+	let get_header k response = response.Xhr.headers k
+	let response_body response = return response.Xhr.content
+	let response_status response = response.Xhr.code
 
-let json_payload frame =
-	let content_type = frame.Xhr.headers "content-type" in
-	match content_type with
-	| Some content_type when content_type = json_content_type -> (
-			try
-				Some (J.from_string frame.Xhr.content)
-			with e -> (
-				Log.err (fun m->m "Failed to parse JSON: %s\n%s"
-					frame.Xhr.content
-					(Printexc.to_string e));
-				None)
-		)
+	let request ~headers ~meth ~data url =
+		let (res, w) = Lwt.task () in
+		let req = Xhr.create () in
+		let url = Uri.to_string url in
+		let meth = Server_common.string_of_request_method meth in
+		req##_open (Js.string meth, Js.string url, Js._true);
 
-	| Some other ->
-			Log.debug (fun m->m "Unexpected content-type: %s" other);
-			None
+		headers |> List.iter (fun (k,v) ->
+			req##setRequestHeader (Js.string k, Js.string v)
+		);
 
-	| None ->
-			Log.debug (fun m->m "No content-type given");
-			None
+		let get_header key = Js.Opt.case
+			(req##getResponseHeader (Js.bytestring key))
+				(fun () -> None)
+				(fun v -> Some (Js.to_string v))
+		in
 
-let request ?content_type ?token ~meth ?data url =
-	let (res, w) = Lwt.task () in
-	let req = Xhr.create () in
-	let url = Uri.to_string (canonicalize ~root:!root_url url) in
-	req##_open (Js.string meth, Js.string url, Js._true);
+		req##onreadystatechange <- Js.wrap_callback (fun _ ->
+			let open Xhr in
+			(match req##readyState with
+				| DONE ->
+					(* If we didn't catch a previous event, we check the header. *)
+					Lwt.wakeup w {
+						url = url;
+						code = req##status;
+						content = Js.to_string req##responseText;
+						content_xml = (fun () ->
+							match Js.Opt.to_option (req##responseXML) with
+							| None -> None
+							| Some doc ->
+							if (Js.some doc##documentElement) == Js.null
+							then None
+							else Some doc);
+						headers = get_header;
+					}
+				| _ -> ())
+		);
 
-	common_headers |> List.iter (fun (k,v) ->
-		req##setRequestHeader (Js.string k, Js.string v)
-	);
+		begin match data with
+			| Some d -> req##send(Js.some (Js.string d))
+			| None -> req##send(Js.null)
+		end;
 
-	content_type |> Option.may (fun content_type ->
-		req##setRequestHeader (Js.string "Content-type", Js.string content_type)
-	);
+		Lwt.on_cancel res (fun () -> req##abort ());
+		res
+end
 
-	token |> Option.may (fun token ->
-		req##setRequestHeader (Js.string "Authorization",
-			Js.string ("api-token t=" ^ (J.to_string token |> Uri.pct_encode)))
-	);
-
-	let headers s =
-		Js.Opt.case
-			(req##getResponseHeader (Js.bytestring s))
-			(fun () -> None)
-			(fun v -> Some (Js.to_string v))
-	in
-
-	req##onreadystatechange <- Js.wrap_callback (fun _ ->
-		let open Xhr in
-		(match req##readyState with
-			| DONE ->
-				(* If we didn't catch a previous event, we check the header. *)
-				Lwt.wakeup w {
-					url = url;
-					code = req##status;
-					content = Js.to_string req##responseText;
-					content_xml = (fun () ->
-						match Js.Opt.to_option (req##responseXML) with
-						| None -> None
-						| Some doc ->
-						if (Js.some doc##documentElement) == Js.null
-						then None
-						else Some doc);
-					headers = headers
-				}
-			| _ -> ())
-	);
-
-	begin match data with
-		| Some d -> req##send(Js.some (Js.string d))
-		| None -> req##send(Js.null)
-	end;
-
-	Lwt.on_cancel res (fun () -> req##abort ());
-	res
-
-
-let handle_json_response frame =
-	Log.info (fun m->m "got http response %d, content %s"
-		frame.Xhr.code
-		frame.Xhr.content
-	);
-
-	let payload = json_payload frame in
-	let error = payload |> Option.bind (J.string_field "error") in
-	return (match (frame.Xhr.code, payload) with
-		| 401, json -> Unauthorized (
-			json |> Option.bind (fun json ->
-				json
-				|> J.get_field "reason"
-				|> Option.bind J.as_string)
-			)
-		| 200, (Some json as response) -> (
-			match error with
-				| Some error -> Failed (200, error, response)
-				| None -> OK json
-			)
-		| code, response -> (
-			let contents = match frame.Xhr.content with
-				| "" -> "Request failed"
-				| contents -> contents
-			in
-
-			Failed (code, error |> Option.default contents, response)
-		)
-	)
-
-let post_json ?token ~(data:J.json) url =
-	lwt frame = request
-		?token
-		~content_type:json_content_type
-		~meth:"POST"
-		~data:(J.to_string data)
-		url in
-	handle_json_response frame
-
-
-let get_json ?token url =
-	lwt frame = request
-		?token
-		~content_type:json_content_type
-		~meth:"GET"
-		url in
-	handle_json_response frame
+include Server_common.Make(Version)(Impl)

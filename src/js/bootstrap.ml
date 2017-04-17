@@ -1,9 +1,9 @@
-module List = List_ext
 open Passe
 open Common
 open Vdoml
 open Html
 open Js_util
+module List = List_ext
 
 let icon name = let open Vdoml.Html in i ~a:[a_class ("glyphicon glyphicon-"^name)] []
 

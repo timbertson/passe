@@ -164,7 +164,7 @@ let submit_form ~set_auth_state ~emit url auth_state {username; password} = (
 	data |> Option.map (fun data ->
 		emit (`error None);
 		let open Server in
-		Server.post_json ~data url |> Lwt.map (function
+		post_json ~data url |> Lwt.map (function
 			| OK response ->
 				set_auth_state (`Active_user (Auth.get_response_credentials response))
 			| Failed (_, message, _) ->
