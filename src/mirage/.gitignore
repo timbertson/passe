@@ -1,3 +1,6 @@
 /.configure
 /main.ml
 /build_env.sh
+/Makefile.ukvm
+/main.ukvm
+/ukvm-bin

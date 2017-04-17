@@ -3,13 +3,13 @@ module Xhr = XmlHttpRequest
 module J = Json_ext
 module Version = Version.Make(Re_js)
 
-module Impl : Server_common.IMPL = struct
+module Impl : Server.IMPL = struct
 	let root_url =
 		let open Url in
 		match Url.Current.get () with
 			| Some (Http _ as u)
 			| Some (Https _ as u) -> Url.string_of_url u |> Uri.of_string
-			| None | Some (File _) -> raise Server_common.Unsupported_protocol
+			| None | Some (File _) -> raise Server.Unsupported_protocol
 
 	type headers = (string * string) list
 	type response = string Xhr.generic_http_frame
@@ -24,7 +24,7 @@ module Impl : Server_common.IMPL = struct
 		let (res, w) = Lwt.task () in
 		let req = Xhr.create () in
 		let url = Uri.to_string url in
-		let meth = Server_common.string_of_request_method meth in
+		let meth = Server.string_of_request_method meth in
 		req##_open (Js.string meth, Js.string url, Js._true);
 
 		headers |> List.iter (fun (k,v) ->
@@ -67,4 +67,4 @@ module Impl : Server_common.IMPL = struct
 		res
 end
 
-include Server_common.Make(Version)(Impl)
+include Server.Make(Version)(Impl)

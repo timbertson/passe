@@ -25,7 +25,13 @@ module Actions = struct
 			| [] -> ()
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.sync_ui (Sync.build env))
+		Lwt_main.run (
+			lwt sync = Ui.sync_ui (Sync.build env) in
+			Lwt.return (match sync with
+				| Ok () -> ()
+				| Error e -> Log.err (fun m -> m "Sync failed: %s" e)
+			)
+		)
 
 	let list_domains env args =
 		let domain = match args with

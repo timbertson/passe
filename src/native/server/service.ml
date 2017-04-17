@@ -423,7 +423,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 									lwt new_token = Auth.change_password ~storage:user_db user old new_password in
 									match new_token with
 										| Some tok ->
-											respond_json ~status:`OK ~body:(tok|> Auth.Token.to_json) ()
+											respond_token (`Success tok)
 										| None ->
 											respond_error "Failed to update password"
 								)

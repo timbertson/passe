@@ -1,3 +1,6 @@
+type ('a, 'err) result = ('a, 'err) Rresult.result
+module R = Rresult.R
+
 exception SafeError of string
 exception AssertionError of string
 type ('a, 'b) either = Left of 'a | Right of 'b

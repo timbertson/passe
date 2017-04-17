@@ -1,12 +1,13 @@
 module J = Json_ext
-module Client = Cohttp_lwt_unix.Client
-module Response = Cohttp_lwt_unix.Response
-module Header = Cohttp.Header
-module Body = Cohttp_lwt_body
 module Re = Re_native
 module Version = Version.Make(Re)
 
-module Impl : Server_common.IMPL = struct
+module Impl : Server.IMPL = struct
+	module Client = Cohttp_lwt_unix.Client
+	module Response = Cohttp_lwt_unix.Response
+	module Header = Cohttp.Header
+	module Body = Cohttp_lwt_body
+
 	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-gfxmonk.rhcloud.com/"
 	let root_url =
 		(* XXX take from config *)
@@ -30,4 +31,4 @@ module Impl : Server_common.IMPL = struct
 		Client.call ~headers ?body (meth:>Cohttp.Code.meth) uri
 end
 
-include Server_common.Make(Version)(Impl)
+include Server.Make(Version)(Impl)

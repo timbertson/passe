@@ -1,8 +1,8 @@
 open Passe
 open Passe_js
-open Common
 open React_ext
 open Lwt
+open Common
 module J = Json_ext
 module Xhr = XmlHttpRequest
 open Sync
@@ -140,8 +140,8 @@ let sync_state sync =
 
 let logout ~set_auth_state = fun token -> (
 	let open Server in
-	match_lwt post_json ~data:token Client_auth.logout_url with
-		| OK _ | Unauthorized _ ->
+	match_lwt call Client_auth.logout_api token with
+		| OK () | Unauthorized _ ->
 			set_auth_state `Logged_out;
 			return_unit;
 		| Failed (_, msg,_) ->
@@ -149,7 +149,7 @@ let logout ~set_auth_state = fun token -> (
 			return_unit
 )
 
-let submit_form ~set_auth_state ~emit url auth_state {username; password} = (
+let submit_form ~(set_auth_state:Client_auth.auth_state -> unit) ~emit api auth_state {username; password} = (
 	Log.info (fun m->m "form submitted");
 	let username = username |> Option.or_ (Client_auth.uid_of_state auth_state) in
 	let data = match username, password with
@@ -163,18 +163,17 @@ let submit_form ~set_auth_state ~emit url auth_state {username; password} = (
 	in
 	data |> Option.map (fun data ->
 		emit (`error None);
-		let open Server in
-		post_json ~data url |> Lwt.map (function
-			| OK response ->
-				set_auth_state (`Active_user (Auth.get_response_credentials response))
-			| Failed (_, message, _) ->
+		Server.call api data |> Lwt.map (function
+			| Server.OK creds ->
+				set_auth_state (`Active_user creds)
+			| Server.Failed (_, message, _) ->
 				emit (`error (Some message))
-			| Unauthorized _ -> assert false
+			| Server.Unauthorized _ -> assert false
 		)
 	) |> Option.default (Lwt.return_unit)
 )
 
-let auth_loop ~set_auth_state ~emit (auth:Client_auth.saved_auth_state) = (
+let auth_loop ~(set_auth_state:Client_auth.auth_state -> unit) ~emit (auth:Client_auth.saved_auth_state) = (
 	let continue = ref true in
 	while_lwt !continue do
 		emit (`busy true);
@@ -182,21 +181,18 @@ let auth_loop ~set_auth_state ~emit (auth:Client_auth.saved_auth_state) = (
 			continue := false;
 			let open Server in
 			let response = match auth with
-				| `Saved_user (_username, creds) ->
-					Server.post_json ~data:creds Client_auth.token_validate_url
+				| `Saved_user ((username, token) as creds) ->
+					Server.call Client_auth.token_validate_api token |> Lwt.map (Response.map (fun valid ->
+						if valid then `Active_user creds else `Failed_login username
+					))
 				| `Saved_implicit_user _ ->
-					Server.post_json ~data:(`Assoc []) Client_auth.server_state_url
+					Server.call Client_auth.server_state_api J.empty |> Lwt.map (Response.map (function
+						| Some u -> `Implicit_user u | None -> `Anonymous
+					))
 			in
 
 			match_lwt response with
-			| OK json -> return (match auth with
-				| `Saved_user u -> set_auth_state (`Active_user u)
-				| `Saved_implicit_user _ ->
-					set_auth_state (match Client_auth.parse_implicit_user json with
-						| Some u -> `Implicit_user u
-						| None -> `Anonymous
-					)
-				)
+			| OK user -> set_auth_state user; return_unit
 			| Unauthorized msg ->
 				Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
 				let auth = (auth:>Client_auth.authenticated_user_state) in
@@ -214,22 +210,30 @@ let auth_loop ~set_auth_state ~emit (auth:Client_auth.saved_auth_state) = (
 	done
 )
 
-let sync_db_loop ~sync ~sync_state auth =
+let sync_db_loop ~sync ~sync_state ~emit auth =
 	(* used when signed in, to periodically sync DB state *)
-	while_lwt true do
+	let continue = ref true in
+	while_lwt !continue do
 		Log.info (fun m->m "sync loop running..");
-		lwt () = sync.run_sync (auth:>Client_auth.authenticated_user_state) in
-		let next_change = (sync_state
-			|> events_of_signal
-			|> E.filter (function | Local_changes _ -> true | _ -> false)
-			|> Lwt_react.E.next)
-		in
-		Lwt.pick [
-			(* every 30 minutes *)
-			(Lwt_js.sleep 18000.0);
-			(* shortly after making a change to the DB *)
-			(next_change >>= (fun _ -> Lwt_js.sleep 2.0))
-		]
+		(match_lwt sync.run_sync (auth:>Client_auth.authenticated_user_state) with
+			| Error msg ->
+				Log.err (fun m->m"sync loop failed: %s" msg);
+				emit (`error (Some msg));
+				continue := false;
+				return_unit
+			| Ok () ->
+				let next_change = (sync_state
+					|> events_of_signal
+					|> E.filter (function | Local_changes _ -> true | _ -> false)
+					|> Lwt_react.E.next)
+				in
+				Lwt.pick [
+					(* every 30 minutes *)
+					(Lwt_js.sleep 18000.0);
+					(* shortly after making a change to the DB *)
+					(next_change >>= (fun _ -> Lwt_js.sleep 2.0))
+				]
+		)
 	done
 
 let update_sync_time ~sync_state ~emit () =
@@ -253,15 +257,26 @@ let update_sync_time ~sync_state ~emit () =
 let run_background_sync ~sync ~set_auth_state ~emit sync_state : (Client_auth.auth_state option -> unit Lwt.t) =
 	let last_auth = ref None in
 	let run = (fun auth ->
+		let open Client_auth in
+		Log.info (fun m->m "run_background_sync called with auth: %s" (string_of_auth_state auth));
+		let previous_auth = !last_auth in
 		last_auth := Some auth;
-		Log.info (fun m->m "run_background_sync called with auth: %s" (Client_auth.string_of_auth_state auth));
 		(match auth with
 			| `Logged_out | `Anonymous | `Failed_login _ -> return_unit
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
-				auth_loop ~set_auth_state ~emit (u:>Client_auth.saved_auth_state)
+				let prev_uid = Option.bind uid_of_state previous_auth
+				and current_uid = uid_of_authenticated (u:>authenticated_user_state) in
+				lwt () = if prev_uid = Some(current_uid)
+					(* slow down reconnect attempts if user is unchanged *)
+					then (
+						Log.debug (fun m->m "delaying sync attempt for unchanged user");
+						Lwt_js.sleep 60.0
+					) else return_unit
+				in
+				auth_loop ~set_auth_state ~emit (u:>saved_auth_state)
 			| `Active_user _ | `Implicit_user _ as u ->
 				Lwt.pick [
-					sync_db_loop ~sync ~sync_state (u:>Client_auth.logged_in_user_state);
+					sync_db_loop ~sync ~sync_state ~emit (u:>logged_in_user_state);
 					update_sync_time ~sync_state ~emit ();
 				]
 		) >>= fun _ -> return_unit
@@ -282,12 +297,12 @@ let command ~sync ~do_async ~emit : (state, internal_message) Ui.command_fn  = (
 	) in
 
 	let login = Ui.supplantable (fun (state:state) ->
-		submit_form ~set_auth_state ~emit Client_auth.login_url
+		submit_form ~set_auth_state ~emit Client_auth.login_api
 			state.auth_state state.ui.login_form
 	) in
 
 	let signup = Ui.supplantable (fun (state:state) ->
-		submit_form ~set_auth_state ~emit Client_auth.signup_url
+		submit_form ~set_auth_state ~emit Client_auth.signup_api
 			state.auth_state state.ui.login_form
 	) in
 

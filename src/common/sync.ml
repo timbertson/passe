@@ -1,6 +1,6 @@
-open Common
 open React_ext
 open Lwt
+open Common
 module J = Json_ext
 
 module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
@@ -46,7 +46,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 		auth_state: Auth.auth_state signal;
 		set_auth_state: Auth.auth_state -> unit;
 		sync_running: bool signal;
-		run_sync: Auth.authenticated_user_state -> unit Lwt.t;
+		run_sync: Auth.authenticated_user_state -> (unit,string) result Lwt.t;
 	}
 
 	let sync_db (auth:Auth.authenticated_user_state) db =
@@ -76,28 +76,22 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 				)
 			| response -> return response
 
-	let _validate_server_auth ~data ~url handler =
-		let open Server in
-		match_lwt post_json ~data url with
-			| Server.OK response -> return (handler response)
-			| Server.Failed (_, msg, _) -> failwith msg
-			| Server.Unauthorized _ -> assert false
-	
 	let _validate_implicit_auth () : Auth.online_implicit_auth_state Lwt.t =
-		_validate_server_auth ~data:(`Assoc []) ~url:Auth.server_state_url
-		(fun json -> match Auth.parse_implicit_user json with
+		lwt auth = Server.call Auth.server_state_api J.empty in
+		return (match Server.Response.force auth with
 			| Some user -> `Implicit_user user
 			| None -> `Anonymous
 		)
 
 	let _validate_explicit_auth = function
 		| `Saved_user ((username, token) as credentials) ->
-			_validate_server_auth ~data:token ~url:Auth.token_validate_url
-				(fun response ->
-					if (response |> J.(mandatory bool_field "valid"))
-					then (`Active_user credentials)
-					else (`Failed_login username)
-				)
+			lwt response = Server.call Auth.token_validate_api token in
+			return (
+				if Server.Response.force response then
+					`Active_user credentials
+				else
+					`Failed_login username
+			)
 
 	let _validate_auth (auth:Auth.offline_auth_state) =
 		let cast = fun a -> return (a:>Auth.auth_state) in
@@ -222,7 +216,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 
 		let set_last_sync_time t = last_sync#save (`Float t) in
 
-		let sync_running, (run_sync:Auth.authenticated_user_state -> unit Lwt.t) =
+		let sync_running, (run_sync:Auth.authenticated_user_state -> (unit,string) result Lwt.t) =
 			let running_sync = ref None in
 			let s, set_busy = S.create false in
 			(s, fun auth ->
@@ -230,29 +224,29 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 					| Some (future,_) -> future
 					| None -> begin
 						let (_future, sync_complete) as task = Lwt.wait () in
-						let finish err =
+						let finish result =
 							running_sync := None;
 							set_busy false;
-							match err with
-								| Some e -> Lwt.wakeup_exn sync_complete e; raise e
-								| None   -> Lwt.wakeup sync_complete (); return_unit
+							Lwt.wakeup sync_complete result;
+							return result
 						in
 
 						running_sync := Some task;
 						set_busy true;
-						lwt err = try_lwt
-							Log.info (fun m->m "syncing...");
+						(
+							try_lwt
+								Log.info (fun m->m "syncing...");
 
-							let uid = Auth.uid_of_authenticated auth in
-							let db_storage = local_db_for_user config_provider uid in
+								let uid = Auth.uid_of_authenticated auth in
+								let db_storage = local_db_for_user config_provider uid in
 
-							let get_latest_db () =
-								db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
+								let get_latest_db () =
+									db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
 
-							let sent_db = get_latest_db () in
-							lwt response = sync_db auth sent_db in
-							return (match response with
-								| Server.OK json ->
+								let sent_db = get_latest_db () in
+								lwt response = sync_db auth sent_db in
+								return (match response with
+									| Server.OK json ->
 										let open Store in
 										let version = J.(mandatory int_field "version" json) in
 										Log.info (fun m->m "server returned version %d" version);
@@ -268,18 +262,20 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 											db_storage#save (Store.to_json new_db);
 										end;
 										set_last_sync_time (Date.time ());
-										None
-								| Server.Unauthorized msg ->
-									set_auth_state (Auth.failed_login_of_authenticated auth);
-									Some (SafeError (Printf.sprintf
-										"authentication failed: %a"
-										(Option.print print_string) msg))
-								| Server.Failed (_, msg, _) ->
-									set_auth_state (Auth.saved_user_of_authenticated auth);
-									Some (SafeError msg)
-							)
-						with e -> return (Some e) in
-						finish err
+										Ok ()
+									| Server.Unauthorized msg ->
+										set_auth_state (Auth.failed_login_of_authenticated auth);
+										Error (Printf.sprintf
+											"authentication failed: %a"
+											(Option.print print_string) msg)
+									| Server.Failed (_, msg, _) ->
+										set_auth_state (Auth.saved_user_of_authenticated auth);
+										Error msg
+								)
+							with e -> return (Error (
+								"uncaught error in run_sync: " ^ (Printexc.to_string e)
+							))
+						) >>= finish
 				end
 			)
 		in
@@ -299,11 +295,11 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 		}
 
 	let login ~user ~password t =
-		lwt response = Server.post_json ~data:(Auth.payload ~user ~password) Auth.login_url in
+		lwt response = Server.call Auth.login_api (Auth.payload ~user ~password) in
 		let open Server in
 		let result = begin match response with
-			| OK response ->
-				(`Active_user (Auth.get_response_credentials response))
+			| OK creds ->
+				(`Active_user creds)
 			| Failed (_, message, _) ->
 					Log.warn (fun m->m "Failed login: %s" message);
 					`Failed_login user

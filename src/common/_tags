@@ -1,2 +1,2 @@
-true: debug, package(logs, yojson, uri), syntax(camlp4o)
+true: debug, package(logs, yojson, uri, rresult), syntax(camlp4o)
 "server_unix.ml": package(cohttp.lwt)

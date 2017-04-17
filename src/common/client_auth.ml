@@ -1,5 +1,5 @@
-open Common
 module J = Json_ext
+open Common
 
 (* TODO: hide these type implementations behind signature *)
 
@@ -148,17 +148,6 @@ module Make (Server:Server.Sig) = struct
 			("password", `String password);
 		]
 
-	(* implicit_auth urls: *)
-	let server_state_url = Server.path ["auth"; "state"]
-
-	(* explicit auth urls *)
-	let login_url = Server.path ["auth"; "login"]
-	let signup_url = Server.path ["auth"; "signup"]
-	let logout_url = Server.path ["auth"; "logout"]
-	let token_validate_url = Server.path ["auth"; "validate"]
-	let change_password_url = Server.path ["auth"; "change-password"]
-	let delete_user_url = Server.path ["auth"; "delete"]
-
 	let parse_credentials (token:J.json) : credentials =
 		let user = token
 			|> J.get_field username_key
@@ -167,19 +156,34 @@ module Make (Server:Server.Sig) = struct
 					raise (AssertionError ("no username found in auth token")))
 		in (user, token)
 
-	let parse_implicit_user (json:J.json) : implicit_user option =
-		match (json |> J.string_field "name", json |> J.string_field "id") with
-			| (Some name, Some uid) -> Some (name, uid)
-			| (None, None) -> None
-			| _mixed ->
-					Log.warn (fun m->m "Unable to parse auth state JSON: %s" (J.to_string json));
-				None
-
 	let get_response_credentials response =
 		let creds = J.get_field "token" response in
 		let username = creds |> Option.bind (J.string_field username_key) in
 		match (username, creds) with
-			| Some user, Some creds -> (user, creds)
-			| _ -> raise (AssertionError "credentials doesn't contain a user key")
+			| Some user, Some creds -> Ok (user, creds)
+			| _ -> Error "credentials doesn't contain a user key"
 
+	let get_empty_response = function
+		| `Assoc [] -> Ok ()
+		| other -> Error ("Expected empty response; got " ^ (J.to_string other))
+
+	let get_validity_response response =
+		Ok (response |> J.(mandatory bool_field "valid"))
+
+	let parse_implicit_user : implicit_user option Server.response_handler = fun json ->
+		match (json |> J.string_field "name", json |> J.string_field "id") with
+			| (Some name, Some uid) -> Ok (Some (name, uid))
+			| (None, None) -> Ok (None)
+			| _mixed ->
+				Error ("Unable to parse auth state JSON: %s" ^ (J.to_string json))
+
+	let server_state_api = Server.api ["auth"; "state"] parse_implicit_user
+
+	(* explicit auth urls *)
+	let login_api = Server.api ["auth"; "login"] get_response_credentials
+	let signup_api = Server.api ["auth"; "signup"] get_response_credentials
+	let logout_api = Server.api ["auth"; "logout"] get_empty_response
+	let token_validate_api = Server.api ["auth"; "validate"] get_validity_response
+	let change_password_api = Server.api ["auth"; "change-password"] get_response_credentials
+	let delete_user_api = Server.api ["auth"; "delete"] get_empty_response
 end

@@ -155,8 +155,7 @@ let sync_ui state =
 			| None -> (new plain_prompt term "Username: ")#run
 		in
 		lwt password = (new password_prompt term "Password: ")#run in
-		lwt auth = Sync.login state ~user ~password in
-		return auth
+		Sync.login state ~user ~password
 	in
 
 	try_lwt
@@ -185,11 +184,11 @@ let sync_ui state =
 			loop (S.value state.auth_state)
 		in
 
-		lwt () = state.Sync.run_sync authenticated_user in
-		Log.app (fun m->m "Sync completed successfully");
-		return_unit
+		state.Sync.run_sync authenticated_user |> Lwt.map (R.map (fun () ->
+			Log.app (fun m->m "Sync completed successfully")
+		))
 	with e -> (
-		raise @@ SafeError ("Sync failed: " ^ (Printexc.to_string e))
+		return (Error (Printexc.to_string e))
 	)
 
 let lterm_reporter term =
@@ -258,10 +257,11 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 				delete ~sync_state ~existing ~term () >>= next
 			in
 			let try_sync () =
-				lwt () = try_lwt sync_ui sync_state with SafeError e -> begin
-					Log.err (fun m->m "%s" e);
-					return_unit
-				end in
+				lwt sync_result = sync_ui sync_state in
+				let () = match sync_result with
+					| Ok () -> ()
+					| Error e -> Log.err (fun m->m "%s" e)
+				in
 				continue ()
 			in
 
