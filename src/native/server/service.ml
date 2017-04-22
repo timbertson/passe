@@ -449,8 +449,8 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 								lwt params = params () in
 								authorized (fun user ->
 									let uid = User.uid user in
-									let db_path = db_path_for uid in
 									Log.debug (fun m->m "saving db for user: %s" (string_of_uid uid));
+									let db_path = db_path_for uid in
 									(* XXX locking *)
 									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									lwt db_file_contents = maybe_read_file db_path in

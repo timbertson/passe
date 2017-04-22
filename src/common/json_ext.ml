@@ -18,9 +18,6 @@ let as_string obj = match obj with
 let as_int obj = match obj with
 	| `Int i -> Some i | _ -> None
 
-let as_float obj = match obj with
-	| `Float f -> Some f | _ -> None
-
 let as_list obj = match obj with
 	| `List i -> Some i | _ -> None
 
@@ -43,7 +40,6 @@ let get_field_as fn key j = get_field key j |> Option.bind fn
 let string_field : string -> json -> string option = get_field_as as_string
 let int_field : string -> json -> int option = get_field_as as_int
 let list_field : string -> json -> json list option = get_field_as as_list
-let float_field : string -> json -> float option = get_field_as as_float
 let bool_field : string -> json -> bool option = get_field_as as_bool
 
 type obj = [

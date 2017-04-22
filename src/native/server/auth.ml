@@ -93,7 +93,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 	module Fs = Fs
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
-	let time_float clock = Clock.now_d_ps clock |> Ptime.v |> Ptime.to_float_s
+	let time clock = Clock.now_d_ps clock |> Ptime.v
 
 	let mandatory = J.mandatory
 
@@ -111,8 +111,14 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 	let stored_eq eq a b =
 		a.stored_contents = b.stored_contents && eq a.stored_metadata b.stored_metadata
 
-	type date = float
+	type date = Ptime.t
 	let two_weeks = Ptime.Span.v (14, 0L)
+
+	let day_of_date : Ptime.t -> int = fun d ->
+		d |> Ptime.to_span |> Ptime.Span.to_d_ps |> Tuple.fst
+
+	let date_of_day : int -> Ptime.t = fun d ->
+		Ptime.v (d, 0L)
 
 	module type BYTES = sig
 		type t
@@ -154,10 +160,15 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		type stored_token = (string, info) stored
 		type sensitive_token = (Bytes.t, info) sensitive
 
+		let serialize_expires exp = `Int (day_of_date exp)
+
+		let parse_expires obj =
+			J.int_field "expires" obj |> Option.default 0 |> date_of_day
+
 		let of_stored_json ~username j = {
 			stored_metadata = {
 				user = username;
-				expires = mandatory J.float_field "expires" j;
+				expires = parse_expires j;
 			};
 			stored_contents = mandatory J.string_field "contents" j;
 		}
@@ -165,7 +176,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		let of_json j : sensitive_token = {
 			sensitive_metadata = {
 				user = mandatory J.string_field "user" j;
-				expires = mandatory J.float_field "expires" j;
+				expires = parse_expires j;
 			};
 			sensitive_contents = mandatory Bytes.field "contents" j;
 		}
@@ -187,7 +198,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		let to_stored_json (t:stored_token) =
 			let info = t.stored_metadata in
 			`Assoc [
-				("expires", `Float info.expires);
+				("expires", serialize_expires info.expires);
 				("contents", `String t.stored_contents);
 			]
 
@@ -195,7 +206,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 			let info = t.sensitive_metadata in
 			`Assoc [
 				("user", `String info.user);
-				("expires", `Float info.expires);
+				("expires", serialize_expires info.expires);
 				("contents", Bytes.to_json t.sensitive_contents);
 			]
 		
@@ -206,7 +217,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 			return {
 				sensitive_contents = contents;
 				sensitive_metadata = {
-					expires = expires |> Ptime.to_float_s;
+					expires = expires;
 					user = username;
 				}
 			}
@@ -396,20 +407,28 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		method clock = clock
 		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) =
 			Lwt_mutex.with_lock lock (fun () ->
-				let now = time_float clock in
+				let now = time clock in
+				let double_expiry = Ptime.Span.add two_weeks two_weeks in
+				let max_expiry = Ptime.add_span now double_expiry |> Option.force in
+
 				let num_written = ref 0 in
 				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
 
 				let write_user user =
 					(* whenever we save a user, trim their tokens to just those
-						* which have not yet expired *)
-					let user = {
-						user with User.active_tokens = user.User.active_tokens |> List.filter
-							(fun tok -> tok.stored_metadata.Token.expires > now)
-					} in
+						* which have not yet expired (with a sanity check that discards
+						* tokens whose expiry is too far in the future, too) *)
+					let active_tokens = user.User.active_tokens |> List.filter (fun tok ->
+						let expires = tok.stored_metadata.Token.expires in
+						Ptime.is_later expires ~than:now && Ptime.is_earlier expires ~than:max_expiry
+					) in
+					let user = { user with User.active_tokens = active_tokens } in
 					let json = User.to_json user in
 					let line = J.to_single_line_string json in
-					Log.debug (fun m->m "writing output user... %s" (user.User.name));
+					Log.debug (fun m->m "writing output user... %s with %d tokens"
+						(user.User.name)
+						(List.length active_tokens)
+					);
 					num_written := !num_written + 1;
 					output#push (`Output (line^"\n"))
 				in
@@ -534,10 +553,13 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 			| Some rv -> `Success rv
 			| None -> `Failed "Authentication failed")
 
+	let token_has_expired ~(storage:storage) info =
+		let expires = info.Token.expires in
+		Ptime.is_earlier expires ~than:(time storage#clock)
+
 	let validate ~(storage:storage) token : User.db_user option Lwt.t =
 		let info = token.sensitive_metadata in
-		let expires = info.Token.expires in
-		if expires < time_float storage#clock then
+		if token_has_expired ~storage info then
 			return_none
 		else (
 			lwt user = get_user ~storage (info.Token.user) in
@@ -550,8 +572,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 
 	let logout ~(storage:storage) token : unit Lwt.t =
 		let info = token.sensitive_metadata in
-		let expires = info.Token.expires in
-		if expires < time_float storage#clock then
+		if token_has_expired ~storage info then
 			return_unit
 		else (
 			let username = info.Token.user in

@@ -36,5 +36,4 @@ fat add --unbuffered "$dest" data
 
 cd "$tmp"
 
-add_dir js
-add_in www js/main.js res/bootstrap/dist res/css res/fonts
+add_in www index.appcache js/main.js res/bootstrap/dist res/css res/fonts res/images
