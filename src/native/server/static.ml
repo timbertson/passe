@@ -13,8 +13,8 @@ let string_of_error pp e = Format.asprintf "%a" pp e
 
 module type Sig = sig
 	type t
-	val etag : t -> string -> (string Lwt_stream.t -> string Lwt.t) -> (string, error) result Lwt.t
 	val read_s : t -> string -> (string Lwt_stream.t -> 'a Lwt.t) -> ('a, error) result Lwt.t
+	val etag : t -> string -> (string Lwt_stream.t -> string Lwt.t) -> (string, error) result Lwt.t
 end
 
 module type Kv_RO = sig
@@ -77,7 +77,7 @@ end = struct
 		let path = path_of_string t path in
 		(* TODO: use result in FS instead of try/catch here *)
 		try_lwt
-			(Impl.read_file_s fs (Path.string_of_filename path) fn) |> Lwt.map R.ok
+			(Impl.read_file_s fs (Path.string_of_filename path) (fun _proof -> fn)) |> Lwt.map R.ok
 		with Impl.FsError e -> return (match e with
 			| Impl.ENOENT -> Error `Not_found
 			| Impl.FS_ERROR e -> Error (`Read_error e)

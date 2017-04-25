@@ -400,45 +400,44 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 	end
 
 	class storage clock fs filename =
-		let lock = Lwt_mutex.create () in
 		let () = Log.info (fun m->m "storage located at %s" filename) in
 
 		object (self)
 		method clock = clock
-		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) =
-			Lwt_mutex.with_lock lock (fun () ->
-				let now = time clock in
-				let double_expiry = Ptime.Span.add two_weeks two_weeks in
-				let max_expiry = Ptime.add_span now double_expiry |> Option.force in
+		method modify (fn:User.db_user Lwt_stream.t -> (User.db_user -> unit Lwt.t) -> Fs.write_commit Lwt.t) = (
+			let now = time clock in
+			let double_expiry = Ptime.Span.add two_weeks two_weeks in
+			let max_expiry = Ptime.add_span now double_expiry |> Option.force in
 
-				let num_written = ref 0 in
-				let (output_chunks, output) = Lwt_stream.create_bounded 10 in
+			let num_written = ref 0 in
+			let (output_chunks, output) = Lwt_stream.create_bounded 10 in
 
-				let write_user user =
-					(* whenever we save a user, trim their tokens to just those
-						* which have not yet expired (with a sanity check that discards
-						* tokens whose expiry is too far in the future, too) *)
-					let active_tokens = user.User.active_tokens |> List.filter (fun tok ->
-						let expires = tok.stored_metadata.Token.expires in
-						Ptime.is_later expires ~than:now && Ptime.is_earlier expires ~than:max_expiry
-					) in
-					let user = { user with User.active_tokens = active_tokens } in
-					let json = User.to_json user in
-					let line = J.to_single_line_string json in
-					Log.debug (fun m->m "writing output user... %s with %d tokens"
-						(user.User.name)
-						(List.length active_tokens)
-					);
-					num_written := !num_written + 1;
-					output#push (`Output (line^"\n"))
-				in
+			let write_user user =
+				(* whenever we save a user, trim their tokens to just those
+					* which have not yet expired (with a sanity check that discards
+					* tokens whose expiry is too far in the future, too) *)
+				let active_tokens = user.User.active_tokens |> List.filter (fun tok ->
+					let expires = tok.stored_metadata.Token.expires in
+					Ptime.is_later expires ~than:now && Ptime.is_earlier expires ~than:max_expiry
+				) in
+				let user = { user with User.active_tokens = active_tokens } in
+				let json = User.to_json user in
+				let line = J.to_single_line_string json in
+				Log.debug (fun m->m "writing output user... %s with %d tokens"
+					(user.User.name)
+					(List.length active_tokens)
+				);
+				num_written := !num_written + 1;
+				output#push (`Output (line^"\n"))
+			in
 
+			self#read_with_proof (fun proof users ->
 				(* stream output while processing input *)
 				Lwt.join [
-					Fs.write_file_s fs filename output_chunks;
+					Fs.write_file_s fs filename ~proof output_chunks;
 					(
 						try_lwt
-							lwt commit = self#_read (fun users -> fn users write_user) in
+							lwt commit = fn users write_user in
 							match commit with
 								| `Rollback ->
 										Log.debug (fun m->m "discarding changes");
@@ -459,14 +458,13 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 					)
 				]
 			)
+		)
 
-		method read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
-			Lwt_mutex.with_lock lock (fun () -> self#_read fn)
+		method read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn -> self#read_with_proof (fun _proof -> fn)
 
-		(* NOTE: must only be called while holding `lock` *)
-		method private _read : 'a. (User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
+		method private read_with_proof : 'a. (Lock.proof -> User.db_user Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t = fun fn ->
 			let opened = ref false in
-			(Fs.read_file_s fs filename) (fun s ->
+			(Fs.read_file_s fs filename) (fun proof s ->
 				let lines = lines_stream s in
 				let db_users = lines |> Lwt_stream.filter_map (fun line ->
 					Option.non_empty ~zero:"" line |>
@@ -483,7 +481,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 						return (Lwt_stream.of_list [])
 					)
 				in
-				fn users
+				fn proof users
 			)
 	end
 

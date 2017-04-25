@@ -54,10 +54,10 @@ module type Sig = sig
 	(* TODO expose only a subset *)
 	include FSCommonSig
 
-	val write_file_s : t -> string -> write_instruction Lwt_stream.t -> unit Lwt.t
-	val write_file : t -> string -> string -> unit Lwt.t
-	val read_file_s : t -> string -> (string Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
-	val read_file : t -> string -> string Lwt.t
+	val write_file_s : t -> string -> ?proof:Lock.proof -> write_instruction Lwt_stream.t -> unit Lwt.t
+	val write_file : t -> string -> ?proof:Lock.proof -> string -> unit Lwt.t
+	val read_file_s : t -> string -> ?proof:Lock.proof -> (Lock.proof -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
+	val read_file : t -> ?proof:Lock.proof -> string -> string Lwt.t
 end
 
 module type AtomicSig = functor(Fs:FSCommonSig) -> sig
@@ -142,37 +142,35 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 	module Atomic = Atomic(Common)
 	include Common
 	let locks = ref StringMap.empty
-	let _with_lock : 'a. string -> (unit -> 'a Lwt.t) -> 'a Lwt.t = fun path fn ->
+	let _with_lock : 'a. string -> ?proof:Lock.proof -> (Lock.proof -> 'a Lwt.t) -> 'a Lwt.t = fun path ?proof fn ->
 		let lock =
 			try StringMap.find path !locks
 			with Not_found -> begin
-				let lock = Lwt_mutex.create () in
+				let lock = Lock.create () in
 				locks := StringMap.add path lock !locks;
 				lock
 			end in
-		lwt () = Lwt_mutex.lock lock in
 		try_lwt
-			fn ()
-		finally begin
-			Log.debug (fun m->m "finished with mutex %s; no_open_locks = %b" path (Lwt_mutex.is_empty lock));
-			if (Lwt_mutex.is_empty lock) then (
+			Lock.use ?proof lock fn
+		finally (
+			Log.debug (fun m->m "finished with mutex %s; no_open_locks = %b" path (Lock.is_empty lock));
+			if (Lock.is_empty lock) then (
 				locks := StringMap.remove path !locks
 			);
-			Lwt_mutex.unlock lock;
 			return_unit
-		end
+		)
 
-	let locked_atomic_write_exn fs path fn = _with_lock path (fun () ->
-		Atomic.with_writable fs path fn
+	let locked_atomic_write_exn fs path ?proof fn = _with_lock ?proof path (fun proof ->
+		Atomic.with_writable fs path (fn proof)
 	)
 
-	let locked_atomic_read_exn fs path fn = _with_lock path (fun () ->
+	let locked_atomic_read_exn fs path ?proof fn = _with_lock ?proof path (fun proof ->
 		lwt read_path = Atomic.readable fs path in
-		fn read_path
+		fn proof read_path
 	)
 
-	let write_file_s fs path stream =
-		locked_atomic_write_exn fs path (fun path ->
+	let write_file_s fs path ?proof stream =
+		locked_atomic_write_exn fs path ?proof (fun _proof path ->
 			Log.debug (fun m->m "Writing file stream: %s" path);
 			let offset = ref 0 in
 			let result = ref `Commit in
@@ -195,15 +193,15 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 			return !result
 		)
 
-	let write_file fs path contents =
-		write_file_s fs path (Lwt_stream.of_list [`Output contents])
+	let write_file fs path ?proof contents =
+		write_file_s fs path ?proof (Lwt_stream.of_list [`Output contents])
 
-	let read_file_s = fun fs path consumer ->
-		locked_atomic_read_exn fs path (fun path ->
+	let read_file_s = fun fs path ?proof consumer ->
+		locked_atomic_read_exn fs ?proof path (fun proof path ->
 			Log.debug (fun m->m "Reading file stream: %s" path);
 			let offset = ref 0 in
 			let max_chunk_size = 4096 in
-			consumer (Lwt_stream.from (fun () ->
+			consumer proof (Lwt_stream.from (fun () ->
 				let rv = ref "" in
 				let chunk_size = ref 0 in
 				lwt chunks = Common.read fs path !offset max_chunk_size in
@@ -225,7 +223,7 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 			))
 		)
 
-	let read_file fs path =
-		read_file_s fs path (fun stream -> Lwt_stream.fold (^) stream "")
+	let read_file fs ?proof path =
+		read_file_s fs path ?proof (fun _proof stream -> Lwt_stream.fold (^) stream "")
 
 end
