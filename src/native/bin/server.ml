@@ -17,7 +17,8 @@ module Fs = struct
 end
 
 module Auth = Passe_server.Auth.Make(Pclock)(Passe_server.Hash_bcrypt)(Fs)
-module Unix_server = Passe_server.Service.Make(Pclock)(Fs)(HTTP)(Passe_server.Server_config_unix)(Auth)(Re_native)
+module Static_files = Passe_server.Static.Fs(Fs)
+module Unix_server = Passe_server.Service.Make(Pclock)(Static_files)(Fs)(HTTP)(Passe_server.Server_config_unix)(Auth)(Re_native)
 open Unix_server
 module Version = Version.Make(Re_native)
 module Timed_log = Passe_server.Timed_log.Make(Pclock)
@@ -33,12 +34,11 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 	lwt fs = Fs.connect () in
 	lwt clock = Pclock.connect () in
-	let user_db = make_db clock fs data_root in
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
+	let static_files = Static_files.init ~fs document_root in
 	let callback = Unix_server.handler
-		~document_root
-		~data_root:(ref data_root)
-		~user_db:(ref user_db)
+		~static:static_files
+		~data_root:data_root
 		~clock
 		~fs
 		~enable_rc

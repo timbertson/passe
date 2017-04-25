@@ -9,6 +9,13 @@ let
 		extraRepos = [
 			vdoml.opam2nix.repo
 		];
+		# args = [ "--verbose" "--repo"
+		# 	../../ocaml-safepass/opam2nix-repo
+		# ];
+		extraPackages = [
+			(import ../../ocaml-safepass/opam2nix-repo/packages)
+		];
+
 		overrides = {super, self}: {
 			opamSelection = let
 				sels = super.opamSelection;
@@ -19,6 +26,18 @@ let
 				});
 
 				commonOverrides = {
+					safepass = disableHardening (lib.overrideDerivation sels.safepass (o: {
+						buildInputs = o.buildInputs ++ [ pkgs.pkgconfig ];
+						src = ../../ocaml-safepass/nix/local.tgz;
+						# patches = [ ../../ocaml-safepass/mirage.diff ];
+						# configurePhase = ''
+						# 	sed -i -e 's/has_native_dynlink\ *:.*/has_native_dynlink:false/' setup.ml
+						# '';
+						installPhase = o.installPhase + '';
+							echo 'freestanding_linkopts = "-lsafepass_stubs"' >> $out/lib/safepass/META
+						'';
+					}));
+
 					mirage = lib.overrideDerivation sels.mirage (o: {
 						src = fetchgit {
 							"url" = "https://github.com/timbertson/mirage.git";

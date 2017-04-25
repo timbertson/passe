@@ -1,10 +1,11 @@
 open Passe
 open Lwt
+open Common
 open Astring
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
-module Path = FilePath.UnixPath
+module Path = FilePath.UnixPath.Abstract
 module Str = Re_str
 
 let slash = Str.regexp "/"
@@ -55,9 +56,10 @@ let maybe_add_header k v headers =
 		| Some v -> Header.add headers k v
 		| None -> headers
 
-module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Server_config:Server_config.Sig) (Auth:Auth.Sig with module Fs = Fs and module Clock = Clock) (Re:Re_ext.Sig) = struct
+module Make (Clock: Mirage_types.PCLOCK) (Static_res:Static.Sig) (Fs: Filesystem.Sig) (Server:Cohttp_lwt.Server) (Server_config:Server_config.Sig) (Auth:Auth.Sig with module Fs = Fs and module Clock = Clock) (Re:Re_ext.Sig) = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
+	module Data_res = Static.Fs(Fs)
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Cohttp.Request.t -> Auth.User.t option Lwt.t
@@ -143,17 +145,29 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 	let respond_forbidden () =
 		respond_json ~status:`Forbidden ~body:(`Assoc [("reason",`String "Request forbidden")]) ()
 
-	let make_db ~clock ~fs data_root = new Auth.storage clock fs (Filename.concat data_root "users.db.json")
-
-	let handler ~document_root ~data_root ~user_db ~clock ~fs ~enable_rc ~development = fun _sock req body ->
+	let handler ~static ~data_root:initial_data_root ~clock ~fs ~enable_rc ~development = fun _sock req body ->
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
+
+		let adopt_data_root root = (
+			root,
+			Data_res.init ~fs root,
+			new Auth.storage clock fs (Filename.concat root "users.db.json")
+		) in
+
+		let data_root, data_ro, user_db =
+			let (a,b,c) = adopt_data_root initial_data_root in
+			(ref a, ref b, ref c)
+		in
 
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
+			let _root, _data_ro, _user_db = adopt_data_root newroot in
 			data_root := newroot;
-			user_db := make_db ~clock ~fs newroot;
+			data_ro := _data_ro;
+			user_db := _user_db;
+
 			let dbdir = Filename.dirname (db_path_for newroot (Auth.User.uid_of_string "null")) in
 			match_lwt Fs.stat fs dbdir with
 				| Ok _ -> return_unit
@@ -163,8 +177,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 				| Error e -> Fs.fail "stat" e
 		) in
 
-		let data_root = !data_root and user_db = !user_db in
-		let db_path_for = db_path_for data_root in
+		let db_path_for uid = db_path_for !data_root uid in
 
 		let wipe_user_db = (fun uid ->
 			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
@@ -172,100 +185,91 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 			Fs.destroy_if_exists fs path |> Fs.unwrap_write_lwt "destroy"
 		) in
 
-		let resolve_file path =
-			let docroot = Path.make_filename [document_root] in
-			Log.debug (fun m->m "Normalizing path %s against %s" (String.concat ~sep:", " path) (Path.string_of_filename docroot));
-			assert (not (Path.is_relative docroot));
-			if path |> any (fun part -> String.is_prefix ~affix:"." part)
-				then (
-					return `Invalid_path
-				) else (
-					let path = Path.make_filename path in
-					if Path.is_relative path
-						then (
-							let full = (Path.concat docroot path) in
-							lwt stat = Fs.stat fs full in
-							return (match stat with
-								| Ok _ -> `Ok full
-								| Error `No_directory_entry -> `Not_found
-								| Error _ -> `Internal_error
-							)
-						) else (
-							return `Invalid_path
-						)
-				)
+		let respond_file_error = function
+			| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()
+			| `Invalid_path -> Server.respond_error ~status:`Bad_request ~body:"invalid path" ()
+			| `Read_error e -> Server.respond_error ~status:(`Code 500) ~body:("internal error: " ^ e) ()
 		in
 
-		let _serve_file ?headers contents =
-			let file_ext = match contents with
-				| `File fullpath ->
-						String.cut ~rev:true ~sep:"." fullpath |> Option.map snd
-				| `Dynamic (ext, _) -> Some ext
-			in
-			let content_type = file_ext |> Option.map (function
-				| ("html" | "css") as t -> "text/" ^ t
-				| ("png" | "ico") as t -> "image/" ^ t
-				| "js" -> "application/javascript"
-				| "appcache" -> "text/plain"
-				| "woff" -> "application/octet-stream"
-				| ext ->
-					Log.warn (fun m->m "Unknown static file type: %s" ext);
-					"application/octet-stream"
-			) in
-			let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
-			let iter_file_chunks fn =
-				match contents with
-					| `File fullpath -> Fs.read_file_s fs fullpath fn
-					| `Dynamic (_ext, contents) -> fn (Lwt_stream.of_list [ contents ])
-			in
-			lwt latest_etag =
-				try_lwt
-					let open Nocrypto.Hash in
-					(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
-					iter_file_chunks (fun chunks ->
-						let hash = SHA256.init () in
-						lwt () = Lwt_stream.iter (fun chunk ->
-							SHA256.feed hash (Cstruct.of_string chunk)
-						) chunks in
-						let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
-						return (Some ("\"" ^ (digest ) ^ "\""))
-					)
-				with Fs.FsError Fs.ENOENT -> return_none
+		let serve_file ?headers contents = (
+			let etag_of_chunks chunks =
+				let open Nocrypto.Hash in
+				(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
+				let hash = SHA256.init () in
+				lwt () = Lwt_stream.iter (fun chunk ->
+					SHA256.feed hash (Cstruct.of_string chunk)
+				) chunks in
+				let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
+				return ("\"" ^ (digest ) ^ "\"")
 			in
 
-			let headers = headers |> Option.default_fn Header.init
-				|> no_cache
-				|> maybe_add_header content_type_key content_type in
+			let respond_file_chunks ~ext ~etag iter_file_chunks = (
+				let content_type = ext |> Option.map (function
+					| ("html" | "css") as t -> "text/" ^ t
+					| ("png" | "ico") as t -> "image/" ^ t
+					| "js" -> "application/javascript"
+					| "appcache" -> "text/plain"
+					| "woff" -> "application/octet-stream"
+					| ext ->
+						Log.warn (fun m->m "Unknown static file type: %s" ext);
+						"application/octet-stream"
+				) in
 
-			if match latest_etag, client_etag with
-				| Some a, Some b -> a = b
-				| _ -> false
-			then
-				Server.respond
-					~body:Cohttp_lwt_body.empty
-					~headers
-					~status:`Not_modified ()
-			else (
-				try_lwt
-					let headers = headers |> maybe_add_header "etag" latest_etag in
-					iter_file_chunks (fun contents ->
+				let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
+				let headers = headers |> Option.default_fn Header.init
+					|> no_cache
+					|> maybe_add_header content_type_key content_type in
+
+				if match etag, client_etag with
+					| Some a, Some b -> a = b
+					| _ -> false
+				then
+					Server.respond
+						~body:Cohttp_lwt_body.empty
+						~headers
+						~status:`Not_modified ()
+				else (
+					let headers = headers |> maybe_add_header "etag" etag in
+					lwt response = iter_file_chunks (fun contents ->
 						Server.respond
 							~headers
 							~status:`OK
 							~body:(Cohttp_lwt_body.of_stream contents) ()
-					)
-				with Fs.FsError Fs.ENOENT ->
-					Server.respond
-						~body:Cohttp_lwt_body.empty
-						~status:`Not_found ()
-			)
-		in
+					) in
+					match response with
+						| Ok result -> return result
+						| Error e -> respond_file_error e
+				)
+			) in
 
-		let serve_file ?headers contents = let contents = match contents with
-			| `File relpath -> `File (Filename.concat document_root relpath)
-			| `Dynamic _ -> contents
-			in _serve_file ?headers contents
-		in
+			match contents with
+				| `File path -> (
+					lwt etag = Static_res.etag static path etag_of_chunks in
+					lwt etag_and_read = (match etag with
+						| Ok etag -> return (Ok (etag, Static_res.read_s static path))
+						| Error `Invalid_path | Error `Read_error _ as e -> return e
+						| Error `Not_found -> (
+							(* try data *)
+							Log.debug (fun m->m "Path %s not found in static files; trying data" path);
+							let data_ro = !data_ro in
+							Data_res.etag data_ro path etag_of_chunks |> Lwt_r.map (
+								fun etag -> (etag, Data_res.read_s data_ro path)
+							)
+						)
+					) in
+					match etag_and_read with
+						| Ok (etag, read) -> (
+							let ext = String.cut ~rev:true ~sep:"." path |> Option.map snd in
+							respond_file_chunks ~ext ~etag:(Some etag) read
+						)
+						| Error e -> respond_file_error e
+				)
+				| `Dynamic (ext, contents) ->
+					let contents = (Lwt_stream.of_list [ contents ]) in
+					lwt etag = etag_of_chunks contents in
+					let iter_file_chunks fn = fn contents |> Lwt.map R.ok in
+					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) iter_file_chunks
+		) in
 
 		let maybe_read_file path = try_lwt
 				(* XXX streaming? *)
@@ -280,7 +284,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 			let path = Uri.path uri in
 			Log.debug (fun m->m "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path);
 			let path = normpath path in
-			let validate_user () = AuthContext.validate_user user_db req in
+			let validate_user () = AuthContext.validate_user !user_db req in
 			let authorized fn =
 				match_lwt validate_user () with
 					| None -> respond_unauthorized ()
@@ -337,15 +341,15 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 										~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
 										(`Dynamic ("html", contents))
 							end
-						| ["index.appcache"] when not offline_access
-								-> Server.respond_error ~status:`Not_found ~body:"not found" ()
+
+						| ["index.appcache"] when not offline_access ->
+							Server.respond_error ~status:`Not_found ~body:"not found" ()
+
 						| ["hold"] when development -> Lwt.wait () |> Tuple.fst
-						| path -> begin match_lwt resolve_file path with
-							| `Ok path -> _serve_file (`File path)
-							| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()
-							| `Invalid_path -> Server.respond_error ~status:`Bad_request ~body:"invalid path" ()
-							| `Internal_error -> Server.respond_error ~status:(`Code 500) ~body:"internal error" ()
-							end
+						| path ->
+							Static.key_of_path_components path |> R.map (fun path ->
+								serve_file (`File path)
+							) |> R.recover respond_file_error
 					)
 				| `POST -> (
 					check_version ();
@@ -381,14 +385,14 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 								lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
-								lwt token = Auth.signup ~storage:user_db user password in
+								lwt token = Auth.signup ~storage:!user_db user password in
 								respond_token token
 						)
 						| ["auth"; "login"] -> (
 								lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
-								lwt token = Auth.login ~storage:user_db user password in
+								lwt token = Auth.login ~storage:!user_db user password in
 								respond_token token
 							)
 						| ["auth"; "state"] -> (
@@ -406,13 +410,13 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 						| ["auth"; "logout"] -> (
 								lwt params = params () in
 								let token = Auth.Token.of_json params in
-								lwt () = Auth.logout ~storage:user_db token in
+								lwt () = Auth.logout ~storage:!user_db token in
 								respond_json ~status:`OK ~body:(`Assoc []) ()
 							)
 						| ["auth"; "validate"] -> (
 								lwt params = params () in
 								let token = Auth.Token.of_json params in
-								lwt user = Auth.validate ~storage:user_db token in
+								lwt user = Auth.validate ~storage:!user_db token in
 								respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 						)
 						| ["auth"; "change-password"] -> (
@@ -420,7 +424,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 								authorized_db (fun user ->
 									let old = params |> J.mandatory J.string_field "old" in
 									let new_password = params |> J.mandatory J.string_field "new" in
-									lwt new_token = Auth.change_password ~storage:user_db user old new_password in
+									lwt new_token = Auth.change_password ~storage:!user_db user old new_password in
 									match new_token with
 										| Some tok ->
 											respond_token (`Success tok)
@@ -434,7 +438,7 @@ module Make (Clock: Mirage_types.PCLOCK) (Fs: Filesystem.Sig) (Server:Cohttp_lwt
 									let uid = User.uid_db user in
 									let password = params |> J.mandatory J.string_field "password" in
 									(* delete user from DB, and also delete their DB *)
-									lwt deleted = Auth.delete_user ~storage:user_db user password in
+									lwt deleted = Auth.delete_user ~storage:!user_db user password in
 									if deleted then (
 										Log.warn (fun m->m "deleted user %s" (User.string_of_uid uid));
 										lwt () =

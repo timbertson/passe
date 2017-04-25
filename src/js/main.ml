@@ -6,7 +6,6 @@ open Js
 open Dom_html
 open Common
 open React_ext
-module List = List_ext
 module J = Json_ext
 module Log = (val Logging.log_module "main")
 

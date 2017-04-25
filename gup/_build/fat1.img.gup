@@ -5,35 +5,9 @@ which fat
 dest="$1"
 
 fat create --unbuffered "$dest" 5MiB
-tmp="$(mktemp -d)"
-trap "rm -rf $tmp" EXIT
 
 build="$(pwd)"
-
-function add_in {
-  prefix="$1"
-  shift 1
-  mkdir -p "$prefix"
-  pushd "$prefix"
-    for f in "$@"; do
-      mkdir -p "$(dirname "$f")"
-      cp -rLv --no-preserve=mode "$build/$f" "$f"
-    done
-  popd
-  fat add --unbuffered "$dest" "$prefix"
-}
-
-function add_dir {
-  mkdir -p "$@"
-  fat add --unbuffered "$dest" "$@"
-}
-
-gup -u www
 
 cd ..
 
 fat add --unbuffered "$dest" data
-
-cd "$tmp"
-
-add_in www index.appcache js/main.js res/bootstrap/dist res/css res/fonts res/images

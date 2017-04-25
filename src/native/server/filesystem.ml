@@ -78,8 +78,6 @@ module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 	exception FsError of exception_reason
 
 	let _error_message pp e = Format.asprintf "%a" pp e
-	(* let error_message = _error_message pp_error *)
-	(* let error_message_write = _error_message pp_write_error *)
 
 	let () = Printexc.register_printer (function
 		| FsError ENOENT -> Some "ENOENT"

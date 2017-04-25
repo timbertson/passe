@@ -1,7 +1,6 @@
 open Passe
 open Passe_js
 open Common
-module List = List_ext
 open React_ext
 open Vdoml
 open Html

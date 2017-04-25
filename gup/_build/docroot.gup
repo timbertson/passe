@@ -1,0 +1,24 @@
+#!bash
+set -eu
+dest="$1"
+mkdir -p "$dest"
+build="$(pwd)"
+gup --always
+
+function add {
+  prefix="$dest"
+  for f in "$@"; do
+    mkdir -p "$prefix/$(dirname "$f")"
+    cp -rLv --no-preserve=mode "$f" "$prefix/$f"
+  done
+}
+
+gup -u www
+
+add \
+  index.appcache \
+  js/main.js \
+  res/css \
+  res/fonts \
+  res/images \
+  ;

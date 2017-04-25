@@ -1,5 +1,10 @@
 type ('a, 'err) result = ('a, 'err) Rresult.result
-module R = Rresult.R
+module R = struct
+	include Rresult.R
+	let recover : ('e -> 'a) -> ('a, 'e) result -> 'a = fun fn -> function
+		| Ok v -> v
+		| Error e -> fn e
+end
 
 exception SafeError of string
 exception AssertionError of string
@@ -24,6 +29,17 @@ module List = struct
 				| head::tail -> _take (head::rev_results) (n-1) tail
 		in
 		_take [] n l
+
+	let filter_map fn l =
+		List.fold_right (fun item acc ->
+			match fn item with
+				| None -> acc
+				| Some item -> item :: acc
+		) l []
+
+	let rec any pred = function
+		| [] -> false
+		| x::xs -> if pred x then true else any pred xs
 end
 
 let startswith big sml = String.sub big 0 (String.length sml) = sml
@@ -46,3 +62,25 @@ let identity x = x
 let quote_string s = "\"" ^ String.escaped s ^ "\""
 
 let mask_string s = String.make (String.length s) '*'
+
+module Lwt_r = struct
+	let bind (type a) (type b) (type err) : (a -> (b, err) result Lwt.t) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
+		fun f r -> Lwt.bind r (function
+			| Ok v -> f v
+			| Error e -> Lwt.return (Error e)
+		)
+
+	let map (type a)(type b)(type err): (a -> b) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
+		fun f r -> Lwt.map (R.map f) r
+
+	let bind_lwt (type a)(type b)(type err): (a -> b Lwt.t) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
+		fun f r -> Lwt.bind r (function
+			| Ok v -> f v |> Lwt.map R.ok
+			| Error e -> Lwt.return (Error e)
+		)
+
+	let join (type a)(type err) : (a Lwt.t, err) result -> (a, err) result Lwt.t =
+		function
+			| Ok v -> v |> Lwt.map (fun v -> Ok v)
+			| Error e -> Lwt.return (Error e)
+end
