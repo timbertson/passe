@@ -595,12 +595,11 @@ module Make (Re:Re_ext.Sig) = struct
 				)
 			| _ -> raise (InvalidFormat "Expected toplevel object")
 
-	let parse : string -> (string, t) either = fun str ->
+	let parse : string -> (t, string) result = fun str ->
 		try
-			Right (J.from_string str |> parse_json)
+			Ok (J.from_string str |> parse_json)
 		with
-			| InvalidFormat str -> Left str
-			| Yojson.Json_error str -> Left str
+			| InvalidFormat str | Yojson.Json_error str -> Error str
 
 	let rec take n l =
 		if n = 0 then []

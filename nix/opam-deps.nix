@@ -12,9 +12,9 @@ let
 		# args = [ "--verbose" "--repo"
 		# 	../../ocaml-safepass/opam2nix-repo
 		# ];
-		extraPackages = [
-			(import ../../ocaml-safepass/opam2nix-repo/packages)
-		];
+		# extraPackages = [
+		# 	(import ../../ocaml-safepass/opam2nix-repo/packages)
+		# ];
 
 		overrides = {super, self}: {
 			opamSelection = let

@@ -38,7 +38,7 @@ end = struct
 
 	let read_s (t,_) path fn =
 		Impl.size t path |> Lwt_r.bind (fun (size:int64) ->
-			Impl.read t path 0L size |> Lwt_r.bind_lwt (fun contents ->
+			Impl.read t path 0L size |> Lwt_r.bindM (fun contents ->
 				fn (Lwt_stream.of_list contents |> Lwt_stream.map Cstruct.to_string)
 			)
 		) |> Lwt.map reword_error
@@ -75,12 +75,21 @@ end = struct
 	let read_s t path fn : ('a, error) result Lwt.t =
 		let (fs, _root) = t in
 		let path = path_of_string t path in
-		(* TODO: use result in FS instead of try/catch here *)
-		try_lwt
-			(Impl.read_file_s fs (Path.string_of_filename path) (fun _proof -> fn)) |> Lwt.map R.ok
-		with Impl.FsError e -> return (match e with
-			| Impl.ENOENT -> Error `Not_found
-			| Impl.FS_ERROR e -> Error (`Read_error e)
+		Impl.read_file_s fs (Path.string_of_filename path) (fun _proof contents ->
+			Lwt_stream.peek contents |> Lwt.bindr (function
+				| None -> return (Error `Not_found)
+				| Some (Ok _) ->
+					let lines = contents |> Lwt_stream.map (function
+						| Ok s -> s
+						| Error _ -> failwith "fs error mid-stream"
+						(* ^ shouldn't happen, as long as files don't disappear mid-read *)
+					) in
+					fn lines |> Lwt.map R.ok
+				| Some (Error e) -> return (Error (match e with
+					| `Is_a_directory | `No_directory_entry | `Not_a_directory -> `Not_found
+					| err -> `Read_error (string_of_error Impl.pp_error err)
+				))
+			)
 		)
 
 	let etag = read_s

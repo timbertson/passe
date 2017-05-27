@@ -1,3 +1,5 @@
+open Passe
+open Common
 open Lwt
 open Result
 
@@ -5,13 +7,8 @@ module Log = (val Passe.Logging.log_module "fs")
 module type FS = sig
 	include Mirage_fs_lwt.S
 		with type +'a io = 'a Lwt.t
-		(* with type error := Mirage_fs.error *)
-		(* and type write_error := Mirage_fs.write_error *)
-	(* with type page_aligned_buffer = Cstruct.t *)
 end
 
-(* type error = Mirage_fs.error *)
-(* type write_error = Mirage_fs.write_error *)
 type stat = Mirage_fs.stat
 
 module type FSCommonSig = sig
@@ -27,43 +24,47 @@ module type FSCommonSig = sig
 	val fail : string -> error -> 'a
 	val fail_write : string -> write_error -> 'a
 
-	val unwrap : string -> ('a, error) result -> 'a
-	val unwrap_write : string -> ('a, write_error) result -> 'a
+	val string_of_error : error -> string
 
-	val unwrap_lwt : string -> ('a, error) result Lwt.t -> 'a Lwt.t
-	val unwrap_write_lwt : string -> ('a, write_error) result Lwt.t -> 'a Lwt.t
+	val string_of_write_error : write_error -> string
 
-	(* shouldn't this be in the mirage FS signature? *)
-	(* val error_message : error -> string *)
+	val as_write_error : error -> write_error
 
 	val destroy_if_exists : t -> string -> (unit, write_error) result Lwt.t
 
-	val ensure_empty : t -> string -> unit Lwt.t
+	val ensure_empty : t -> string -> (unit, write_error) result Lwt.t
 
-	val ensure_exists : t -> string -> unit Lwt.t
+	val ensure_exists : t -> string -> (unit, write_error) result Lwt.t
 
 	val stat : t -> string -> (stat, error) result Lwt.t
 
 	val mkdir : t -> string -> (unit, write_error) result Lwt.t
-
-	(* TODO foo_exn versions of all the above functions for convenience? *)
-
 end
 
 module type Sig = sig
 	(* TODO expose only a subset *)
 	include FSCommonSig
 
-	val write_file_s : t -> string -> ?proof:Lock.proof -> write_instruction Lwt_stream.t -> unit Lwt.t
-	val write_file : t -> string -> ?proof:Lock.proof -> string -> unit Lwt.t
-	val read_file_s : t -> string -> ?proof:Lock.proof -> (Lock.proof -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
-	val read_file : t -> ?proof:Lock.proof -> string -> string Lwt.t
+	val write_file_s : t -> string -> ?proof:Lock.proof -> write_instruction Lwt_stream.t
+		-> (unit, write_error) result Lwt.t
+
+	val write_file : t -> string -> ?proof:Lock.proof -> string
+		-> (unit, write_error) result Lwt.t
+
+	val read_file_s : t -> string -> ?proof:Lock.proof
+		-> (Lock.proof -> (string, error) result Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
+
+	val read_file : t -> ?proof:Lock.proof -> string
+		-> (string, error) result Lwt.t
 end
 
 module type AtomicSig = functor(Fs:FSCommonSig) -> sig
 	type write_commit = Fs.write_commit
-	val with_writable: Fs.t -> string -> (string -> write_commit Lwt.t) -> unit Lwt.t
-	val readable:  Fs.t -> string -> string Lwt.t
+	val with_writable: Fs.t -> string
+		-> (string -> (write_commit, Fs.write_error) result Lwt.t)
+		-> (unit, Fs.write_error) result Lwt.t
+
+	val readable:  Fs.t -> string -> (string, Fs.error) result Lwt.t
 end
 
 module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
@@ -96,38 +97,38 @@ module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
 	let fail = _fail pp_error
 	let fail_write = _fail pp_write_error
 
-	let unwrap desc = function
-		| Ok x -> x
-		| Error e -> fail desc e
+	let string_of_error = _error_message pp_error
+	let string_of_write_error = _error_message pp_write_error
 
-	let unwrap_write desc = function
-		| Ok x -> x
-		| Error e -> fail_write desc e
-
-	let unwrap_lwt desc = Lwt.map (unwrap desc)
-	let unwrap_write_lwt desc = Lwt.map (unwrap_write desc)
+	(* this is inelegant... *)
+	let as_write_error (err:error) : write_error = match err with
+		(* should be able to just upcast this... *)
+		| `Is_a_directory -> `Is_a_directory
+		| `No_directory_entry -> `No_directory_entry
+		| `Not_a_directory -> `Not_a_directory
 
 	(* returns whether the file was created *)
 	let _ensure_exists fs path =
-		match_lwt stat fs path with
-			| Ok _ -> return_false
+		stat fs path >>= (function
+			| Ok _ -> return (Ok false)
 			| Error `No_directory_entry ->
-					lwt () = create fs path |> unwrap_write_lwt "create" in
-					return_true
-			| Error err -> fail "stat" err
+				create fs path |> Lwt_r.map (fun () -> true)
+			| Error err -> return (Error (err |> as_write_error))
+		)
 
 	let ensure_exists fs path =
-		lwt (_created:bool) = _ensure_exists fs path in
-		return_unit
+		_ensure_exists fs path |> Lwt_r.map (fun (_created:bool) -> ())
 
 	let ensure_empty fs path =
 		(* Note: not atomic *)
-		lwt created = _ensure_exists fs path in
-		if not created then begin
-			(* recreate to truncate *)
-			lwt () = destroy fs path |> unwrap_write_lwt "destroy" in
-			create fs path |> unwrap_write_lwt "create"
-		end else return_unit
+		_ensure_exists fs path |> Lwt_r.bind (fun created ->
+			if not created then begin
+				(* recreate to truncate *)
+				destroy fs path |> Lwt_r.bind (fun () ->
+					create fs path
+				)
+			end else return (Ok ())
+		)
 	
 	let destroy_if_exists fs path =
 		match_lwt destroy fs path with
@@ -160,70 +161,84 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 			return_unit
 		)
 
-	let locked_atomic_write_exn fs path ?proof fn = _with_lock ?proof path (fun proof ->
+	let locked_atomic_write fs path ?proof fn = _with_lock ?proof path (fun proof ->
 		Atomic.with_writable fs path (fn proof)
 	)
 
-	let locked_atomic_read_exn fs path ?proof fn = _with_lock ?proof path (fun proof ->
-		lwt read_path = Atomic.readable fs path in
-		fn proof read_path
+	let locked_atomic_read fs path ?proof fn = _with_lock ?proof path (fun proof ->
+		Atomic.readable fs path |> Lwt.bindr (fn proof)
 	)
 
-	let write_file_s fs path ?proof stream =
-		locked_atomic_write_exn fs path ?proof (fun _proof path ->
+	let write_file_s fs path ?proof stream : (unit, write_error) result Lwt.t =
+		locked_atomic_write fs path ?proof (fun _proof path ->
 			Log.debug (fun m->m "Writing file stream: %s" path);
-			let offset = ref 0 in
-			let result = ref `Commit in
-			lwt () = stream |> Lwt_stream.iter_s (fun instruction ->
-				match instruction with
+			Lwt_stream.fold_s (fun instruction result ->
+				(return result) |> Lwt_r.bind (fun offset -> match instruction with
 					| `Rollback ->
-						result := `Rollback;
-						Log.debug (fun m->m "aborted write at offset %d" !offset);
-						return_unit
+						(* result := `Rollback; *)
+						Log.debug (fun m->m "aborted write at offset %d" offset);
+						return (Error (`Rollback))
 					| `Output chunk ->
 						let size = String.length chunk in
-						let prev_offset = !offset in
-						offset := !offset + size;
-						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path prev_offset);
-						unwrap_write_lwt "write" (write fs path prev_offset (Cstruct.of_string chunk))
-			) in
-			let () = match !result with
-				| `Commit -> Log.debug (fun m->m "comitting file write: %s" path)
-				| _ -> () in
-			return !result
+						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path offset);
+						write fs path offset (Cstruct.of_string chunk)
+							|> Lwt.map (function
+								| Ok () -> Ok (offset + size)
+								| Error err -> Error (`fs err)
+							)
+				)
+			) stream (Ok 0) |> Lwt.map (function
+				| Ok (_:int) ->
+					Log.debug (fun m->m "comitting file write: %s" path);
+					(Ok `Commit)
+				| Error (`Rollback) -> (Ok `Rollback)
+				| Error (`fs err) -> Error err
+			)
 		)
 
 	let write_file fs path ?proof contents =
 		write_file_s fs path ?proof (Lwt_stream.of_list [`Output contents])
 
 	let read_file_s = fun fs path ?proof consumer ->
-		locked_atomic_read_exn fs ?proof path (fun proof path ->
-			Log.debug (fun m->m "Reading file stream: %s" path);
-			let offset = ref 0 in
-			let max_chunk_size = 4096 in
-			consumer proof (Lwt_stream.from (fun () ->
-				let rv = ref "" in
-				let chunk_size = ref 0 in
-				lwt chunks = Common.read fs path !offset max_chunk_size in
-				let () = match chunks with
-				(* TODO: mutate `rv` rather than allocating each chunk *)
-					| Ok chunks ->
-						chunks |> List.iter (fun chunk ->
-							let chunk = Cstruct.to_string chunk in
-							chunk_size := !chunk_size + String.length chunk;
-							rv := (!rv ^ chunk)
-						);
-						Log.debug (fun m->m "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset !chunk_size);
-						offset := !offset + !chunk_size
-					| Error e -> fail "read" e
-				in
-				return (
-					if !chunk_size = 0 then None else (Some !rv)
-				)
-			))
+		locked_atomic_read fs ?proof path (fun proof path ->
+			let stream = match path with
+				| Error _ as read_err ->
+					(* lift read error into first element to remove restriction on return value *)
+					(Lwt_stream.of_list [read_err])
+				| Ok path ->
+					Log.debug (fun m->m "Reading file stream: %s" path);
+					let offset = ref 0 in
+					let max_chunk_size = 4096 in
+					(Lwt_stream.from (fun () ->
+						Common.read fs path !offset max_chunk_size >>= (function
+							| Error err -> return (Some (Error err))
+							| Ok chunks ->
+								let initial_offset = !offset in
+								let chunks = chunks |> List.map (fun chunk ->
+									offset := !offset + (Cstruct.len chunk);
+									Cstruct.to_string chunk
+								) in
+								Log.debug (fun m->
+									let len = !offset - initial_offset in
+									m "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset len
+								);
+								let result = if chunks = []
+									then None
+									else (Some (Ok (String.concat "" chunks))) in
+								return result
+						)
+					))
+			in
+			consumer proof stream
 		)
 
 	let read_file fs ?proof path =
-		read_file_s fs path ?proof (fun _proof stream -> Lwt_stream.fold (^) stream "")
+		read_file_s fs path ?proof (fun _proof stream ->
+			Lwt_stream.fold (fun (chunk:(string, error) result) (acc:(string, error) result) ->
+				R.bind acc (fun acc ->
+					chunk |> R.map ((^) acc)
+				)
+			) stream (Ok "")
+		)
 
 end

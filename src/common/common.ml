@@ -1,18 +1,21 @@
 type ('a, 'err) result = ('a, 'err) Rresult.result
-module R = struct
-	include Rresult.R
-	let recover : ('e -> 'a) -> ('a, 'e) result -> 'a = fun fn -> function
-		| Ok v -> v
-		| Error e -> fn e
-end
 
 exception SafeError of string
 exception AssertionError of string
-type ('a, 'b) either = Left of 'a | Right of 'b
-module Either = struct
-	let to_option = function
-		| Left _ -> None
-		| Right x -> Some x
+
+module R = struct
+	include Rresult.R
+	let bindr f r = bind r f
+	let recover : ('e -> 'a) -> ('a, 'e) result -> 'a = fun fn -> function
+		| Ok v -> v
+		| Error e -> fn e
+	let assert_ok convert =
+		function Ok x -> x | Error e -> raise (AssertionError (convert e))
+end
+
+module Lwt = struct
+	include Lwt
+	let bindr f x = bind x f
 end
 
 module StringMap = struct
@@ -63,24 +66,66 @@ let quote_string s = "\"" ^ String.escaped s ^ "\""
 
 let mask_string s = String.make (String.length s) '*'
 
-module Lwt_r = struct
-	let bind (type a) (type b) (type err) : (a -> (b, err) result Lwt.t) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
-		fun f r -> Lwt.bind r (function
-			| Ok v -> f v
-			| Error e -> Lwt.return (Error e)
-		)
-
-	let map (type a)(type b)(type err): (a -> b) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
-		fun f r -> Lwt.map (R.map f) r
-
-	let bind_lwt (type a)(type b)(type err): (a -> b Lwt.t) -> (a, err) result Lwt.t -> (b, err) result Lwt.t =
-		fun f r -> Lwt.bind r (function
-			| Ok v -> f v |> Lwt.map R.ok
-			| Error e -> Lwt.return (Error e)
-		)
-
-	let join (type a)(type err) : (a Lwt.t, err) result -> (a, err) result Lwt.t =
-		function
-			| Ok v -> v |> Lwt.map (fun v -> Ok v)
-			| Error e -> Lwt.return (Error e)
+module type Monad = sig
+	type 'a t
+	val bind : ('a -> 'b t) -> 'a t -> 'b t
+	val map : ('a -> 'b) -> 'a t -> 'b t
+	val return : 'a -> 'a t
 end
+
+module ResultT(M:Monad) = struct
+	type ('a, 'err) t = ('a, 'err) result M.t
+
+	let bind (type a) (type b) (type err) : (a -> (b, err) result M.t) -> (a, err) result M.t -> (b, err) result M.t =
+		fun f r -> r |> M.bind (function
+			| Ok v -> f v
+			| Error e -> M.return (Error e)
+		)
+
+	let map (type a)(type b)(type err): (a -> b) -> (a, err) result M.t -> (b, err) result M.t =
+		fun f r -> M.map (R.map f) r
+
+	let bindM (type a)(type b)(type err): (a -> b M.t) -> (a, err) result M.t -> (b, err) result M.t =
+		fun f r -> r |> M.bind (function
+			| Ok v -> f v |> M.map R.ok
+			| Error _ as e -> M.return e
+		)
+
+	let reword_error (type a)(type err)(type err2)
+		: (err -> err2) -> (a, err) result M.t -> (a, err2) result M.t =
+		fun fn r -> M.map (R.reword_error fn) r
+
+	let unwrap (type a)(type err) : (a M.t, err) result -> (a, err) result M.t =
+		function
+			| Ok v -> v |> M.map (fun v -> Ok v)
+			| Error e -> M.return (Error e)
+
+	let return (type a)(type err) : a -> (a, err) result M.t = fun r -> M.return (R.return r)
+
+	module Infix = struct
+		let (>>=) r f = bind f r
+	end
+end
+
+module LwtMonad = struct
+	include Lwt
+	let bind f x = Lwt.bind x f
+	let tap f x = Lwt.bind x (fun result -> f result |> map (fun () -> result))
+end
+
+module Option_r = ResultT(Option)
+module Lwt_r = struct
+	include ResultT(LwtMonad)
+	let and_then : 'a 'err.
+		(unit -> (unit, 'err) result Lwt.t)
+		-> ('a, 'err) result
+		-> ('a, 'err) result Lwt.t
+	= fun cleanup result ->
+		cleanup () |> Lwt.map (function
+			| Ok _ -> result
+			| Error e ->
+				(* cleanup error is secondary to main error *)
+				result |> R.bindr (fun _ -> Error e)
+		)
+end
+let ok_lwt x = Lwt.map R.ok x

@@ -1,3 +1,6 @@
+type 'a t = 'a option
+let return x = Some x
+
 let map f opt = match opt with Some x -> Some (f x) | None -> None
 let may f opt = match opt with
 	| Some x -> (f x)
