@@ -35,10 +35,11 @@ module Journal = struct
 
 end
 
-module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
-	type write_commit = Common.write_commit
+module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
+	include Fs
+
 	let try_read_char fs name =
-		Common.read fs name 0 1 |> Lwt.map (function
+		read fs name 0 1 |> Lwt.map (function
 			| Ok chunks ->
 					let chunk = chunks |> List.filter (fun chunk -> Cstruct.len chunk > 0) |> List.hd in
 					Ok (Some (Cstruct.get_char chunk 0))
@@ -53,23 +54,23 @@ module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
 	let with_writable fs dest fn =
 		let journal = Journal.journal_name dest in
 		Journal.writeable_name ~try_read_char:(try_read_char fs) dest
-			|> Lwt.map (R.reword_error Common.as_write_error)
+			|> Lwt.map (R.reword_error as_write_error)
 			|> Lwt_r.bind (fun newdest ->
 				let newdest_s = Journal.string_of_name newdest in
 				let rollback result =
 					result |> Lwt_r.and_then (fun () ->
-						Common.destroy_if_exists fs newdest_s
+						destroy_if_exists fs newdest_s
 					)
 				in
-				Common.ensure_empty fs newdest_s |> Lwt_r.bind (fun () ->
+				ensure_empty fs newdest_s |> Lwt_r.bind (fun () ->
 					fn newdest_s |> Lwt.bindr (function
 						| Ok `Commit -> (
 							let open Lwt_r.Infix in
 							let journal_byte = Cstruct.create 1 in
 							Cstruct.set_char journal_byte 0 (Journal.byte newdest);
-							Common.ensure_exists fs journal >>= fun () ->
-							Common.write fs journal 0 journal_byte >>= fun () ->
-							Common.destroy_if_exists fs (Journal.cruft newdest |> Journal.string_of_name)
+							ensure_exists fs journal >>= fun () ->
+							write fs journal 0 journal_byte >>= fun () ->
+							destroy_if_exists fs (Journal.cruft newdest |> Journal.string_of_name)
 						)
 						| Ok `Rollback -> rollback (Ok ())
 						| Error _ as result -> rollback result

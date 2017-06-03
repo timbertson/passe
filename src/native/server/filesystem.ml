@@ -4,46 +4,9 @@ open Lwt
 open Result
 
 module Log = (val Passe.Logging.log_module "fs")
-module type FS = sig
-	include Mirage_fs_lwt.S
-		with type +'a io = 'a Lwt.t
-end
-
-type stat = Mirage_fs.stat
-
-module type FSCommonSig = sig
-	include FS
-	type write_instruction = [ `Output of string | `Rollback ]
-	type write_commit = [ `Commit | `Rollback ]
-	type exception_reason =
-		| ENOENT
-		| FS_ERROR of string
-
-	exception FsError of exception_reason
-
-	val fail : string -> error -> 'a
-	val fail_write : string -> write_error -> 'a
-
-	val string_of_error : error -> string
-
-	val string_of_write_error : write_error -> string
-
-	val as_write_error : error -> write_error
-
-	val destroy_if_exists : t -> string -> (unit, write_error) result Lwt.t
-
-	val ensure_empty : t -> string -> (unit, write_error) result Lwt.t
-
-	val ensure_exists : t -> string -> (unit, write_error) result Lwt.t
-
-	val stat : t -> string -> (stat, error) result Lwt.t
-
-	val mkdir : t -> string -> (unit, write_error) result Lwt.t
-end
 
 module type Sig = sig
-	(* TODO expose only a subset *)
-	include FSCommonSig
+	include Fs_ext.Sig
 
 	val write_file_s : t -> string -> ?proof:Lock.proof -> write_instruction Lwt_stream.t
 		-> (unit, write_error) result Lwt.t
@@ -58,90 +21,20 @@ module type Sig = sig
 		-> (string, error) result Lwt.t
 end
 
-module type AtomicSig = functor(Fs:FSCommonSig) -> sig
-	type write_commit = Fs.write_commit
+module type AtomicSig = functor(Fs:Fs_ext.Impl) -> sig
 	val with_writable: Fs.t -> string
-		-> (string -> (write_commit, Fs.write_error) result Lwt.t)
+		-> (string -> (Fs.write_commit, Fs.write_error) result Lwt.t)
 		-> (unit, Fs.write_error) result Lwt.t
 
 	val readable:  Fs.t -> string -> (string, Fs.error) result Lwt.t
 end
 
-module MakeCommon (Fs:FS) : (FSCommonSig with type t = Fs.t) = struct
-	include Fs
-
-	type write_instruction = [ `Output of string | `Rollback ]
-	type write_commit = [ `Commit | `Rollback ]
-	type exception_reason =
-		| ENOENT
-		| FS_ERROR of string
-
-	exception FsError of exception_reason
-
-	let _error_message pp e = Format.asprintf "%a" pp e
-
-	let () = Printexc.register_printer (function
-		| FsError ENOENT -> Some "ENOENT"
-		| FsError (FS_ERROR e) -> Some ("FS_ERROR: " ^ e)
-		| _ -> None
-	)
-
-	let _fail pp desc e =
-		let errmsg = _error_message pp e in
-		Log.debug (fun m->m "%s operation failed: %s" desc errmsg);
-		raise (FsError (match e with
-			| `No_directory_entry -> ENOENT
-			| _ -> FS_ERROR errmsg
-		))
-
-	let fail = _fail pp_error
-	let fail_write = _fail pp_write_error
-
-	let string_of_error = _error_message pp_error
-	let string_of_write_error = _error_message pp_write_error
-
-	(* this is inelegant... *)
-	let as_write_error (err:error) : write_error = match err with
-		(* should be able to just upcast this... *)
-		| `Is_a_directory -> `Is_a_directory
-		| `No_directory_entry -> `No_directory_entry
-		| `Not_a_directory -> `Not_a_directory
-
-	(* returns whether the file was created *)
-	let _ensure_exists fs path =
-		stat fs path >>= (function
-			| Ok _ -> return (Ok false)
-			| Error `No_directory_entry ->
-				create fs path |> Lwt_r.map (fun () -> true)
-			| Error err -> return (Error (err |> as_write_error))
-		)
-
-	let ensure_exists fs path =
-		_ensure_exists fs path |> Lwt_r.map (fun (_created:bool) -> ())
-
-	let ensure_empty fs path =
-		(* Note: not atomic *)
-		_ensure_exists fs path |> Lwt_r.bind (fun created ->
-			if not created then begin
-				(* recreate to truncate *)
-				destroy fs path |> Lwt_r.bind (fun () ->
-					create fs path
-				)
-			end else return (Ok ())
-		)
-	
-	let destroy_if_exists fs path =
-		match_lwt destroy fs path with
-			| Ok _ | Error `No_directory_entry -> return (Ok ())
-			| Error _ as e -> return e
-end
-
 module StringMap = Map.Make(String)
 module MutexMap = StringMap
-module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
-	module Common = MakeCommon(Fs)
-	module Atomic = Atomic(Common)
-	include Common
+module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
+	module Fs = Fs_ext.Make(Fs)
+	module Atomic = Atomic(Fs)
+	include Fs
 	let locks = ref StringMap.empty
 	let _with_lock : 'a. string -> ?proof:Lock.proof -> (Lock.proof -> 'a Lwt.t) -> 'a Lwt.t = fun path ?proof fn ->
 		let lock =
@@ -210,7 +103,7 @@ module Make (Fs:FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 					let offset = ref 0 in
 					let max_chunk_size = 4096 in
 					(Lwt_stream.from (fun () ->
-						Common.read fs path !offset max_chunk_size >>= (function
+						Fs.read fs path !offset max_chunk_size >>= (function
 							| Error err -> return (Some (Error err))
 							| Ok chunks ->
 								let initial_offset = !offset in

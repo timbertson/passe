@@ -3,17 +3,16 @@ open Lwt
 open Common
 open Filesystem
 
-module Atomic : AtomicSig = functor (Common:FSCommonSig) -> struct
-	type write_commit = Common.write_commit
+module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 	let readable _fs name = Lwt.return (Ok name)
 
 	let with_writable fs dest fn =
 		let success = Ok () in
 		let tmpname = dest ^ ".tmp" in
 		let cleanup result = result
-			|> Lwt_r.and_then (fun () -> Common.destroy_if_exists fs tmpname) in
+			|> Lwt_r.and_then (fun () -> Fs.destroy_if_exists fs tmpname) in
 
-		Common.ensure_empty fs tmpname |> Lwt_r.bind (fun () ->
+		Fs.ensure_empty fs tmpname |> Lwt_r.bind (fun () ->
 			fn tmpname |> Lwt.bindr (function
 				| Ok `Rollback -> cleanup success
 				| Ok `Commit -> (

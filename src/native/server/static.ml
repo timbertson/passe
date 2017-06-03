@@ -9,8 +9,6 @@ module Log = (val Logging.log_module "static")
 
 type error = [ `Not_found | `Invalid_path | `Read_error of string ]
 
-let string_of_error pp e = Format.asprintf "%a" pp e
-
 module type Sig = sig
 	type t
 	val read_s : t -> string -> (string Lwt_stream.t -> 'a Lwt.t) -> ('a, error) result Lwt.t
@@ -21,6 +19,8 @@ module type Kv_RO = sig
 	include Mirage_kv.RO
 	with type page_aligned_buffer = Cstruct.t
 	and type 'a io = 'a Lwt.t
+
+	val string_of_error : error -> string
 end
 
 module Kv(Impl:Kv_RO) : sig
@@ -29,7 +29,7 @@ module Kv(Impl:Kv_RO) : sig
 end = struct
 	let map_error : Impl.error -> error = function
 		| `Unknown_key _ -> `Not_found
-		| e -> `Read_error (string_of_error Impl.pp_error e)
+		| e -> `Read_error (Impl.string_of_error e)
 
 	let reword_error res = R.reword_error map_error res
 
@@ -70,8 +70,6 @@ end = struct
 
 		Path.concat root path
 
-	let _error_message pp e = Format.asprintf "%a" pp e
-
 	let read_s t path fn : ('a, error) result Lwt.t =
 		let (fs, _root) = t in
 		let path = path_of_string t path in
@@ -87,7 +85,7 @@ end = struct
 					fn lines |> Lwt.map R.ok
 				| Some (Error e) -> return (Error (match e with
 					| `Is_a_directory | `No_directory_entry | `Not_a_directory -> `Not_found
-					| err -> `Read_error (string_of_error Impl.pp_error err)
+					| err -> `Read_error (Impl.string_of_error err)
 				))
 			)
 		)
