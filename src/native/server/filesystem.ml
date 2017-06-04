@@ -8,48 +8,49 @@ module Log = (val Passe.Logging.log_module "fs")
 module type Sig = sig
 	include Fs_ext.Sig
 
-	val write_file_s : t -> string -> ?proof:Lock.proof -> write_instruction Lwt_stream.t
+	val write_file_s : t -> Path.t -> ?proof:Lock.proof -> write_instruction Lwt_stream.t
 		-> (unit, write_error) result Lwt.t
 
-	val write_file : t -> string -> ?proof:Lock.proof -> string
+	val write_file : t -> Path.t -> ?proof:Lock.proof -> string
 		-> (unit, write_error) result Lwt.t
 
-	val read_file_s : t -> string -> ?proof:Lock.proof
+	val read_file_s : t -> ?proof:Lock.proof -> Path.t
 		-> (Lock.proof -> (string, error) result Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
 
-	val read_file : t -> ?proof:Lock.proof -> string
+	val read_file : t -> ?proof:Lock.proof -> Path.t
 		-> (string, error) result Lwt.t
 end
 
 module type AtomicSig = functor(Fs:Fs_ext.Impl) -> sig
-	val with_writable: Fs.t -> string
+	val with_writable: Fs.t -> Fs.Path.t
 		-> (string -> (Fs.write_commit, Fs.write_error) result Lwt.t)
 		-> (unit, Fs.write_error) result Lwt.t
 
-	val readable:  Fs.t -> string -> (string, Fs.error) result Lwt.t
+	val readable:  Fs.t -> Fs.Path.t -> (string, Fs.error) result Lwt.t
 end
 
-module StringMap = Map.Make(String)
-module MutexMap = StringMap
 module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 	module Fs = Fs_ext.Make(Fs)
 	module Atomic = Atomic(Fs)
 	include Fs
-	let locks = ref StringMap.empty
-	let _with_lock : 'a. string -> ?proof:Lock.proof -> (Lock.proof -> 'a Lwt.t) -> 'a Lwt.t = fun path ?proof fn ->
+	type path = Path.t
+
+	let locks = ref PathMap.empty
+
+	let _with_lock : 'a. path -> ?proof:Lock.proof -> (Lock.proof -> 'a Lwt.t) -> 'a Lwt.t = fun path ?proof fn ->
 		let lock =
-			try StringMap.find path !locks
+			try PathMap.find path !locks
 			with Not_found -> begin
 				let lock = Lock.create () in
-				locks := StringMap.add path lock !locks;
+				locks := PathMap.add path lock !locks;
 				lock
 			end in
 		try_lwt
 			Lock.use ?proof lock fn
 		finally (
-			Log.debug (fun m->m "finished with mutex %s; no_open_locks = %b" path (Lock.is_empty lock));
+			Log.debug (fun m->m "finished with mutex %a; no_open_locks = %b" Path.pp path (Lock.is_empty lock));
 			if (Lock.is_empty lock) then (
-				locks := StringMap.remove path !locks
+				locks := PathMap.remove path !locks
 			);
 			return_unit
 		)
@@ -92,18 +93,19 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 	let write_file fs path ?proof contents =
 		write_file_s fs path ?proof (Lwt_stream.of_list [`Output contents])
 
-	let read_file_s = fun fs path ?proof consumer ->
-		locked_atomic_read fs ?proof path (fun proof path ->
-			let stream = match path with
+	let read_file_s = fun fs ?proof path consumer ->
+		locked_atomic_read fs ?proof path (fun proof readable_path ->
+			let stream = match readable_path with
 				| Error _ as read_err ->
-					(* lift read error into first element to remove restriction on return value *)
+					(* lift read error into first element to remove restriction on return value;
+					 * returning an Error directly makes the return value awkward *)
 					(Lwt_stream.of_list [read_err])
-				| Ok path ->
-					Log.debug (fun m->m "Reading file stream: %s" path);
+				| Ok unix_path ->
+					Log.debug (fun m->m "Reading file stream: %a" Path.pp path);
 					let offset = ref 0 in
 					let max_chunk_size = 4096 in
 					(Lwt_stream.from (fun () ->
-						Fs.read fs path !offset max_chunk_size >>= (function
+						Fs.read fs unix_path !offset max_chunk_size >>= (function
 							| Error err -> return (Some (Error err))
 							| Ok chunks ->
 								let initial_offset = !offset in
@@ -113,7 +115,7 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 								) in
 								Log.debug (fun m->
 									let len = !offset - initial_offset in
-									m "read %d chunks from %s[%d] => %db" (List.length chunks) path !offset len
+									m "read %d chunks from %a[%d] => %db" (List.length chunks) Path.pp path !offset len
 								);
 								let result = if chunks = []
 									then None

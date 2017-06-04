@@ -48,10 +48,12 @@ module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 		)
 
 	let readable fs name =
+		let name = Path.to_unix name in
 		Journal.dereference ~try_read_char:(try_read_char fs) name
 			|> Lwt_r.map Journal.string_of_name
 
 	let with_writable fs dest fn =
+		let dest = Path.to_unix dest in
 		let journal = Journal.journal_name dest in
 		Journal.writeable_name ~try_read_char:(try_read_char fs) dest
 			|> Lwt.map (R.reword_error as_write_error)
@@ -59,7 +61,7 @@ module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 				let newdest_s = Journal.string_of_name newdest in
 				let rollback result =
 					result |> Lwt_r.and_then (fun () ->
-						destroy_if_exists fs newdest_s
+						destroy_if_exists_s fs newdest_s
 					)
 				in
 				ensure_empty fs newdest_s |> Lwt_r.bind (fun () ->
@@ -70,7 +72,7 @@ module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 							Cstruct.set_char journal_byte 0 (Journal.byte newdest);
 							ensure_exists fs journal >>= fun () ->
 							write fs journal 0 journal_byte >>= fun () ->
-							destroy_if_exists fs (Journal.cruft newdest |> Journal.string_of_name)
+							destroy_if_exists_s fs (Journal.cruft newdest |> Journal.string_of_name)
 						)
 						| Ok `Rollback -> rollback (Ok ())
 						| Error _ as result -> rollback result

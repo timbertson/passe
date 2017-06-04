@@ -3,7 +3,6 @@ open Common
 open Lwt
 open Rresult
 open Astring
-module Path = FilePath.UnixPath.Abstract
 
 module Log = (val Logging.log_module "static")
 
@@ -11,8 +10,10 @@ type error = [ `Not_found | `Invalid_path | `Read_error of string ]
 
 module type Sig = sig
 	type t
-	val read_s : t -> string -> (string Lwt_stream.t -> 'a Lwt.t) -> ('a, error) result Lwt.t
-	val etag : t -> string -> (string Lwt_stream.t -> string Lwt.t) -> (string, error) result Lwt.t
+	type key
+	val key : t -> string list -> (key, error) result
+	val read_s : t -> key -> (string Lwt_stream.t -> 'a Lwt.t) -> ('a, error) result Lwt.t
+	val etag : t -> key -> (string Lwt_stream.t -> string Lwt.t) -> (string, error) result Lwt.t
 end
 
 module type Kv_RO = sig
@@ -27,6 +28,9 @@ module Kv(Impl:Kv_RO) : sig
 	include Sig
 	val init : Impl.t -> t
 end = struct
+	type key = string
+	let key _t parts = Ok (String.concat ~sep:"/" parts)
+
 	let map_error : Impl.error -> error = function
 		| `Unknown_key _ -> `Not_found
 		| e -> `Read_error (Impl.string_of_error e)
@@ -55,25 +59,18 @@ end
 
 module Fs(Impl:Filesystem.Sig) : sig
 	include Sig
-	val init : fs:Impl.t -> string -> t
+	val init : fs:Impl.t -> Impl.Path.base -> t
 end = struct
-	type t = Impl.t * string
+	module Path = Impl.Path
+	type t = Impl.t * Path.base
+	type key = Path.t
+
 	let init ~fs root : t = (fs, root)
-
-	let path_of_string (_,root) path =
-		Log.debug (fun m->m "Normalizing path %s against %s" path root);
-		let root = Path.make_filename [root] in
-		assert (not (Path.is_relative root));
-
-		let path = Path.make_filename [path] in
-		assert (Path.is_relative path);
-
-		Path.concat root path
+	let key (_fs, base) parts = Path.make base parts |> R.reword_error (fun e -> (e:>error))
 
 	let read_s t path fn : ('a, error) result Lwt.t =
 		let (fs, _root) = t in
-		let path = path_of_string t path in
-		Impl.read_file_s fs (Path.string_of_filename path) (fun _proof contents ->
+		Impl.read_file_s fs path (fun _proof contents ->
 			Lwt_stream.peek contents |> Lwt.bindr (function
 				| None -> return (Error `Not_found)
 				| Some (Ok _) ->
@@ -92,13 +89,3 @@ end = struct
 
 	let etag = read_s
 end
-
-let key_of_path_components parts : (string, error) result =
-	let invalid_component = function
-		| "" -> true
-		| part -> String.is_prefix ~affix:"." part || String.is_infix ~affix:"/" part
-	in
-	if parts |> List.any invalid_component
-		then Error `Invalid_path
-		else Ok (String.concat ~sep:"/" parts)
-

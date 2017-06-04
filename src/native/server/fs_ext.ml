@@ -2,6 +2,7 @@ open Passe
 open Common
 open Lwt
 open Result
+open Astring
 
 type stat = Mirage_fs.stat
 
@@ -21,6 +22,19 @@ module type Sig = sig
 		| `No_space
 	]
 
+	module Path : sig
+		type base
+		type t
+		type invalid_path = [ `Invalid_path ]
+
+		val pp : t Fmt.t
+		val base : string -> base
+		val make : base -> string list -> (t, invalid_path) result
+		val to_unix : t -> string
+	end
+
+	module PathMap : Map.S with type key = Path.t
+
 	type write_instruction = [ `Output of string | `Rollback ]
 
 	type write_commit = [ `Commit | `Rollback ]
@@ -31,16 +45,13 @@ module type Sig = sig
 
 	val as_write_error : error -> write_error
 
-	val destroy_if_exists : t -> string -> (unit, write_error) result Lwt.t
+	val stat : t -> Path.t -> (stat, error) result Lwt.t
 
-	val ensure_empty : t -> string -> (unit, write_error) result Lwt.t
+	val mkdir : t -> Path.t -> (unit, write_error) result Lwt.t
 
-	val ensure_exists : t -> string -> (unit, write_error) result Lwt.t
-
-	val stat : t -> string -> (stat, error) result Lwt.t
-
-	val mkdir : t -> string -> (unit, write_error) result Lwt.t
+	val destroy_if_exists : t -> Path.t -> (unit, write_error) result Lwt.t
 end
+
 
 module type Impl = sig
 	include FS
@@ -48,11 +59,62 @@ module type Impl = sig
 		with type t := t
 		and type error := error
 		and type write_error := write_error
+	val ensure_empty : t -> string -> (unit, write_error) result Lwt.t
+	val ensure_exists : t -> string -> (unit, write_error) result Lwt.t
+	val destroy_if_exists_s : t -> string -> (unit, write_error) result Lwt.t
 end
 
 
 module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 	include Fs
+
+	module Path = struct
+		type base = string
+
+		(* base is an arbitrary string.
+		 * parts is guaranteed to be a nonempty sequence of filenames
+		 * - i.e. no part contains slashes or leading dots *)
+		type t = string * (string list)
+		type relative = string list
+		type invalid_path = [ `Invalid_path ]
+		let base path =
+			if (Filename.is_relative path)
+				then failwith ("relative path used for Path.base:" ^ (path))
+				else path
+
+		let invalid_component = function
+			| "" -> true
+			| part -> String.is_prefix ~affix:"." part || String.is_infix ~affix:"/" part
+
+		let make base parts =
+			if (parts = []) || (parts |> List.any invalid_component)
+				then Error `Invalid_path
+				else Ok (base, parts)
+
+		let pp formatter (_base, path) =
+			(* don't print base, assume it's constant *)
+			(Fmt.list ~sep:(Fmt.const Fmt.string Filename.dir_sep) Fmt.string) formatter path
+
+		let to_unix (base, path) =
+			(String.concat ~sep:Filename.dir_sep (base :: path))
+	end
+
+	module PathMap = Map.Make (struct
+		type t = Path.t
+		let compare (abase,a) (bbase,b) =
+			let compare_one : string -> string -> int = Pervasives.compare in
+			let rec compare_parts a b = (
+				match (a,b) with
+					| [], [] -> 0
+					| [], _ -> -1
+					| _, [] -> 1
+					| (a1::a, b1::b) -> (match compare_one a1 b1 with
+						| 0 -> compare_parts a b
+						| diff -> diff
+					)
+			) in
+			compare_parts (abase::a) (bbase::b)
+	end)
 
 	type write_instruction = [ `Output of string | `Rollback ]
 	type write_commit = [ `Commit | `Rollback ]
@@ -90,8 +152,13 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 			end else return (Ok ())
 		)
 	
-	let destroy_if_exists fs path =
+	let destroy_if_exists_s fs path =
 		match_lwt destroy fs path with
 			| Ok _ | Error `No_directory_entry -> return (Ok ())
 			| Error _ as e -> return e
+
+	let destroy_if_exists fs = destroy_if_exists_s fs % Path.to_unix
+	let stat fs = stat fs % Path.to_unix
+	let mkdir fs = mkdir fs % Path.to_unix
+
 end

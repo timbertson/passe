@@ -90,7 +90,7 @@ module type Sig = sig
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
-	class storage : Clock.t -> Fs.t -> string -> object
+	class storage : Clock.t -> Fs.t -> Fs.Path.t -> object
 		method clock : Clock.t
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
@@ -120,6 +120,7 @@ end
 
 module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
 	module Fs = Fs
+	module Path = Fs.Path
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
 	let time clock = Clock.now_d_ps clock |> Ptime.v
@@ -433,8 +434,8 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 
 	end
 
-	class storage clock fs filename =
-		let () = Log.info (fun m->m "storage located at %s" filename) in
+	class storage clock fs path =
+		let () = Log.info (fun m->m "storage located at %a" Path.pp path) in
 
 		let read_with_proof (type a)(type err):
 			(* cast_read_err is required due to https://caml.inria.fr/mantis/view.php?id=6137 *)
@@ -442,7 +443,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 			-> (Lock.proof -> (User.db_user, Fs.error) result Lwt_stream.t -> (a, err) result Lwt.t)
 			-> (a, err) result Lwt.t
 		= fun ~cast_read_err fn ->
-			(Fs.read_file_s fs filename) (fun proof s ->
+			(Fs.read_file_s fs path) (fun proof s ->
 				let lines = lines_stream s in
 				let db_users: (User.db_user, Fs.error) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
 					line |> R.map (fun line ->
@@ -518,7 +519,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 					Log.debug (fun m->m "closing output");
 					return output#close
 				)) in
-				let write_io = Fs.write_file_s fs filename ~proof output_chunks in
+				let write_io = Fs.write_file_s fs path ~proof output_chunks in
 				lwt_join2 write_io write_result |> Lwt.map (fun (write_io, write_result) ->
 					match write_io with
 						| Ok () -> write_result

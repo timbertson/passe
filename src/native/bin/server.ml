@@ -2,6 +2,7 @@ open Passe
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
+open Common
 
 let cwd = Unix.getcwd ()
 
@@ -30,10 +31,23 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 	and data_root = abs data_root in
 	Log.info (fun m->m "Document root: %s" document_root);
 	Log.info (fun m->m "Data root: %s" data_root);
+	let document_root = Fs.Path.base document_root in
+
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 	lwt fs = Fs.connect () in
 	lwt clock = Pclock.connect () in
+
+	let dbdir = db_path_for ?user:None (Fs.Path.base data_root)
+		|> R.assert_ok string_of_invalid_path in
+	lwt () = Fs.mkdir fs dbdir |> Lwt.map (function
+		| Ok () | Error `File_already_exists -> ()
+		| Error e -> failwith (Printf.sprintf "Couldn't create dbdir (%s): %s"
+			(Fs.Path.to_unix dbdir)
+			(Fs.string_of_write_error e)
+		)
+	) in
+
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let static_files = Static_files.init ~fs document_root in
 	let callback = Unix_server.handler
@@ -109,10 +123,7 @@ let main () =
 	Logs.debug log_version;
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
-	let dbdir = user_db_dir data_root in
-	let () = try Unix.mkdir dbdir 0o700
-		with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
-	in
+
 	let host = match (Opt.get host) with
 		| "any" -> "0.0.0.0"
 		| h -> h
