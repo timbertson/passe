@@ -5,7 +5,6 @@ open Astring
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
-module Path = FilePath.UnixPath.Abstract
 module Str = Re_str
 
 let slash = Str.regexp "/"

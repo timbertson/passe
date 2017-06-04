@@ -2,7 +2,6 @@
 	"astring"
 	"conduit"
 	"extlib"
-	"fileutils"
 	"re"
 	"safepass"
 	"tyxml"

@@ -1,3 +1,3 @@
-true: debug, package(tcpip.tcpv4-socket,tcpip.udpv4-socket,astring,react, yojson, safepass, hex, lwt, lwt.syntax, mirage-unix, mirage-logs, mirage-types-lwt, nocrypto, mirage-block-unix, fat-filesystem, mirage-net-unix, mirage-types,cohttp,cohttp.lwt, mirage-http, lwt, mirage-runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix, astring, fileutils,tyxml), syntax(camlp4o)
+true: debug, package(tcpip.tcpv4-socket,tcpip.udpv4-socket,astring,react, yojson, safepass, hex, lwt, lwt.syntax, mirage-unix, mirage-logs, mirage-types-lwt, nocrypto, mirage-block-unix, fat-filesystem, mirage-net-unix, mirage-types,cohttp,cohttp.lwt, mirage-http, lwt, mirage-runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix, astring, tyxml), syntax(camlp4o)
 <src>: include
 ".configure": -traverse
