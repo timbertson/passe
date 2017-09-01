@@ -8,7 +8,7 @@ module Impl : Server.IMPL = struct
 	module Header = Cohttp.Header
 	module Body = Cohttp_lwt_body
 
-	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-gfxmonk.rhcloud.com/"
+	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe.gfxmonk.net/"
 	let root_url =
 		(* XXX take from config *)
 		Uri.of_string default_root
