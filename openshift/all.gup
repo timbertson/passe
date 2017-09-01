@@ -10,5 +10,5 @@ rm -rf "./app"
 # remove client binary
 rm -r app/bin/passe
 
-# copy dependencies (so we can run on old RHEL)
-gup lib
+# copy dependencies
+gup app/lib

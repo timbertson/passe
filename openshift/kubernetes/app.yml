@@ -1,0 +1,63 @@
+kind: Template
+apiVersion: v1
+metadata:
+  name: "passe-template"
+objects:
+- kind: "DeploymentConfig"
+  apiVersion: "v1"
+  metadata:
+    name: passe
+  spec:
+    template:
+      metadata:
+        labels:
+          name: passe
+      spec:
+        containers:
+        - name: passe
+          image: gfxmonk/passe
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 2055
+            name: http
+          volumeMounts:
+          - mountPath: /data
+            name: passe-data
+        volumes:
+          - name: passe-data
+            persistentVolumeClaim:
+              claimName: passe
+    replicas: 1
+    triggers:
+      - type: ConfigChange
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - passe
+          from:
+            kind: ImageStreamTag
+            name: passe:latest
+    strategy:
+      type: Recreate
+    paused: false
+    revisionHistoryLimit: 2
+    minReadySeconds: 5
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: passe
+  spec:
+    selector:
+      name: passe
+    ports:
+    - port: 80
+      name: http
+      protocol: TCP
+      targetPort: http
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    name: passe
+  spec:
+    dockerImageRepository: gfxmonk/passe

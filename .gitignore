@@ -11,8 +11,7 @@
 /src/common/domain_list.ml
 /src/js/about.md
 /src/js/about.ml
-/openshift/app
-/openshift/lib
 /nix/opam2nix-packages
 /nix/opam2nix
 /.sandstorm
+/openshift/app

@@ -1,8 +1,8 @@
 #!bash -eu
-gup -u ./app/bin/passe-server
+gup -u bin/passe-server
 mkdir "$1"
 # ugly parse to grab out the first absolute-path of each line in ldd output
-ldd app/bin/passe-server | sed -e 's|([^)]*)||;s|\(/[^ ]*\).*|\1|' | grep -o '/[^ ]*' | while read f; do
+ldd bin/passe-server | sed -e 's|([^)]*)||;s|\(/[^ ]*\).*|\1|' | grep -o '/[^ ]*' | while read f; do
 # ldd app/bin/passe-server | awk '{print $3}' | grep '^/' | while read f; do
 	cp --no-preserve=all "$f" "$1/"
 done

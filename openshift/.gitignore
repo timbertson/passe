@@ -9,3 +9,4 @@ _digests
 /image
 /build
 !/build/native/bin/server.native
+/app/lib
