@@ -162,12 +162,12 @@ let suite = "sync" >:::
 		let open Store in
 		let old_core =
 			apply_changes {empty_core with version = 5}
-				[Create (Domain {default_domain "old.example.com" with note = Some "old note"})]
+				[Create (Domain { (default_domain "old.example.com") with note = Some "old note"})]
 		in
 		let old_db = Store.build_t old_core [] in
 
 		let new_core = apply_changes {empty_core with version = 50}
-			[Create (Domain {default_domain "new.example.com" with note = Some "new note"})]
+			[Create (Domain { (default_domain "new.example.com") with note = Some "new note"})]
 		in
 		let new_db = Store.(build_t new_core []) in
 

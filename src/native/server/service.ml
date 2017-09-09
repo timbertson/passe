@@ -240,7 +240,7 @@ module Make
 				let open Nocrypto.Hash in
 				(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
 				let hash = SHA256.init () in
-				lwt () = Lwt_stream.iter (fun chunk ->
+				let%lwt () = Lwt_stream.iter (fun chunk ->
 					SHA256.feed hash (Cstruct.of_string chunk)
 				) chunks in
 				let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
@@ -274,7 +274,7 @@ module Make
 						~status:`Not_modified ()
 				else (
 					let headers = headers |> maybe_add_header "etag" etag in
-					lwt response = iter_file_chunks (fun contents ->
+					let%lwt response = iter_file_chunks (fun contents ->
 						Server.respond
 							~headers
 							~status:`OK
@@ -315,7 +315,7 @@ module Make
 				)
 				| `Dynamic (ext, contents) ->
 					let contents = (Lwt_stream.of_list [ contents ]) in
-					lwt etag = etag_of_chunks contents in
+					let%lwt etag = etag_of_chunks contents in
 					let iter_file_chunks fn = fn contents |> Lwt.map R.ok in
 					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) iter_file_chunks
 		) in
@@ -324,7 +324,7 @@ module Make
 	(fun _sock req body ->
 		let storage = !user_db in
 
-		try_lwt
+		try%lwt
 			let uri = Cohttp.Request.uri req in
 			let path = Uri.path uri in
 			Log.debug (fun m->m "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path);
@@ -399,7 +399,7 @@ module Make
 				| `POST -> (
 					check_version ();
 					let _params = lazy (
-						lwt json = (Cohttp_lwt_body.to_string body) in
+						let%lwt json = (Cohttp_lwt_body.to_string body) in
 						(* Log.debug (fun m->m "got body: %s" json); *)
 						return (J.from_string json)
 					) in
@@ -420,14 +420,14 @@ module Make
 						| "ctl" :: path when enable_rc -> begin
 							match path with
 							| ["init"] ->
-									lwt params = params () in
+									let%lwt params = params () in
 									(params
 										|> mandatory J.string_field "data"
 										|> override_data_root
 										|> Lwt_r.bindM respond_ok
 									) |> reword_fs_write_error |> response_of_result
 							| ["reset_db"] ->
-									lwt params = params () in
+									let%lwt params = params () in
 									params
 										|> mandatory J.string_field "user"
 										|> Auth.User.uid_of_string
@@ -437,13 +437,13 @@ module Make
 							| _ -> Server.respond_not_found ~uri ()
 						end
 						| ["auth"; "signup"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
 								Auth.signup ~storage user password |> respond_token_lwt
 						)
 						| ["auth"; "login"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								let user = params |> mandatory J.string_field "user" in
 								let password = params |> mandatory J.string_field "password" in
 								Auth.login ~storage user password |> respond_token_lwt
@@ -461,21 +461,21 @@ module Make
 										respond_json ~status:`OK ~body:response ()
 							)
 						| ["auth"; "logout"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								let token = Auth.Token.of_json params in
 								Auth.logout ~storage token |> Lwt_r.bindM (fun () ->
 									respond_json ~status:`OK ~body:(`Assoc []) ()
 								) |> reword_fs_write_error |> response_of_result
 							)
 						| ["auth"; "validate"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								let token = Auth.Token.of_json params in
 								Auth.validate ~storage token |> Lwt_r.bindM (fun user ->
 									respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
 								) |> reword_fs_error |> response_of_result
 						)
 						| ["auth"; "change-password"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								authorized_db (fun user ->
 									let old = params |> J.mandatory J.string_field "old" in
 									let new_password = params |> J.mandatory J.string_field "new" in
@@ -488,7 +488,7 @@ module Make
 								)
 							)
 						| ["auth"; "delete"] -> (
-								lwt params = params () in
+								let%lwt params = params () in
 								authorized_db (fun user ->
 									let uid = User.uid_db user in
 									let password = params |> J.mandatory J.string_field "password" in
@@ -506,7 +506,7 @@ module Make
 								)
 							)
 						| ["db"] ->
-								lwt params = params () in
+								let%lwt params = params () in
 								let process_db_changes ~db_path db_file_contents = (
 									let submitted_changes = params |> J.mandatory J.get_field "changes" in
 									(* either the client sends {changes, version} or {changes, core={version}} *)
@@ -530,7 +530,7 @@ module Make
 											return (Ok core)
 										) else (
 											let updated_core = {
-												Store.apply_changes core changes with
+												(Store.apply_changes core changes) with
 												version = new_version;
 											} in
 											let payload = updated_core |> json_of_core |> J.to_string in

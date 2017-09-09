@@ -5,5 +5,6 @@
 	"re"
 	"safepass"
 	"tyxml"
+	"tyxml-ppx"
 	"tcpip"
 ]

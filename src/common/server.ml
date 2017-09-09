@@ -138,7 +138,7 @@ module Make (Version:Version.Sig)(Impl:IMPL):Sig = struct
 		let code = Impl.response_status response in
 		Log.debug (fun m->m "got http response %d" code);
 
-		lwt content = Impl.response_body response in
+		let%lwt content = Impl.response_body response in
 		Log.debug (fun m->m "got http body %s" content);
 		let payload = json_payload (response, content) in
 		let error = payload |> Option.bind (J.string_field "error") in
@@ -186,7 +186,7 @@ module Make (Version:Version.Sig)(Impl:IMPL):Sig = struct
 		Impl.request ~headers:!headers ~meth ~data url
 
 	let post_json ?token ~(data:J.json) url =
-		lwt response = request
+		let%lwt response = request
 			?token
 			~content_type:json_content_type
 			~meth:`POST
@@ -195,7 +195,7 @@ module Make (Version:Version.Sig)(Impl:IMPL):Sig = struct
 		handle_json_response response
 
 	let get_json ?token url =
-		lwt response = request
+		let%lwt response = request
 			?token
 			~content_type:json_content_type
 			~meth:`GET

@@ -22,7 +22,7 @@ end
 
 let default_domain = Store.default (Store.empty)
 let suite = "db" >:::
-	let entry = { default_domain "example.com" with note = Some "note"; } in
+	let entry = { (default_domain "example.com") with note = Some "note"; } in
 	[
 	"parsing changes" >::: [
 		"dropping an optional value" >:: (fun _ctx ->

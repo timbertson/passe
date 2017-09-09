@@ -27,27 +27,26 @@ let is_fully_selected ?length node =
 	let length = match length with
 		| Some l -> l
 		| None ->
-			let contents = node##textContent in
-			let length : int Js.Opt.t = Js.Opt.map contents (fun text -> text##length) in
+			let contents = node##.textContent in
+			let length : int Js.Opt.t = Js.Opt.map contents (fun text -> text##.length) in
 			Js.Opt.get length (fun () -> 0)
 	in
-	let sel = doc##getSelection() in
-	if sel##rangeCount == 1 then begin
-		let range = sel##getRangeAt(0) in
-		if (range##startContainer == node && range##endContainer == node)
-		then (range##startOffset = 0 && range##endOffset = length)
+	let sel = doc##getSelection in
+	if sel##.rangeCount == 1 then begin
+		let range = sel##getRangeAt 0 in
+		if (range##.startContainer == node && range##.endContainer == node)
+		then (range##.startOffset = 0 && range##.endOffset = length)
 		else false
 	end else false
 
 let select node =
-	let sel = doc##getSelection() in
-	let range = doc##createRange() in
+	let sel = doc##getSelection in
+	let range = doc##createRange in
 	let node = (node :> #Dom.node Js.t) in
-	range##selectNodeContents(node);
-	sel##removeAllRanges();
-	sel##addRange(range)
+	range##selectNodeContents node;
+	sel##removeAllRanges;
+	sel##addRange range
 
 let deselect () =
-	let sel = doc##getSelection() in
-	sel##removeAllRanges()
+	doc##getSelection##removeAllRanges
 

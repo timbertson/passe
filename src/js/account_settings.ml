@@ -262,7 +262,7 @@ let delete_account ~set_auth_state instance password token = (
 		let open Lwt in
 		let return_error msg = Ui.emit instance (`error (`user_deletion, Some msg)); return_unit in
 		Some (
-			match_lwt call Client_auth.delete_user_api
+			match%lwt call Client_auth.delete_user_api
 				~token (`Assoc ["password", `String password])
 			with
 				| OK () ->
@@ -304,7 +304,7 @@ let change_password ~sync instance password_change token = (
 	let set_auth_state = sync.Sync.set_auth_state in
 	let open Server in
 	let open Lwt in
-	match_lwt call Client_auth.change_password_api ~token data with
+	match%lwt call Client_auth.change_password_api ~token data with
 		| OK creds ->
 			Dom_html.window##alert (Js.string "Password changed.");
 			set_auth_state (`Active_user creds);

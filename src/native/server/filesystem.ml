@@ -45,15 +45,15 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 				locks := PathMap.add path lock !locks;
 				lock
 			end in
-		try_lwt
-			Lock.use ?proof lock fn
-		finally (
+		(try%lwt
+			Lock.use ?proof lock fn with e -> raise e
+		) [%lwt.finally
 			Log.debug (fun m->m "finished with mutex %a; no_open_locks = %b" Path.pp path (Lock.is_empty lock));
 			if (Lock.is_empty lock) then (
 				locks := PathMap.remove path !locks
 			);
 			return_unit
-		)
+		]
 
 	let locked_atomic_write fs path ?proof fn = _with_lock ?proof path (fun proof ->
 		Atomic.with_writable fs path (fn proof)

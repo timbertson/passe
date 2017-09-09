@@ -140,7 +140,7 @@ let sync_state sync =
 
 let logout ~set_auth_state = fun token -> (
 	let open Server in
-	match_lwt call Client_auth.logout_api token with
+	match%lwt call Client_auth.logout_api token with
 		| OK () | Unauthorized _ ->
 			set_auth_state `Logged_out;
 			return_unit;
@@ -175,47 +175,50 @@ let submit_form ~(set_auth_state:Client_auth.auth_state -> unit) ~emit api auth_
 
 let auth_loop ~(set_auth_state:Client_auth.auth_state -> unit) ~emit (auth:Client_auth.saved_auth_state) = (
 	let continue = ref true in
-	while_lwt !continue do
+	while%lwt !continue do
 		emit (`busy true);
-		try_lwt (
-			continue := false;
-			let open Server in
-			let response = match auth with
-				| `Saved_user ((username, token) as creds) ->
-					Server.call Client_auth.token_validate_api token |> Lwt.map (Response.map (fun valid ->
-						if valid then `Active_user creds else `Failed_login username
-					))
-				| `Saved_implicit_user _ ->
-					Server.call Client_auth.server_state_api J.empty |> Lwt.map (Response.map (function
-						| Some u -> `Implicit_user u | None -> `Anonymous
-					))
-			in
+		(try%lwt
+			(
+				continue := false;
+				let open Server in
+				let response = match auth with
+					| `Saved_user ((username, token) as creds) ->
+						Server.call Client_auth.token_validate_api token |> Lwt.map (Response.map (fun valid ->
+							if valid then `Active_user creds else `Failed_login username
+						))
+					| `Saved_implicit_user _ ->
+						Server.call Client_auth.server_state_api J.empty |> Lwt.map (Response.map (function
+							| Some u -> `Implicit_user u | None -> `Anonymous
+						))
+				in
 
-			match_lwt response with
-			| OK user -> set_auth_state user; return_unit
-			| Unauthorized msg ->
-				Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
-				let auth = (auth:>Client_auth.authenticated_user_state) in
-				set_auth_state (Auth.failed_login_of_authenticated auth);
-				return_unit
-			| Failed (_, msg, _) ->
-				Log.warn (fun m->m "unknown failure: %s" msg);
-				continue := true;
-				emit (`busy false);
-				Lwt_js.sleep 60.0
-		) finally (
+				match%lwt response with
+				| OK user -> set_auth_state user; return_unit
+				| Unauthorized msg ->
+					Log.warn (fun m->m "failed auth: %a" (Option.fmt Format.pp_print_string) msg);
+					let auth = (auth:>Client_auth.authenticated_user_state) in
+					set_auth_state (Auth.failed_login_of_authenticated auth);
+					return_unit
+				| Failed (_, msg, _) ->
+					Log.warn (fun m->m "unknown failure: %s" msg);
+					continue := true;
+					emit (`busy false);
+					Lwt_js.sleep 60.0
+				)
+			with e -> raise e
+		) [%lwt.finally
 			emit (`busy false);
 			Lwt.return_unit
-		)
+		]
 	done
 )
 
 let sync_db_loop ~sync ~sync_state ~emit auth =
 	(* used when signed in, to periodically sync DB state *)
 	let continue = ref true in
-	while_lwt !continue do
+	while%lwt !continue do
 		Log.info (fun m->m "sync loop running..");
-		(match_lwt sync.run_sync (auth:>Client_auth.authenticated_user_state) with
+		(match%lwt sync.run_sync (auth:>Client_auth.authenticated_user_state) with
 			| Error msg ->
 				Log.err (fun m->m"sync loop failed: %s" msg);
 				emit (`error (Some msg));
@@ -237,7 +240,7 @@ let sync_db_loop ~sync ~sync_state ~emit auth =
 	done
 
 let update_sync_time ~sync_state ~emit () =
-	while_lwt true do
+	while%lwt true do
 		let next_change = sync_state |> events_of_signal |> Lwt_react.E.next in
 		let () = match S.value sync_state with
 			| Uptodate | Syncing | Local_changes _ ->
@@ -266,7 +269,7 @@ let run_background_sync ~sync ~set_auth_state ~emit sync_state : (Client_auth.au
 			| `Saved_user _ | `Saved_implicit_user _ as u ->
 				let prev_uid = Option.bind uid_of_state previous_auth
 				and current_uid = uid_of_authenticated (u:>authenticated_user_state) in
-				lwt () = if prev_uid = Some(current_uid)
+				let%lwt () = if prev_uid = Some(current_uid)
 					(* slow down reconnect attempts if user is unchanged *)
 					then (
 						Log.debug (fun m->m "delaying sync attempt for unchanged user");
@@ -405,7 +408,7 @@ let view_sync_state ~sync_time_desc = (function
 let emit_on_return action : message attr = a_onkeydown (handler (fun evt ->
 	evt
 		|> Event.keyboard_event
-		|> Option.map (fun evt -> evt##keyCode)
+		|> Option.map (fun evt -> evt##.keyCode)
 		|> Option.filter ((=) Keycode.return)
 		|> Option.map (fun _ -> Event.handle action)
 		|> Event.optional

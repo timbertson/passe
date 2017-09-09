@@ -78,7 +78,7 @@ let overlay instance ~cancel =
 	let hooks = with_global_listeners (fun () -> [
 		Js_util.global_event_listener Dom_html.Event.keydown (fun event ->
 			event |> Vdoml.Event.keyboard_event |> Option.may (fun event ->
-				if (event##keyCode == Keycode.esc) then (
+				if (event##.keyCode == Keycode.esc) then (
 					Dom.preventDefault event;
 					Vdoml.Ui.emit instance cancel
 				)
@@ -87,7 +87,7 @@ let overlay instance ~cancel =
 	]) in
 	let onclick = handler (fun evt ->
 		let is_overlay = Event.target evt |> Option.map (fun target ->
-			target##classList##contains(Js.string "overlay") |> Js.to_bool
+			target##.classList##contains (Js.string "overlay") |> Js.to_bool
 		) |> Option.default false in
 		(if is_overlay
 			then Some (Event.handle cancel)

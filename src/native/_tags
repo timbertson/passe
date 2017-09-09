@@ -1,7 +1,6 @@
-true: debug, package(ptime,logs,mirage-clock-unix,mirage,mirage-fs-unix, mirage-types-lwt, extlib, yojson, cohttp,cohttp.lwt, uri, lwt, lwt.unix, lwt.syntax, hex, re.str, react), syntax(camlp4o)
-<server/*> or <passe_server.*> or <bin/server.*>: package(nocrypto, nocrypto.lwt, safepass, astring, tyxml)
+true: debug, package(ptime,logs,mirage-clock-unix,mirage,mirage-fs-unix, mirage-types-lwt, extlib, yojson, cohttp,cohttp.lwt, uri, lwt, lwt.unix, lwt.ppx, hex, re.str, react)
+<server/*> or <passe_server.*> or <bin/server.*>: package(nocrypto, nocrypto.lwt, safepass, astring, tyxml, tyxml.ppx)
 <client/*> or <passe_client.*> or <bin/client.*>: package(lambda-term)
-<server/index.ml>: package(tyxml.syntax)
 
 <passe/*.cmx>: for-pack(Passe)
 <server/*.cmx>: for-pack(Passe_server)

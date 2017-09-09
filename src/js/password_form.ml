@@ -225,7 +225,7 @@ let update : state -> message -> state =
 						| `down -> min ((List.length suggestions.suggestions) - 1) (idx + 1)
 						| `up -> max (-1) (idx - 1)
 					in
-					{ suggestions with selected = idx |> Option.non_empty ~zero:-1 }
+					{ suggestions with selected = idx |> Option.non_empty ~zero:(-1) }
 				) in
 				{ state with domain_suggestions }
 		| `accept_suggestion domain ->
@@ -267,7 +267,7 @@ let command ~sync ~emit =
 	let timeout_generated_password = let open Lwt in Ui.supplantable (function
 		| false -> return_unit
 		| true ->
-			lwt () = Lwt_js.sleep blur_timeout in
+			let%lwt () = Lwt_js.sleep blur_timeout in
 			Log.info (fun m->m "clearing generated password");
 			(* cancels this branch because the other one is waiting
 			 * on `password_input_data` changes *)
@@ -304,14 +304,14 @@ let view instance : state -> message Html.html =
 	let track_domain_text = track_input_contents (fun text -> `domain text) in
 	let submit_on_return = handler (fun e ->
 		e |> Event.keyboard_event |> Option.bind (fun e ->
-			if e##keyCode = Keycode.return
+			if e##.keyCode = Keycode.return
 				then Some (Event.handle `generate_password)
 				else None
 		) |> Event.optional
 	) in
 	let focus = a_dynamic "data-focus" (fun elem _attr ->
 		Log.debug (fun m->m"focusing elment");
-		Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus())
+		Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus)
 	) in
 	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
 		let open Lwt in
@@ -325,7 +325,7 @@ let view instance : state -> message Html.html =
 	) in
 	let update_selection = handler @@ Ui.bind instance (fun { generated_password; _ } e ->
 		generated_password |> Option.bind (fun { password; _ } ->
-			e##target |> Js.Opt.to_option |> Option.map (fun target ->
+			e##.target |> Js.Opt.to_option |> Option.map (fun target ->
 				let is_selected = Selection.is_fully_selected ~length:(String.length password) target in
 				Event.return `Unhandled (`password_fully_selected is_selected)
 			)
@@ -337,10 +337,10 @@ let view instance : state -> message Html.html =
 	let domain_keydown = handler @@ Ui.bind instance (fun { domain_suggestions; _ } e ->
 		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
-			if e##keyCode = Keycode.esc then (
+			if e##.keyCode = Keycode.esc then (
 				Some (Event.handle (`domain ""))
 			) else (
-				e##keyIdentifier
+				e##.keyIdentifier
 				|> Optdef.to_option
 				|> Option.or_fn (fun () -> Unsafe.get e "key" |> Optdef.to_option)
 				|> Option.bind (fun ident ->
@@ -377,7 +377,7 @@ let view instance : state -> message Html.html =
 
 	let get_password_element () =
 		let sel = "#"^password_element_id in
-		Dom_html.document##documentElement##querySelector(Js.string sel)
+		Dom_html.document##.documentElement##querySelector (Js.string sel)
 			|> Js.Opt.to_option
 	in
 
@@ -409,7 +409,7 @@ let view instance : state -> message Html.html =
 			);
 			global_event_listener Dom_html.Event.keydown (fun e ->
 				e |> Vdoml.Event.keyboard_event |> Option.may (fun e ->
-					if e##keyCode = Keycode.esc
+					if e##.keyCode = Keycode.esc
 						then (
 							Dom.preventDefault e;
 							Ui.emit instance `cancel

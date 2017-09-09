@@ -17,7 +17,7 @@ let lines_stream stream =
 				return (Some (Ok line))
 			| Some ([], partial) ->
 				let rec read_more () =
-					lwt chunk = Lwt_stream.get stream in
+					let%lwt chunk = Lwt_stream.get stream in
 					match chunk with
 						| None ->
 								state := Some ([], None);
@@ -247,7 +247,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		let create ~clock ~username () : sensitive_token Lwt.t =
 			let now = Clock.now_d_ps clock |> Ptime.v in
 			let expires : Ptime.t = Ptime.add_span now two_weeks |> Option.force in
-			lwt contents = random_bytes 20 in
+			let%lwt contents = random_bytes 20 in
 			return {
 				sensitive_contents = contents;
 				sensitive_metadata = {
@@ -329,7 +329,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 					hashed = stored_contents
 
 		let latest_password_format password : stored_password Lwt.t =
-			lwt salt = random_bytes Password.salt_length in
+			let%lwt salt = random_bytes Password.salt_length in
 			let iterations = Password.iterations in
 			let hashed_password = hash_password ~salt ~iterations password in
 			return {
@@ -348,11 +348,11 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 				 * If it's an old algo, we'll update it (after validating)
 				 *)
 				let (module Hash_impl) = Hash.select token_alg in
-				lwt password = if outdated_password user.password then (
+				let%lwt password = if outdated_password user.password then (
 					Log.info (fun m->m "upgrading password for %s" user.name);
 					latest_password_format password
 				) else return user.password in
-				lwt new_token = Token.create ~clock ~username:user.name () in
+				let%lwt new_token = Token.create ~clock ~username:user.name () in
 				let tokens = Token.hash new_token :: user.active_tokens in
 
 				(* limit number of historical tokens to 10 per user *)
@@ -610,7 +610,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 
 	let login ~(storage:storage) username password : (Token.sensitive_token, string) result Lwt.t =
 		storage#modify_user username (fun write_user user ->
-			match_lwt User.gen_token ~clock:storage#clock user password with
+			match%lwt User.gen_token ~clock:storage#clock user password with
 				| Some (user, token) -> write_user user |> Lwt.map (fun () -> Ok token)
 				| None -> return (Error (`Rollback `Authentication_failed))
 		) |> Lwt.map @@ R.reword_error (function

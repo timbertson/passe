@@ -19,12 +19,13 @@ let use ?proof lock fn =
 				else raise Stale_lock
 		| None -> (
 			let proof = { lock; valid = ref true; } in
-			lwt () = Lwt_mutex.lock lock in
-			try_lwt
+			let%lwt () = Lwt_mutex.lock lock in
+			(try%lwt
 				fn proof
-			finally (
+			with e -> raise e
+			) [%lwt.finally
 				proof.valid := false;
 				Lwt_mutex.unlock lock;
 				Lwt.return_unit
-			)
+			]
 		)

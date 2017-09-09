@@ -25,10 +25,10 @@ module Impl : Server.IMPL = struct
 		let req = Xhr.create () in
 		let url = Uri.to_string url in
 		let meth = Server.string_of_request_method meth in
-		req##_open (Js.string meth, Js.string url, Js._true);
+		req##_open (Js.string meth) (Js.string url) (Js._true);
 
 		headers |> List.iter (fun (k,v) ->
-			req##setRequestHeader (Js.string k, Js.string v)
+			req##setRequestHeader (Js.string k) (Js.string v)
 		);
 
 		let get_header key = Js.Opt.case
@@ -37,20 +37,20 @@ module Impl : Server.IMPL = struct
 				(fun v -> Some (Js.to_string v))
 		in
 
-		req##onreadystatechange <- Js.wrap_callback (fun _ ->
+		req##.onreadystatechange := Js.wrap_callback (fun _ ->
 			let open Xhr in
-			(match req##readyState with
+			(match req##.readyState with
 				| DONE ->
 					(* If we didn't catch a previous event, we check the header. *)
 					Lwt.wakeup w {
 						url = url;
-						code = req##status;
-						content = Js.to_string req##responseText;
+						code = req##.status;
+						content = Js.to_string req##.responseText;
 						content_xml = (fun () ->
-							match Js.Opt.to_option (req##responseXML) with
+							match Js.Opt.to_option (req##.responseXML) with
 							| None -> None
 							| Some doc ->
-							if (Js.some doc##documentElement) == Js.null
+							if (Js.some doc##.documentElement) == Js.null
 							then None
 							else Some doc);
 						headers = get_header;
@@ -63,7 +63,7 @@ module Impl : Server.IMPL = struct
 			| None -> req##send(Js.null)
 		end;
 
-		Lwt.on_cancel res (fun () -> req##abort ());
+		Lwt.on_cancel res (fun () -> req##abort);
 		res
 end
 

@@ -24,16 +24,16 @@ class plain_prompt term text = object(self)
 end
 
 let copy_to_clipboard text =
-	match_lwt Lwt_process.with_process_out ("", [|"pyperclip"; "-i"|]) (fun proc ->
-		lwt () = Lwt_io.write proc#stdin text in
+	match%lwt Lwt_process.with_process_out ("", [|"pyperclip"; "-i"|]) (fun proc ->
+		let%lwt () = Lwt_io.write proc#stdin text in
 		proc#close
 	) with
 	| Unix.WEXITED 0 -> return_true
 	| _ -> return_false
 
 let output_password ~use_clipboard ~term ~domain text =
-	lwt () = LTerm.flush term in
-	lwt copied = if use_clipboard then copy_to_clipboard text else return false in
+	let%lwt () = LTerm.flush term in
+	let%lwt copied = if use_clipboard then copy_to_clipboard text else return false in
 	if copied then (
 		Logs.warn (fun m->m "  (copied to clipboard)");
 		Lwt.return_unit
@@ -111,7 +111,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 	);
 
 
-	lwt () = LTerm_widget.run term frame waiter in
+	let%lwt () = LTerm_widget.run term frame waiter in
 	
 	match !edited with
 		| Some edited ->
@@ -120,49 +120,49 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 				~original:(existing |> Option.map (fun d -> Domain d))
 				(Some (Domain edited))
 			then
-				lwt () = LTerm.fprintlf term "Saved %s" domain.domain in
+				let%lwt () = LTerm.fprintlf term "Saved %s" domain.domain in
 				return true
 			else
 				return false
 		| None ->
-			lwt () = LTerm.fprintlf term "Cancelled." in
+			let%lwt () = LTerm.fprintlf term "Cancelled." in
 			return false
 
 let delete ~sync_state ~(existing:Store.domain) ~term () =
 	let open Store in
-	lwt text = (new plain_prompt term ("Really delete "^(existing.domain)^"? (Y/n) "))#run in
+	let%lwt text = (new plain_prompt term ("Really delete "^(existing.domain)^"? (Y/n) "))#run in
 	match text with
 		| "" | "y" | "Y" ->
 			if Sync.save_change ~state:sync_state ~original:(Some (Domain existing)) None
 			then
-				lwt () = LTerm.fprintlf term "Deleted %s" existing.domain in
+				let%lwt () = LTerm.fprintlf term "Deleted %s" existing.domain in
 				return true
 			else
 				return false
 		| _ ->
-			lwt () = LTerm.fprintlf term "Cancelled" in
+			let%lwt () = LTerm.fprintlf term "Cancelled" in
 			return false
 
 let sync_ui state =
-	lwt term = Lazy.force LTerm.stderr in
+	let%lwt term = Lazy.force LTerm.stderr in
 	let open Sync in
 
 	let login_prompt user =
-		lwt user = match user with
+		let%lwt user = match user with
 			| Some existing ->
-				lwt text = (new plain_prompt term ("Username ["^existing^"]: "))#run in
+				let%lwt text = (new plain_prompt term ("Username ["^existing^"]: "))#run in
 				return (if text = "" then existing else text)
 			| None -> (new plain_prompt term "Username: ")#run
 		in
-		lwt password = (new password_prompt term "Password: ")#run in
+		let%lwt password = (new password_prompt term "Password: ")#run in
 		Sync.login state ~user ~password
 	in
 
-	try_lwt
-		lwt authenticated_user =
+	try%lwt
+		let%lwt authenticated_user =
 			let open Client_auth in
 			let validate_implicit_user () =
-				lwt u = validate_implicit_auth state in
+				let%lwt u = validate_implicit_auth state in
 				return (match u with
 					| `Implicit_user _ as u -> u
 					| `Anonymous -> failwith "Server is not authenticated"
@@ -216,8 +216,8 @@ let lterm_reporter term =
 
 let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 	let sync_state = Sync.build env in
-	lwt term = Lazy.force LTerm.stderr in
-	lwt reporter = lterm_reporter term in
+	let%lwt term = Lazy.force LTerm.stderr in
+	let%lwt reporter = lterm_reporter term in
 	Logging.set_reporter reporter;
 	let user_db () = S.value (sync_state.Sync.db_signal) in
 	let db_fallback () = S.value (sync_state.Sync.db_fallback) in
@@ -236,7 +236,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 	let rec input_loop ~domain () =
 		let break = input_loop ~domain:None in
 
-		lwt domain = match domain with
+		let%lwt domain = match domain with
 			| Some d -> return d
 			| None -> (new plain_prompt term "Domain: ")#run
 		in
@@ -257,7 +257,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 				delete ~sync_state ~existing ~term () >>= next
 			in
 			let try_sync () =
-				lwt sync_result = sync_ui sync_state in
+				let%lwt sync_result = sync_ui sync_state in
 				let () = match sync_result with
 					| Ok () -> ()
 					| Error e -> Log.err (fun m->m "%s" e)
@@ -286,7 +286,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 				)
 			in
 			let rec ask () =
-				lwt response = (new plain_prompt term (
+				let%lwt response = (new plain_prompt term (
 						"\n" ^ (
 							actions
 							|> List.map (fun (_, text, _) -> " " ^ text)
@@ -294,16 +294,16 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 						^ "\n -- What next? [c] "))#run in
 				let response = if response = "" then "c" else response in
 				Log.debug (fun m->m "response: [%s]" response);
-				lwt () = LTerm.fprintlf term "" in
+				let%lwt () = LTerm.fprintlf term "" in
 				let action =
 					try actions
 						|> List.find (fun (key, _, _) -> key = response)
 						|> fun (_,_,action) -> action
 					with Not_found -> (fun () ->
-						lwt () = LTerm.fprintlf term "Huh?" in
+						let%lwt () = LTerm.fprintlf term "Huh?" in
 						ask ()
 					) in
-				lwt () = action () in
+				let%lwt () = action () in
 				(* XXX unclean, grows stack *)
 				return ()
 			in ask ()
@@ -313,7 +313,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 		let stored_domain = get_stored () in
 		let domain = get_domain db stored_domain in
 		if edit then
-			lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
+			let%lwt edited = edit_and_save ~sync_state ~domain ~existing:stored_domain ~term () in
 			if edited then return ()
 			else exit 1
 		else begin
@@ -326,9 +326,9 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 						domain.note |> Option.may (fun note -> (Log.app (fun m->m " - Note: %s" note)));
 			end;
 
-			lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
+			let%lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
 			let generated = Password.generate ~domain password in
-			lwt () = output_password ~use_clipboard ~term ~domain:domain_text generated in
+			let%lwt () = output_password ~use_clipboard ~term ~domain:domain_text generated in
 			if one_time
 				then Lwt.return_unit
 				else post_generate_actions stored_domain
@@ -336,13 +336,12 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 	in
 
 
-	try_lwt
+	(try%lwt
 		input_loop ~domain ()
 	with
 		| LTerm_read_line.Interrupt
 		| Sys.Break -> exit 1
-	finally
-		LTerm.flush term
+	) [%lwt.finally LTerm.flush term ]
 
 let list_domains env domain =
 	let sync_state = Sync.build env in

@@ -26,5 +26,5 @@ let update_monitor fn =
 
 let update () =
 	try
-		application_cache##update()
+		application_cache##update
 	with _ -> ()

@@ -35,12 +35,12 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
-	lwt fs = Fs.connect () in
-	lwt clock = Pclock.connect () in
+	let%lwt fs = Fs.connect () in
+	let%lwt clock = Pclock.connect () in
 
 	let dbdir = db_path_for ?user:None (Fs.Path.base data_root)
 		|> R.assert_ok string_of_invalid_path in
-	lwt () = Fs.mkdir fs dbdir |> Lwt.map (function
+	let%lwt () = Fs.mkdir fs dbdir |> Lwt.map (function
 		| Ok () | Error `File_already_exists -> ()
 		| Error e -> failwith (Printf.sprintf "Couldn't create dbdir (%s): %s"
 			(Fs.Path.to_unix dbdir)
@@ -58,10 +58,10 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 		~enable_rc
 		~development
 	in
-	lwt () = Nocrypto_entropy_lwt.initialize () in
+	let%lwt () = Nocrypto_entropy_lwt.initialize () in
 	let config = HTTP.make ~callback ~conn_closed () in
 	let mode = `TCP (`Port port) in
-	lwt ctx = Conduit_lwt_unix.init ~src:host () in
+	let%lwt ctx = Conduit_lwt_unix.init ~src:host () in
 	let ctx = Cohttp_lwt_unix_net.init ~ctx () in
 	HTTP.create ~ctx ~mode config
 

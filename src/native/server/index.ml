@@ -20,7 +20,7 @@ let html ~implicit_auth ~offline_access () : Html.doc =
 		Passe_env.implicit_auth_key, `Bool implicit_auth;
 	] |> safe_string_of_json in
 
-	let head = <:html<
+	let%html head = {|
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
@@ -30,37 +30,39 @@ let html ~implicit_auth ~offline_access () : Html.doc =
 			<link href="res/css/style.css" rel="stylesheet"/>
 			<title>Passé</title>
 		</head>
-	>> in
+	|} in
 
-	let body = <:html<
+	let script = cdata_script ("\
+		window.PasseEnv = " ^ passe_env_json  ^ ";\
+		window.onerror = function(e) {\
+			console.error(e);\
+			var e = document.getElementById('main');\
+			e.innerHTML = '';\
+\
+			var tag = function(name, text) {\
+				var node=document.createElement(name);\
+				node.appendChild(document.createTextNode(text));\
+				e.appendChild(node);\
+			}\
+\
+			tag('h1', 'Uncaught Error');\
+			tag('p', 'Sorry, an uncaught error occurred:');\
+			tag('p', String(e));\
+			tag('p', 'Please reload the page to try again');\
+		}\
+	") in
+
+	let%html body = {|
 		<body>
 			<div id="main">
 				<div class="container main">
 					<h4 class="text-center text-muted">Loading...</h4>
 				</div>
 			</div>
-			<script>
-				window.PasseEnv = $str:passe_env_json$;
-				window.onerror = function(e) {
-					console.error(e);
-					var e = document.getElementById("main");
-					e.innerHTML = "";
-
-					var tag = function(name, text) {
-						var node=document.createElement(name);
-						node.appendChild(document.createTextNode(text));
-						e.appendChild(node);
-					}
-
-					tag("h1", "Uncaught Error");
-					tag("p", "Sorry, an uncaught error occurred:");
-					tag("p", String(e));
-					tag("p", "Pleare reload the page to try again");
-				}
-			</script>
-			<script src="js/main.js"></script>
+			<script>|}script{|</script>
+			<script src="js/main.js">/* */</script>
 		</body>
-	>> in
+	|} in
 
 	Html.html ~a:([a_lang "en"] @ html_attrs) head body
 

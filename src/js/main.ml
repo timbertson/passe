@@ -238,7 +238,7 @@ let view_overlay sync instance =
 	(fun { dialog; account_settings; _ } ->
 		let open Html in
 		let inject_html elem =
-			elem##innerHTML <- Js.string (
+			elem##.innerHTML := Js.string (
 				About.aboutHtml ^ "\n<hr/><small>Version " ^ (Version.pretty ()) ^ "</small>";
 			) in
 		dialog |> Option.map (fun dialog ->
@@ -318,17 +318,17 @@ let main ~show_debug ~storage_provider sync = (
 		then Ui.Tasks.async tasks (fun _instance ->
 			App_cache.update_monitor (fun () ->
 				Log.info (fun m->m "appcache update ready");
-				let busy = document##body##querySelector(Js.string"input:focus")
+				let busy = document##.body##querySelector (Js.string"input:focus")
 					|> Opt.to_option
 					|> Option.map (fun elem ->
 							let value = (Js.Unsafe.get elem (Js.string"value")) in
-							value##length > 0
+							value##.length > 0
 					) |> Option.default false
 				in
 				begin if busy then
 					Log.warn (fun m->m "Not reloading; active input is nonempty")
 				else
-					Dom_html.window##location##reload()
+					Dom_html.window##.location##reload
 				end;
 				return_unit)
 		)

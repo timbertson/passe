@@ -52,19 +52,19 @@ let () =
 			let status : (int * process_status) option ref = ref None in
 			Log.info (fun m->m "Killing pid %d" pid);
 			kill pid !signal;
-			Lwt_main.run (while_lwt (Option.is_none !status) do
+			Lwt_main.run (while%lwt (Option.is_none !status) do
 				(* on each loop iteration, either sleep for 3 seconds and kill, or
 				 * wait for the proc to end *)
 				Log.debug (fun m->m "Waiting for pid %d" pid);
 				let open Lwt in
 				pick [
 					(
-						lwt () = Lwt_unix.sleep 3.0 in
+						let%lwt () = Lwt_unix.sleep 3.0 in
 						Log.info (fun m->m "re-killing...");
 						kill pid !signal;
 						return_unit
 					);
-					(lwt s = Lwt_unix.waitpid [] pid in status := Some s; return_unit)
+					(let%lwt s = Lwt_unix.waitpid [] pid in status := Some s; return_unit)
 				]
 			done);
 			Log.debug (fun m->m "pid %d exited" pid);

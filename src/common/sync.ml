@@ -58,7 +58,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 			Server.post_json ~data:payload ?token:(Auth.token_of_authenticated auth) db_url
 		in
 
-		lwt response = send_db ~full:false db in
+		let%lwt response = send_db ~full:false db in
 		match response with
 			| Server.Failed (409, _, json) ->
 				(* server may fail with { conflict:true, stored_version: int, <core: {...}> } *)
@@ -77,7 +77,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 			| response -> return response
 
 	let _validate_implicit_auth () : Auth.online_implicit_auth_state Lwt.t =
-		lwt auth = Server.call Auth.server_state_api J.empty in
+		let%lwt auth = Server.call Auth.server_state_api J.empty in
 		return (match Server.Response.force auth with
 			| Some user -> `Implicit_user user
 			| None -> `Anonymous
@@ -85,7 +85,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 
 	let _validate_explicit_auth = function
 		| `Saved_user ((username, token) as credentials) ->
-			lwt response = Server.call Auth.token_validate_api token in
+			let%lwt response = Server.call Auth.token_validate_api token in
 			return (
 				if Server.Response.force response then
 					`Active_user credentials
@@ -100,7 +100,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 			| `Saved_user _ as auth -> _validate_explicit_auth auth >>= cast
 
 	let _validate_auth_and_save validator t auth =
-		lwt new_state = validator auth in
+		let%lwt new_state = validator auth in
 		t.set_auth_state (new_state:>Auth.auth_state);
 		return new_state
 
@@ -119,7 +119,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 			 * harmonize this a bit to store user details in DB, and to better represent the
 			 * "you are offline and we have no idea if you're logged in" initial state *)
 			Log.debug (fun m->m "initial_auth_state: fetching implicit state from server");
-			lwt initial_state = try_lwt _validate_implicit_auth ()
+			let%lwt initial_state = try%lwt _validate_implicit_auth ()
 			with e -> (
 				Log.warn (fun m->m "Failed to load initial auth state: %s" (Printexc.to_string e));
 				return `Anonymous
@@ -234,7 +234,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 						running_sync := Some task;
 						set_busy true;
 						(
-							try_lwt
+							try%lwt
 								Log.info (fun m->m "syncing...");
 
 								let uid = Auth.uid_of_authenticated auth in
@@ -244,7 +244,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 									db_storage#get |> Option.map Store.parse_json |> Option.default Store.empty in
 
 								let sent_db = get_latest_db () in
-								lwt response = sync_db auth sent_db in
+								let%lwt response = sync_db auth sent_db in
 								return (match response with
 									| Server.OK json ->
 										let open Store in
@@ -295,7 +295,7 @@ module Make (Server:Server.Sig)(Date:Date.Sig)(Re:Re_ext.Sig) = struct
 		}
 
 	let login ~user ~password t =
-		lwt response = Server.call Auth.login_api (Auth.payload ~user ~password) in
+		let%lwt response = Server.call Auth.login_api (Auth.payload ~user ~password) in
 		let open Server in
 		let result = begin match response with
 			| OK creds ->

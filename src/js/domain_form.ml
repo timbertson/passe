@@ -260,7 +260,7 @@ let view _instance =
 let global_listeners instance map_msg = [
 		global_event_listener Dom_html.Event.click (fun e ->
 			e |> Vdoml.Event.keyboard_event |> Option.may (fun e ->
-				if (Js.to_bool e##ctrlKey && e##keyCode = Keycode.s) then (
+				if (Js.to_bool e##.ctrlKey && e##.keyCode = Keycode.s) then (
 					Dom.preventDefault e;
 					Dom_html.stopPropagation e;
 					Ui.emit instance (map_msg Save)

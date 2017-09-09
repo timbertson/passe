@@ -153,7 +153,7 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 		)
 	
 	let destroy_if_exists_s fs path =
-		match_lwt destroy fs path with
+		match%lwt destroy fs path with
 			| Ok _ | Error `No_directory_entry -> return (Ok ())
 			| Error _ as e -> return e
 

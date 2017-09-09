@@ -54,10 +54,10 @@ class browser_provider =
 
   method get key = self#_get (Js.string key)
 
-  method set key value = local_storage##setItem(Js.string key, Js.string (Json.to_string value))
-  method delete key = local_storage##removeItem(Js.string key)
+  method set key value = local_storage##setItem (Js.string key) (Js.string (Json.to_string value))
+  method delete key = local_storage##removeItem (Js.string key)
   method iter (fn : string -> Json.json -> unit) =
-    let len = local_storage##length in
+    let len = local_storage##.length in
     let i = ref 0 in
     let force opt = Opt.get opt (fun () -> assert false) in
     while !i < len do
@@ -69,7 +69,7 @@ class browser_provider =
 
   method erase_all:unit =
     Log.debug (fun m->m "erasing localStorage");
-    local_storage##clear()
+    local_storage##clear
 end
 
 and provider do_persist =
