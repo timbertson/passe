@@ -78,7 +78,7 @@ let overlay instance ~cancel =
 	let hooks = with_global_listeners (fun () -> [
 		Js_util.global_event_listener Dom_html.Event.keydown (fun event ->
 			event |> Vdoml.Event.keyboard_event |> Option.may (fun event ->
-				if (event##.keyCode == Keycode.esc) then (
+				if (Keycode_ext.of_event event = Keycode_ext.Escape) then (
 					Dom.preventDefault event;
 					Vdoml.Ui.emit instance cancel
 				)

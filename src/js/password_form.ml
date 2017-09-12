@@ -5,6 +5,7 @@ open Common
 open React_ext
 open Js_util
 module Log = (val Logging.log_module "password_form")
+module Keycode = Keycode_ext
 
 type input_target = [ `domain | `password ]
 type domain_suggestions = {
@@ -304,7 +305,7 @@ let view instance : state -> message Html.html =
 	let track_domain_text = track_input_contents (fun text -> `domain text) in
 	let submit_on_return = handler (fun e ->
 		e |> Event.keyboard_event |> Option.bind (fun e ->
-			if e##.keyCode = Keycode.return
+			if Keycode.of_event e = Keycode.Enter
 				then Some (Event.handle `generate_password)
 				else None
 		) |> Event.optional
@@ -337,18 +338,13 @@ let view instance : state -> message Html.html =
 	let domain_keydown = handler @@ Ui.bind instance (fun { domain_suggestions; _ } e ->
 		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
-			if e##.keyCode = Keycode.esc then (
+			if Keycode.of_event e = Keycode.Escape then (
 				Some (Event.handle (`domain ""))
 			) else (
-				e##.keyIdentifier
-				|> Optdef.to_option
-				|> Option.or_fn (fun () -> Unsafe.get e "key" |> Optdef.to_option)
-				|> Option.bind (fun ident ->
-					match Js.to_string ident with
-					| "Up" | "ArrowUp" -> Some (Event.handle (`select_cursor `up))
-					| "Down" | "ArrowDown" -> Some (Event.handle (`select_cursor `down))
-					| _ -> (
-						let which = Unsafe.get e "which" in
+				match Keycode.of_event e with
+					| Keycode.ArrowUp -> Some (Event.handle (`select_cursor `up))
+					| Keycode.ArrowDown -> Some (Event.handle (`select_cursor `down))
+					| code -> (
 						let select_current () =
 							domain_suggestions |> Option.bind (fun {suggestions; selected} ->
 								selected |> Option.bind (fun idx ->
@@ -363,13 +359,14 @@ let view instance : state -> message Html.html =
 								)
 							)
 						in
-						Log.debug (fun m->m "Processing key code %d" which);
-						begin match which with
-							| k when k = Keycode.tab -> select_current ()
-							| k when k = Keycode.return -> select_current ()
-							| k -> Log.debug (fun m->m "ignoring unknown key code %d" k); None
+						Optdef.iter e##.code (fun code ->
+							Log.debug (fun m->m "Processing key code %s" (Js.to_string code))
+						);
+						begin match code with
+							| Keycode.Tab -> select_current ()
+							| Keycode.Enter -> select_current ()
+							| _ -> Log.debug (fun m->m "ignoring unknown key code"); None
 						end
-					)
 				)
 			)
 		) |> Event.optional
@@ -409,7 +406,7 @@ let view instance : state -> message Html.html =
 			);
 			global_event_listener Dom_html.Event.keydown (fun e ->
 				e |> Vdoml.Event.keyboard_event |> Option.may (fun e ->
-					if e##.keyCode = Keycode.esc
+					if Keycode.of_event e = Keycode.Escape
 						then (
 							Dom.preventDefault e;
 							Ui.emit instance `cancel

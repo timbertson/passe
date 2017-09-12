@@ -2,22 +2,24 @@
 	"cohttp"
 	"hex"
 	"js_of_ocaml"
+	"jbuilder"
 	"lambda-term"
 	"logs"
-	{"lwt" = ">=1.5.0"; }
+	{"lwt" = ">=3.1.0"; }
+	"lwt_react"
 	"mirage"
 	"mirage-clock-unix"
 	"mirage-fs-unix"
 	"mirage-types"
 	"mirage-types-lwt"
-	"nocrypto"
+	{ "nocrypto" = ">=0.5.4"; }
 	"ocamlfind"
 	"ocamlbuild"
 	"ounit"
 	"ptime"
 	"react"
 	"rresult"
-	"uri"
+	{ "uri" = ">=1.9.4"; }
 	"vdoml"
 	"yojson"
 ]

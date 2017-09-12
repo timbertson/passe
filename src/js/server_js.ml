@@ -1,5 +1,6 @@
+open Passe
 open Lwt
-module Xhr = XmlHttpRequest
+module Xhr = Lwt_xmlHttpRequest
 module J = Json_ext
 module Version = Version.Make(Re_js)
 
@@ -22,7 +23,7 @@ module Impl : Server.IMPL = struct
 
 	let request ~headers ~meth ~data url =
 		let (res, w) = Lwt.task () in
-		let req = Xhr.create () in
+		let req = XmlHttpRequest.create () in
 		let url = Uri.to_string url in
 		let meth = Server.string_of_request_method meth in
 		req##_open (Js.string meth) (Js.string url) (Js._true);
@@ -40,7 +41,7 @@ module Impl : Server.IMPL = struct
 		req##.onreadystatechange := Js.wrap_callback (fun _ ->
 			let open Xhr in
 			(match req##.readyState with
-				| DONE ->
+				| XmlHttpRequest.DONE ->
 					(* If we didn't catch a previous event, we check the header. *)
 					Lwt.wakeup w {
 						url = url;

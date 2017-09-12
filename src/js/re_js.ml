@@ -1,3 +1,4 @@
+open Passe
 type t = Regexp.regexp
 let split = Regexp.split
 let regexp = Regexp.regexp

@@ -1,3 +1,4 @@
+open Passe
 open Js
 include Date_common
 let time () : float =

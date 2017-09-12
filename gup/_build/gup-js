@@ -5,7 +5,7 @@ src="$base.byte"
 gup -u "$src"
 
 # required for `react`:
-common_args="+js_of_ocaml/weak.js --disable genprim"
+common_args=""
 
 if [ "$build_type" = "prod" ]; then
 	js_of_ocaml --opt 3 $common_args -o "$1" "$src"

@@ -1,4 +1,4 @@
-true: debug, package(ptime,logs,mirage-clock-unix,mirage,mirage-fs-unix, mirage-types-lwt, extlib, yojson, cohttp,cohttp.lwt, uri, lwt, lwt.unix, lwt.ppx, hex, re.str, react)
+true: debug, package(ptime,logs,mirage-clock-unix,mirage,mirage-fs-unix, mirage-types-lwt, extlib, yojson, cohttp,cohttp.lwt, uri, lwt, lwt.unix, lwt.ppx, hex, re.str, react, rresult)
 <server/*> or <passe_server.*> or <bin/server.*>: package(nocrypto, nocrypto.lwt, safepass, astring, tyxml, tyxml.ppx)
 <client/*> or <passe_client.*> or <bin/client.*>: package(lambda-term)
 

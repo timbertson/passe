@@ -1,3 +1,4 @@
+open Passe
 module J = Json_ext
 open Js
 open Passe_env

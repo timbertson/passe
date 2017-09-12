@@ -408,8 +408,7 @@ let view_sync_state ~sync_time_desc = (function
 let emit_on_return action : message attr = a_onkeydown (handler (fun evt ->
 	evt
 		|> Event.keyboard_event
-		|> Option.map (fun evt -> evt##.keyCode)
-		|> Option.filter ((=) Keycode.return)
+		|> Option.filter (fun evt -> (Keycode_ext.of_event evt) = Keycode_ext.Enter)
 		|> Option.map (fun _ -> Event.handle action)
 		|> Event.optional
 ))

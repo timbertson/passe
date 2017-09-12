@@ -60,7 +60,7 @@ module Make
 	(Clock: Mirage_types.PCLOCK)
 	(Static_res:Static.Sig)
 	(Fs: Filesystem.Sig)
-	(Server:Cohttp_lwt.Server)
+	(Server:Cohttp_lwt.S.Server)
 	(Server_config:Server_config.Sig)
 	(Auth:Auth.Sig with module Fs = Fs and module Clock = Clock)
 	(Re:Re_ext.Sig)

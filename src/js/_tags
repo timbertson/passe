@@ -1,1 +1,1 @@
-true: bin_annot, debug, package(vdoml, logs, logs.browser, uri, yojson, js_of_ocaml, js_of_ocaml.ppx, lwt.react, lwt.ppx, rresult)
+true: bin_annot, debug, package(vdoml, logs, logs.browser, uri, yojson, js_of_ocaml, js_of_ocaml.weak, js_of_ocaml-ppx, js_of_ocaml-lwt, lwt_react, lwt.ppx, rresult)
