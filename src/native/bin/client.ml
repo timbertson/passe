@@ -1,1 +1,1 @@
-let () = Passe_client.Main.main ()
+let () = Passe_client.main ()

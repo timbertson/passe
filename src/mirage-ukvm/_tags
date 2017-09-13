@@ -1,3 +1,3 @@
-true: debug, package(mirage-http, yojson, tyxml, hex)
+true: debug, package(mirage-http, yojson, hex)
 <src>: include
 <.*>: -traverse

@@ -5,7 +5,5 @@
 	"extlib"
 	"re"
 	"safepass"
-	"tyxml"
-	"tyxml-ppx"
 	"tcpip"
 ]

@@ -1,0 +1,17 @@
+(jbuild_version 1)
+
+(library (
+ ; TODO: rename passe_common
+	(name passe)
+	(libraries (
+		logs
+		re
+		rresult
+		uri
+		lwt
+		react
+		yojson
+		cohttp-lwt-unix
+	))
+	(preprocess (pps (lwt.ppx)))
+))

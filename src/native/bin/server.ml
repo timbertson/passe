@@ -19,9 +19,9 @@ end
 
 module Auth = Passe_server.Auth.Make(Pclock)(Passe_server.Hash_bcrypt)(Fs)
 module Static_files = Passe_server.Static.Fs(Fs)
-module Unix_server = Passe_server.Service.Make(Pclock)(Static_files)(Fs)(HTTP)(Passe_server.Server_config_unix)(Auth)(Re_native)
+module Unix_server = Passe_server.Service.Make(Pclock)(Static_files)(Fs)(HTTP)(Passe_server.Server_config_unix)(Auth)(Passe_unix.Re)
 open Unix_server
-module Version = Version.Make(Re_native)
+module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Passe_server.Timed_log.Make(Pclock)
 module Log = (val Logging.log_module "service")
 

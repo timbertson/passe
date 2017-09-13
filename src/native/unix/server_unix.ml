@@ -1,3 +1,4 @@
+open Passe
 module J = Json_ext
 module Re = Re_native
 module Version = Version.Make(Re)

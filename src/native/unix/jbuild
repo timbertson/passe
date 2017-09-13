@@ -1,0 +1,11 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+
+(jbuild_version 1)
+
+(library (
+	(name passe_unix)
+	(libraries (
+		passe
+		re.str
+	))
+))
