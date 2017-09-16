@@ -17,7 +17,7 @@ gup -u www
 
 add \
   index.appcache \
-  js/main.js \
+  js/main.bc.js \
   res/css \
   res/fonts \
   res/images \

@@ -1,4 +1,6 @@
-_build/
+/_build/
+/src/mirage-*/_build/
+*.install
 .merlin
 /_build.prod
 /src/mirage-ukvm/_build-ukvm

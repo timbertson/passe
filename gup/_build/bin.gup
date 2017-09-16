@@ -1,9 +1,0 @@
-#!bash -eu
-pwd
-dest="$1"
-mkdir "$dest"
-function link {
-	ln -s "../$1" "$dest/$2"
-}
-link native/bin/client.native passe
-link native/bin/server.native passe-server

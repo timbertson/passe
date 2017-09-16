@@ -1,11 +1,11 @@
 _build/gup-mlpack:
 	src/**/*.mlpack
+
 gup-delegate:
-	all
-	server
+	js
+	www
 	client
 	native
 	res
-	www
 	mirage-xen
 	mirage-unix

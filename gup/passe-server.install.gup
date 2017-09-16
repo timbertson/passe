@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import os,sys,subprocess,re
+
+tmp_dest, target = sys.argv[1:]
+
+try:
+	os.unlink(target)
+except OSError as e:
+	import errno
+	if e.errno != errno.ENOENT:
+		raise
+
+subprocess.check_call(['gup', '-u', 'src/www/jbuild'])
+subprocess.check_call(['jbuilder', 'build', target])
+with open(target) as input:
+	with open(tmp_dest, 'w') as output:
+		for line in input:
+			print(line, file=output, end='')
+			if line.startswith("share:"):
+				res = '_build/res'
+				subprocess.check_call(['gup', '-u', res+'/all'])
+				def trimdir(dirs, name):
+					if name in dirs:
+						dirs.remove(name)
+
+				for path, dirs, files in os.walk(res, followlinks=True):
+					trimdir(dirs, '.gup')
+					for f in files:
+						source = os.path.join(path,f)
+						dest = re.sub('^[^\\/]+[\\/]', '', source)
+						print('  "%s" {"%s"}' % (source, dest), file=output)
+
+# we already clobbered it; might as well commit
+os.rename(tmp_dest, target)

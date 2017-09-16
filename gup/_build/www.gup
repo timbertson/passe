@@ -1,6 +1,0 @@
-#!bash -eu
-gup -u ../res \
-	js/main.js \
-	index.appcache \
-	native/share \
-	;

@@ -1,0 +1,20 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+
+(jbuild_version 1)
+
+(library (
+	(name passe_client)
+	(flags (:include ../flags))
+	(libraries (
+		passe
+		passe_unix
+		lwt_react
+		lambda-term
+		lwt
+		extlib
+	))
+
+	(preprocess
+		(pps (lwt.ppx)))
+))
+

@@ -1,0 +1,6 @@
+#!bash -eu
+gup -u \
+	www \
+	res \
+	src/bin/server.exe \
+	;

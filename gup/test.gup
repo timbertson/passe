@@ -4,7 +4,7 @@ gup --always
 # not strictly necessary, but saves us from
 # firing up the test suite only to find the server
 # doesn't compile.
-gup -u _build/native/bin/server.byte
+gup -u _build/default/src/native/bin/server.exe
 
 set -x
 ./tools/test

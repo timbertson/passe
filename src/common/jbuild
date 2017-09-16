@@ -1,8 +1,11 @@
+; vim: set syntax=lisp commentstring=;\ %s:
 (jbuild_version 1)
 
 (library (
- ; TODO: rename passe_common
+	; TODO: rename passe_common
 	(name passe)
+	(flags (:include ../flags))
+	(modules (:standard version))
 	(libraries (
 		logs
 		re
@@ -14,4 +17,13 @@
 		cohttp-lwt-unix
 	))
 	(preprocess (pps (lwt.ppx)))
+))
+
+(rule (
+	(targets (version.ml))
+	(deps (
+		(file ${SCOPE_ROOT}/../../.git/HEAD)
+		(files_recursively_in ${SCOPE_ROOT}/../../.git/refs/heads)
+	))
+	(action (run gup -u ${@}))
 ))

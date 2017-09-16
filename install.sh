@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 base="$(dirname "$0")"
-build_dir="_build.prod"
+build_dir="_build"
 function print_dest {
 	echo " Installing: $1 -> $2"
 }
@@ -59,6 +59,7 @@ fi
 	if [ -e "$base/$f" ]; then
 		# chop builddir prefix, if present
 		d="${f#$build_dir/}"
+		d="${d#default/src/}"
 		case "$d" in
 			bin/*) ;;
 			share/*) ;;

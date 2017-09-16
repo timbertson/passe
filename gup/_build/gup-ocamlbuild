@@ -10,11 +10,6 @@ fi
 BUILDDIR="$PWD/$compile_mode"
 target="${2#*/}"
 
-pushd "$here/../../src/common/" > /dev/null
-gup -u prebuild.targets
-gup -u $(cat prebuild.targets)
-popd > /dev/null
-
 pushd "../src/$compile_mode" >/dev/null
 if [ -e prebuild.targets ]; then
 	gup -u prebuild.targets
@@ -25,9 +20,7 @@ fi
 gup --always
 
 FLAGS=""
-if [ "$build_type" = dev ]; then
-	FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45-6-58-34"
-fi
+FLAGS="$FLAGS -cflag -w -cflag @a-4-48-44-45-6-58-34"
 
 if [ "$compile_mode" = 'mirage-xen' ]; then
 	FLAGS="$FLAGS -lflags -g,-linkpkg,-dontlink,unix"

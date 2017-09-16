@@ -1,0 +1,5 @@
+#!bash -eu
+input="style.less"
+gup -u ../../../bootstrap ../../../lessc
+gup -u ../../../bootstrap/package.json "$input"
+../../../lessc "$input" "$1"

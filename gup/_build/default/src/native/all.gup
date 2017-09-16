@@ -1,0 +1,4 @@
+#!bash -eu
+jbuilder build @bin/all
+gup -u share bin/{client,server}
+

@@ -1,0 +1,64 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+(jbuild_version 1)
+
+(executable (
+	(name main)
+	(flags (:include ../flags))
+	(libraries (
+		js_of_ocaml
+		js_of_ocaml-lwt
+		js_of_ocaml.weak
+		passe_client
+		vdoml
+	))
+
+	(preprocess (pps (lwt.ppx js_of_ocaml.ppx)))
+))
+
+(rule (
+	(targets (about.ml))
+	(deps (
+		(file ${SCOPE_ROOT}/../../README.md)
+		(file ${SCOPE_ROOT}/../../gup/_build/default/src/www/about.ml.gup)
+		(file ${SCOPE_ROOT}/../../gup/_build/default/src/www/about.md.gup)
+	))
+	(action (run gup -u ${@}))
+))
+
+(rule (
+	(targets (style.css))
+	(deps (style.less))
+	(action (run gup -u ${@}))
+))
+
+(rule (
+	(targets (index.appcache))
+	(deps (style.less main.bc.js ../server/index.ml))
+	(action (run gup -u ${@}))
+))
+
+(rule (
+	(targets (res.files))
+	(deps (${SCOPE_ROOT}/../../gup/_build/default/src/www/res.files.gup (files_recursively_in ../../res)))
+	(action (run gup -u ${@}))
+))
+
+
+(alias (
+	(name all)
+	(deps (
+		main.bc.js
+		style.css
+		index.appcache
+	))
+))
+
+(install (
+	(package passe-server)
+	(section share)
+	(files (
+		main.bc.js
+		index.appcache
+		style.css
+	))
+))

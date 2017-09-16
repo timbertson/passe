@@ -1,5 +1,40 @@
-#!bash -eu
-gup -u _build/"$2"
-if [ -e "$2" ]; then
-	touch "$2"
-fi
+#!/usr/bin/env python
+from __future__ import print_function
+import os,sys,subprocess
+
+TRACE = os.environ.get('GUP_XTRACE','0') == '1'
+
+def run(cmd):
+	if TRACE:
+		print(' + ' + ' '.join(cmd))
+	try:
+		subprocess.check_call(cmd)
+	except (subprocess.CalledProcessError, KeyboardInterrupt):
+		sys.exit(1)
+
+dest, target = sys.argv[1:]
+def jbuilder(target):
+	return lambda: (
+		run(['jbuilder', 'build', target])
+	)
+
+
+def gup(target):
+	return lambda: (
+		run(['gup', '-u', target])
+	)
+
+mapping = {
+	'client': jbuilder('src/bin/client.exe'),
+	'server': jbuilder('src/bin/server.exe'),
+	'native': jbuilder('@src/bin/all'),
+	'js': jbuilder('@src/js/main.bc.js'),
+	'www': jbuilder('src/js/all'),
+	'res': gup('_build/res/all'),
+	'mirage-unix': gup('_build/mirage-unix'),
+	'mirage-ukvm': gup('_build/mirage-ukvm'),
+}
+
+action = mapping[target]
+subprocess.check_call(['gup','--always'])
+action()

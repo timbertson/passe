@@ -1,7 +1,0 @@
-#!bash -eu
-dest="$(dirname "$2")"
-if [ -e "$dest" ]; then
-	ls -1 "$dest" | while read f; do
-		rm -r "$dest/$f"
-	done
-fi

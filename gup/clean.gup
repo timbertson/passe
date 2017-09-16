@@ -1,2 +1,3 @@
 #!bash -eu
 rm -rf _build _build.prod
+gup --clean -f src
