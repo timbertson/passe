@@ -2,12 +2,14 @@
 with pkgs;
 let
 	vdoml = callPackage ./vdoml.nix { inherit opam2nix; };
+	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix; };
 	names = import (./opam-deps + "/${target}.nix" );
 	opamArgs = {
 		packages = names;
 		ocamlAttr = "ocaml_4_03";
 		extraRepos = [
 			vdoml.opam2nix.repo
+			opam-installer.opam2nix.repo
 		];
 		# args = [ "--verbose" "--repo"
 		# 	../../ocaml-safepass/opam2nix-repo

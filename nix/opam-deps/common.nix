@@ -15,6 +15,7 @@
 	{ "nocrypto" = ">=0.5.4"; }
 	"ocamlfind"
 	"ocamlbuild"
+	"opam-installer"
 	"ounit"
 	"ptime"
 	"react"

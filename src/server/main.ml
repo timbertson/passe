@@ -74,7 +74,7 @@ let main () =
 
 	let port = StdOpt.int_option ~default:2055 () in
 	let host = StdOpt.str_option ~default:"127.0.0.1" () in
-	let document_root = StdOpt.str_option ~default:(Filename.concat program_root "share/www") () in
+	let document_root = StdOpt.str_option ~default:(Filename.concat program_root "share/passe-server") () in
 	let development = StdOpt.store_true () in
 	let data_root = StdOpt.str_option ~default:"data" () in
 	let show_version = StdOpt.store_true () in

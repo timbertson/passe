@@ -1,0 +1,15 @@
+{
+  "fetch": {
+    "args": {
+      "owner": "timbertson",
+      "repo": "opam",
+      "rev": "c84613f47ce119f68f28f0aa1d96c8da9ac0cce9",
+      "sha256": "07hrzw6jh67lynid6mfcfvg95a82f385m2rkax323ki5r9xgf33g"
+    },
+    "fn": "fetchFromGitHub",
+    "owner": "timbertson",
+    "repo": "opam",
+    "rev": "c84613f47ce119f68f28f0aa1d96c8da9ac0cce9",
+    "type": "fetchFromGitHub"
+  }
+}

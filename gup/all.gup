@@ -4,4 +4,5 @@ gup -u \
 	native \
 	_build/bin \
 	passe-server.install \
+	passe.install \
 	;
