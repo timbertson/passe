@@ -21,6 +21,5 @@
 	"react"
 	"rresult"
 	{ "uri" = ">=1.9.4"; }
-	"vdoml"
 	"yojson"
 ]

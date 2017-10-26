@@ -6,4 +6,5 @@
 	"re"
 	"safepass"
 	"tcpip"
+	"vdoml"
 ]
