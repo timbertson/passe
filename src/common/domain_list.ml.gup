@@ -1,5 +1,0 @@
-#!bash -eu
-echo 'let slds = [' > "$1"
-gup -u domain_list
-sed -e 's/^/  "/' -e 's/$/";/' domain_list >> "$1"
-echo ']' >> "$1"

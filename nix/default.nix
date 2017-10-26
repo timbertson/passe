@@ -13,11 +13,10 @@ let
 	# mirage-unix (unix mirage microkernel, mainly for testing)
 	# devel (client + server, plus local development utils)
 
-	buildDir = "_build.prod";
-	buildTargets = assert (target != "" && target != null); let build = target: "${buildDir}/${target}"; in
-		if target == "devel" then [ (build "all") ]
-		else if target == "client" then [ (build target) ]
-		else [ (build "www") (build target) ];
+	buildTargets = assert (target != "" && target != null);
+		if target == "devel" then [ "all" ]
+		else if target == "client" then [ target ]
+		else [ "www" target ];
 
 	opamDepsFile = (import ./opam-deps.nix {inherit target pkgs opam2nix;});
 
@@ -32,11 +31,17 @@ let
 
 		preConfigure = commonAttrs.shellHook;
 		buildPhase = ''
+			# hacky workaround for https://github.com/janestreet/jbuilder/issues/298:
+			# build the file, then pop it into the source tree.
+			# In the future jbuilder may complain about this, and we'll need to remove the version.ml rule entirely :(
+			gup _build/default/src/common/version.ml
+			cp _build/default/src/common/version.ml src/common/version.ml
+
 			echo "building passe ${target} (gup ${lib.concatStringsSep " " buildTargets})..."
 			gup ${lib.concatStringsSep " " buildTargets}
 		'';
-		stripDebugList = [ "_build.prod" ];
-		installPhase = "./install.sh ${buildDir} $out";
+		stripDebugList = [ "_build" ];
+		installPhase = "./install.sh $out";
 
 		passthru = rec {
 			inherit (opamDepsFile) opam2nix names selections selectionsFile vdoml;

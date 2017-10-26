@@ -1,0 +1,6 @@
+#!bash -eu
+DOMAIN_LIST="../../../../src/common/domain_list"
+echo 'let slds = [' > "$1"
+gup -u "$DOMAIN_LIST"
+sed -e 's/^/  "/' -e 's/$/";/' "$DOMAIN_LIST" >> "$1"
+echo ']' >> "$1"

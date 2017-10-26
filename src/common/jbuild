@@ -27,3 +27,9 @@
 	))
 	(action (run gup -u ${@}))
 ))
+
+(rule (
+	(targets (domain_list.ml))
+	(deps ((file domain_list)))
+	(action (run gup -u ${@}))
+))
