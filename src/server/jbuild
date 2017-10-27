@@ -16,6 +16,15 @@
 		mirage-types
 		ptime
 	))
-
+	(modules (:standard \ main))
 	(preprocess (pps (lwt.ppx)))
+))
+
+(executable (
+	(name main)
+	(public_name passe-server)
+	(package passe-server)
+	(libraries (passe_server))
+	(modules (main))
+	(flags (:include ../flags))
 ))

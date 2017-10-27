@@ -13,21 +13,20 @@ def run(cmd):
 		sys.exit(1)
 
 dest, target = sys.argv[1:]
-def jbuilder(target):
+def jbuilder(*targets):
 	return lambda: (
-		run(['jbuilder', 'build', target])
+		run(['jbuilder', 'build'] + list(targets))
 	)
 
-
-def gup(target):
+def gup(*targets):
 	return lambda: (
-		run(['gup', '-u', target])
+		run(['gup', '-u'] + list(targets))
 	)
 
 mapping = {
 	'client': jbuilder('src/bin/client.exe'),
 	'server': jbuilder('src/bin/server.exe'),
-	'native': jbuilder('@src/bin/all'),
+	'native': gup('client', 'server'),
 	'js': jbuilder('@src/www/main.bc.js'),
 	'www': jbuilder('@src/www/all'),
 	'passe.install': jbuilder('passe.install'),

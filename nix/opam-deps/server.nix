@@ -1,6 +1,5 @@
-(import ./common.nix) ++ [
+(import ./common.nix) ++ (import ./unix-common.nix) ++ [
 	"astring"
-	"cohttp-lwt-unix"
 	"conduit"
 	"extlib"
 	"re"

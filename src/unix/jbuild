@@ -8,5 +8,6 @@
 	(libraries (
 		passe
 		re.str
+		cohttp-lwt-unix
 	))
 ))

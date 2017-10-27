@@ -5,6 +5,7 @@
 (library (
 	(name passe_client)
 	(flags (:include ../flags))
+	(modules (:standard \ main))
 	(libraries (
 		passe
 		passe_unix
@@ -16,5 +17,14 @@
 
 	(preprocess
 		(pps (lwt.ppx)))
+))
+
+(executable (
+	(name main)
+	(public_name passe)
+	(package passe)
+	(libraries (passe_client))
+	(modules (main))
+	(flags (:include ../flags))
 ))
 
