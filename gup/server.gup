@@ -2,5 +2,5 @@
 gup -u \
 	www \
 	res \
-	src/bin/server.exe \
+	passe-server.install \
 	;

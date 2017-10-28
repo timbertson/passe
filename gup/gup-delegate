@@ -24,12 +24,12 @@ def gup(*targets):
 	)
 
 mapping = {
-	'client': jbuilder('src/bin/client.exe'),
-	'server': jbuilder('src/bin/server.exe'),
+	'client': jbuilder('passe.install'),
 	'native': gup('client', 'server'),
 	'js': jbuilder('@src/www/main.bc.js'),
 	'www': jbuilder('@src/www/all'),
 	'passe.install': jbuilder('passe.install'),
+	'passe-server.install': jbuilder('passe-server.install'),
 	'res': gup('_build/res/all'),
 	'mirage-unix': gup('_build/mirage-unix'),
 	'mirage-ukvm': gup('_build/mirage-ukvm'),

@@ -2,6 +2,4 @@
 gup -u \
 	www \
 	native \
-	passe-server.install \
-	passe.install \
 	;
