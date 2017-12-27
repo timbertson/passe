@@ -1,4 +1,5 @@
 #!bash -eu
+gup --always
 gup -u \
 	www \
 	res \

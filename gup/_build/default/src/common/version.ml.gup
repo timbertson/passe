@@ -22,6 +22,7 @@ fi
 cat >"$1" <<EOF
 module type Sig = sig
 	val version : string
+	val pretty : unit -> string
 end
 module Make(Re:Re_ext.Sig) = struct
 	let version="$(cat "$root/VERSION")"

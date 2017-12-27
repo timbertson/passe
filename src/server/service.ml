@@ -36,6 +36,7 @@ type file_response = [
 let content_type_key = "Content-Type"
 let content_type_header v = Header.init_with content_type_key v
 let json_content_type = content_type_header "application/json"
+let text_content_type = content_type_header "text/plain"
 let no_cache h = Header.add h "Cache-control" "no-cache"
 
 
@@ -57,6 +58,7 @@ let maybe_add_header k v headers =
 		| None -> headers
 
 module Make
+	(Version: Version.Sig)
 	(Clock: Mirage_types.PCLOCK)
 	(Static_res:Static.Sig)
 	(Fs: Filesystem.Sig)
@@ -391,6 +393,11 @@ module Make
 
 						| ["index.appcache"] when not offline_access ->
 							Server.respond_error ~status:`Not_found ~body:"not found" ()
+
+						| ["version"] ->
+							Server.respond_string
+								~headers:text_content_type
+								~status:`OK ~body:(Version.pretty ()) ()
 
 						| ["hold"] when development -> Lwt.wait () |> Tuple.fst
 						| path ->

@@ -2,6 +2,6 @@
 set -eu
 here="$(dirname "$0")"
 export OCAMLRUNPARAM=b
-s="$here/../_build/native/bin/server.byte"
-gup -u "$s"
+s="$here/../_build/default/src/server/main.exe"
+jbuilder build "$s"
 exec "$s" --development "$@"
