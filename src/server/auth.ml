@@ -538,11 +538,16 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 				| (Error _ as e, _) -> return e
 				| (Ok _, Error (e:Fs.error)) -> return (Error (write_error e))
 				| Ok result as acc, Ok user -> (
-					assert (Option.is_none result);
 					if user.User.name = username then (
-						fn write_user user |> Lwt.map (function
-							| Ok x -> Ok (Some x)
-							| Error _ as e -> e
+						match result with
+						| Some _ ->
+							Log.err (fun m->m "User %s appears more than once in DB" username);
+							return (Error `Cancel)
+						| None -> (
+							fn write_user user |> Lwt.map (function
+								| Ok x -> Ok (Some x)
+								| Error _ as e -> e
+							)
 						)
 					) else (write_user user |> Lwt.map (fun () -> acc))
 				)
