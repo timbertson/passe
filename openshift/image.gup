@@ -1,5 +1,5 @@
 #!bash -eu
 gup --always
 tag="gfxmonk/passe"
-docker build -t "$tag" .
+sudo docker build -t "$tag" .
 echo "$tag" > "$1"
