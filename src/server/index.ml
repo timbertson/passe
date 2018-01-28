@@ -25,28 +25,28 @@ let html ~implicit_auth ~offline_access () : html =
 			<link rel=\"icon\" href=\"/res/images/16.png\"/>\
 			<link rel=\"icon\" href=\"/res/images/32.png\" sizes=\"32x32\"/>\
 			<link rel=\"icon\" href=\"/res/images/128.png\" sizes=\"128x128\"/>\
-			<link href=\"res/css/style.css\" rel=\"stylesheet\"/>\
+			<link href=\"style.css\" rel=\"stylesheet\"/>\
 			<title>Passé</title>\
 		</head>\
 	") in
 
 	let script = ("\
-		window.PasseEnv = " ^ passe_env_json  ^ ";\
-		window.onerror = function(e) {\
-			console.error(e);\
-			var e = document.getElementById('main');\
-			e.innerHTML = '';\
-\
-			var tag = function(name, text) {\
-				var node=document.createElement(name);\
-				node.appendChild(document.createTextNode(text));\
-				e.appendChild(node);\
-			}\
-\
-			tag('h1', 'Uncaught Error');\
-			tag('p', 'Sorry, an uncaught error occurred:');\
-			tag('p', String(e));\
-			tag('p', 'Please reload the page to try again');\
+		window.PasseEnv = " ^ passe_env_json  ^ ";\n\
+		window.onerror = function(e) {\n\
+			console.error(e);\n\
+			var e = document.getElementById('main');\n\
+			e.innerHTML = '';\n\
+\n\
+			var tag = function(name, text) {\n\
+				var node=document.createElement(name);\n\
+				node.appendChild(document.createTextNode(text));\n\
+				e.appendChild(node);\n\
+			};\n\
+\n\
+			tag('h1', 'Uncaught Error');\n\
+			tag('p', 'Sorry, an uncaught error occurred:');\n\
+			tag('p', String(e));\n\
+			tag('p', 'Please reload the page to try again');\n\
 		}\
 	") in
 
@@ -58,7 +58,7 @@ let html ~implicit_auth ~offline_access () : html =
 				</div>\
 			</div>\
 			<script>" ^ script ^ "</script>\
-			<script src=\"js/main.bc.js\"></script>\
+			<script src=\"main.bc.js\"></script>\
 		</body>\
 	") in
 

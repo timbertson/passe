@@ -1,7 +1,6 @@
 #!bash -eu
 gup --always
 gup -u \
-	www \
-	res \
 	passe-server.install \
+	_build/docroot \
 	;

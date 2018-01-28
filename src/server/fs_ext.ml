@@ -28,6 +28,7 @@ module type Sig = sig
 		type invalid_path = [ `Invalid_path ]
 
 		val pp : t Fmt.t
+		val pp_full : t Fmt.t
 		val base : string -> base
 		val make : base -> string list -> (t, invalid_path) result
 		val to_unix : t -> string
@@ -91,9 +92,14 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 				then Error `Invalid_path
 				else Ok (base, parts)
 
-		let pp formatter (_base, path) =
+		let _pp ~full formatter (base, path) =
 			(* don't print base, assume it's constant *)
-			(Fmt.list ~sep:(Fmt.const Fmt.string Filename.dir_sep) Fmt.string) formatter path
+			let fmt_slash = Fmt.const Fmt.string Filename.dir_sep in
+			let parts = if full then [base] @ path else path in
+			(Fmt.list ~sep:fmt_slash Fmt.string) formatter parts
+
+		let pp = _pp ~full:false
+		let pp_full = _pp ~full:true
 
 		let to_unix (base, path) =
 			(String.concat ~sep:Filename.dir_sep (base :: path))

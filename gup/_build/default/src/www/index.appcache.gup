@@ -6,17 +6,22 @@ import subprocess
 try:
 
 	def paths_in(dir):
-		filenames = os.listdir(dir)
-		return [ os.path.join(dir, fname) for fname in filenames ]
+		results = []
+		for (base, dirs, files) in os.walk(dir, followlinks=True):
+			results.extend([os.path.join(base, file) for file in files if not file.startswith('.')])
+			for dir in dirs:
+				if dir.startswith('.'):
+					dirs.remove(dir)
+
+		return results
 
 	root = "../../../"
 	subprocess.check_call(["gup", "-u", root+'res/fonts', root+'res/images'])
 
-	listed_sources = [
+	listed_sources = paths_in(root + "res") + [
 		"main.bc.js",
 		"style.css",
-		root+"res/fonts/glyphicons-halflings-regular.woff",
-	] + paths_in(root+'res/images')
+	]
 
 	sources = listed_sources + [
 		"../server/index.ml",

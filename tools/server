@@ -2,6 +2,7 @@
 set -eu
 here="$(dirname "$0")"
 export OCAMLRUNPARAM=b
+gup server
 s="$here/../_build/default/src/server/main.exe"
-jbuilder build "$s"
-exec "$s" --development "$@"
+set -x
+exec "$s" --root "_build/docroot" --development "$@"

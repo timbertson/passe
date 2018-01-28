@@ -1,24 +1,10 @@
 #!bash
 set -eu
 dest="$1"
-mkdir -p "$dest"
-build="$(pwd)"
 gup --always
-
-function add {
-  prefix="$dest"
-  for f in "$@"; do
-    mkdir -p "$prefix/$(dirname "$f")"
-    cp -rLv --no-preserve=mode "$f" "$prefix/$f"
-  done
-}
-
-gup -u www
-
-add \
-  index.appcache \
-  js/main.bc.js \
-  res/css \
-  res/fonts \
-  res/images \
-  ;
+cd ..
+installfile=passe-server.install
+gup -u "$installfile"
+opam-installer "$installfile" --prefix="$dest.full"
+mv "$dest.full/share/passe-server" "$dest"
+rm -r "$dest.full"

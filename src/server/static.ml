@@ -81,7 +81,10 @@ end = struct
 					) in
 					fn lines |> Lwt.map R.ok
 				| Some (Error e) -> return (Error (match e with
-					| `Is_a_directory | `No_directory_entry | `Not_a_directory -> `Not_found
+					| `Is_a_directory | `No_directory_entry | `Not_a_directory -> (
+						Log.debug (fun m->m "not found: %a" Path.pp_full path);
+						`Not_found
+					)
 					| err -> `Read_error (Impl.string_of_error err)
 				))
 			)

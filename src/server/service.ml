@@ -316,9 +316,9 @@ module Make
 					)
 				)
 				| `Dynamic (ext, contents) ->
-					let contents = (Lwt_stream.of_list [ contents ]) in
-					let%lwt etag = etag_of_chunks contents in
-					let iter_file_chunks fn = fn contents |> Lwt.map R.ok in
+					let contents () = Lwt_stream.of_list [ contents ] in
+					let%lwt etag = etag_of_chunks (contents ()) in
+					let iter_file_chunks fn = fn (contents ()) |> Lwt.map R.ok in
 					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) iter_file_chunks
 		) in
 
@@ -375,21 +375,13 @@ module Make
 										)
 								)
 						| [] ->
-							let h = (Cohttp.Request.headers req) in
-							(* redirect http -> https on openshift *)
-							begin match (Header.get h "host", Header.get h "x-forwarded-proto") with
-								| (Some host, Some "http") when String.is_suffix ~affix:".rhcloud.com" host ->
-									let dest = Uri.with_scheme uri (Some "https") in
-									Server.respond_redirect dest ()
-								| _ ->
-									let contents = Index.html
-										~offline_access
-										~implicit_auth:AuthContext.implicit_auth
-										() |> Index.string_of_html in
-									serve_file ~req
-										~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
-										(`Dynamic ("html", contents))
-							end
+							let contents = Index.html
+								~offline_access
+								~implicit_auth:AuthContext.implicit_auth
+								() |> Index.string_of_html in
+							serve_file ~req
+								~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
+								(`Dynamic ("html", contents))
 
 						| ["index.appcache"] when not offline_access ->
 							Server.respond_error ~status:`Not_found ~body:"not found" ()
