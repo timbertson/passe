@@ -202,7 +202,7 @@ let lterm_reporter term =
 		let k _ =
 			Lwt_main.run (
 				let contents = flush () in
-				LTerm.fprint term contents >> LTerm.flush term
+				LTerm.fprint term contents >>= (fun () -> LTerm.flush term)
 			);
 			over ();
 			k ()

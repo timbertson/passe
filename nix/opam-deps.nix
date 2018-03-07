@@ -1,22 +1,18 @@
 {target, pkgs, opam2nix }:
 with pkgs;
 let
-	vdoml = callPackage ./vdoml.nix { inherit opam2nix; };
-	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix; };
+	vdoml = callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; };
+	ocamlAttr = "ocaml-ng.ocamlPackages_4_05.ocaml";
+	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix ocamlAttr; };
 	names = import (./opam-deps + "/${target}.nix" );
 	opamArgs = {
+		inherit ocamlAttr;
 		packages = names;
-		ocamlAttr = "ocaml_4_03";
 		extraRepos = [
 			vdoml.opam2nix.repo
 			opam-installer.opam2nix.repo
 		];
-		# args = [ "--verbose" "--repo"
-		# 	../../ocaml-safepass/opam2nix-repo
-		# ];
-		# extraPackages = [
-		# 	(import ../../ocaml-safepass/opam2nix-repo/packages)
-		# ];
+		# args = [ "--verbose" ];
 
 		overrides = {super, self}: {
 			opamSelection = let

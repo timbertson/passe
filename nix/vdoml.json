@@ -3,13 +3,13 @@
     "args": {
       "owner": "timbertson",
       "repo": "vdoml",
-      "rev": "ed2a6071483dbdf63398ffb5b3aabd30a298462b",
-      "sha256": "1x9g02wcz70hr3v2rsn8mp0c4xhg42cgjs9kvc6b5ydynzmlqd3c"
+      "rev": "3105fd67c4733079af3656e29887bbe82192d358",
+      "sha256": "0r60k10m03ag5w97g72n7p5777qy41by0c8r5rcryg3f3z40y0rs"
     },
     "fn": "fetchFromGitHub",
     "owner": "timbertson",
     "repo": "vdoml",
-    "rev": "ed2a6071483dbdf63398ffb5b3aabd30a298462b",
+    "rev": "3105fd67c4733079af3656e29887bbe82192d358",
     "type": "fetchFromGitHub"
   }
 }

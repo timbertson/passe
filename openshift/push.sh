@@ -2,6 +2,7 @@
 
 set -eux
 set -o pipefail
+gup image
 cluster="starter-us-west-1"
 user="$(oc whoami)"
 apikey="$(oc whoami -t)"
