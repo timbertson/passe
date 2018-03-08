@@ -1,5 +1,6 @@
 /_build/
 /src/mirage-*/_build/
+/src/www/res/
 *.install
 .merlin
 /_build.prod

@@ -3,7 +3,7 @@ set -eu
 base="$(dirname "$0")"
 
 installed=0
-targets="$(ls -1 "$base" | grep '\.install$' || true)"
+targets="$(find "$base/"_build/default -maxdepth 1 -type f -name '*.install')"
 if [ -z "$targets" ]; then
 	echo "Error: nothing to install - try building an .install file first"
 	exit 1

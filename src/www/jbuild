@@ -43,6 +43,17 @@
 	(action (run gup -u ${@}))
 ))
 
+; see https://github.com/ocaml/dune/issues/256#issuecomment-361242074
+(rule (
+	(targets (jbuild-res.inc.gen))
+	(action (run gup -u ${@}))
+))
+(alias (
+	(name jbuild-res.inc)
+	(action (diff jbuild-res.inc jbuild-res.inc.gen))
+))
+(include jbuild-res.inc)
+
 
 (alias (
 	(name all)

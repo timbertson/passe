@@ -7,7 +7,7 @@ builddir="$(dirname "$2")"
 obj="$builddir/main.native.o"
 
 if pkg-config --print-errors --exists mirage-xen 2>/dev/null; then
-	echo "Using global PKGCONFIG"
+	echo "Using global PKGCONFIG" >&2
 else
 	export PKG_CONFIG_PATH="$(opam config var prefix)/lib/pkgconfig"
 fi
