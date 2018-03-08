@@ -317,17 +317,17 @@ let view instance : state -> message Html.html =
 	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
 		let open Lwt in
 		let (_:unit Lwt.t) =
-			Lwt_js.yield () >>= fun () -> return (Selection.select elem) in
+			Lwt_js.yield () >>= fun () -> return (Dom_selection.select elem) in
 		()
 	) in
 	let select_element = handler (fun event ->
-		event |> Event.target |> Option.may Selection.select;
+		event |> Event.target |> Option.may Dom_selection.select;
 		Event.handled
 	) in
 	let update_selection = handler @@ Ui.bind instance (fun { generated_password; _ } e ->
 		generated_password |> Option.bind (fun { password; _ } ->
 			e##.target |> Js.Opt.to_option |> Option.map (fun target ->
-				let is_selected = Selection.is_fully_selected ~length:(String.length password) target in
+				let is_selected = Dom_selection.is_fully_selected ~length:(String.length password) target in
 				Event.return `Unhandled (`password_fully_selected is_selected)
 			)
 		) |> Event.optional
@@ -380,13 +380,13 @@ let view instance : state -> message Html.html =
 
 	let update_highlight () =
 		get_password_element () |> Option.may (fun elem ->
-			Ui.emit instance (`password_fully_selected (Selection.is_fully_selected elem))
+			Ui.emit instance (`password_fully_selected (Dom_selection.is_fully_selected elem))
 		)
 	in
 
 	let copy_generated_password = handler (fun _ ->
 		get_password_element () |> Option.map (fun elem ->
-			Selection.select elem;
+			Dom_selection.select elem;
 			Ui.emit instance (`password_fully_selected true);
 			match Clipboard.triggerCopy () with
 				| Some error ->
