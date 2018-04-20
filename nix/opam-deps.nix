@@ -4,10 +4,9 @@ let
 	vdoml = callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; };
 	ocamlAttr = "ocaml-ng.ocamlPackages_4_05.ocaml";
 	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix ocamlAttr; };
-	names = import (./opam-deps + "/${target}.nix" );
+	specs = opam2nix.toSpecs (import (./opam-deps + "/${target}.nix" ));
 	opamArgs = {
-		inherit ocamlAttr;
-		packages = names;
+		inherit ocamlAttr specs;
 		extraRepos = [
 			vdoml.opam2nix.repo
 			opam-installer.opam2nix.repo
@@ -90,7 +89,7 @@ let
 	};
 in
 rec {
-	inherit names opam2nix vdoml;
+	inherit specs opam2nix vdoml;
 	deps = opam2nix.build opamArgs;
 	selectionsFile = opam2nix.selectionsFileLax opamArgs;
 	selections = opam2nix.importSelectionsFile selectionsFile opamArgs;
