@@ -7,7 +7,7 @@ module Impl : Server.IMPL = struct
 	module Client = Cohttp_lwt_unix.Client
 	module Response = Cohttp_lwt_unix.Response
 	module Header = Cohttp.Header
-	module Body = Cohttp_lwt_body
+	module Body = Cohttp_lwt.Body
 
 	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-passe.a3c1.starter-us-west-1.openshiftapps.com/"
 	let root_url =
