@@ -1,8 +1,9 @@
-{target, pkgs, opam2nix }:
+let ocamlAttr = "ocaml-ng.ocamlPackages_4_05.ocaml"; in
+{target, pkgs, opam2nix,
+	vdoml ? pkgs.callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; }
+}:
 with pkgs;
 let
-	vdoml = callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; };
-	ocamlAttr = "ocaml-ng.ocamlPackages_4_05.ocaml";
 	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix ocamlAttr; };
 	specs = opam2nix.toSpecs (import (./opam-deps + "/${target}.nix" ));
 	opamArgs = {
@@ -25,11 +26,6 @@ let
 				commonOverrides = {
 					safepass = disableHardening (lib.overrideDerivation sels.safepass (o: {
 						buildInputs = o.buildInputs ++ [ pkgs.pkgconfig ];
-						src = ../../ocaml-safepass/nix/local.tgz;
-						# patches = [ ../../ocaml-safepass/mirage.diff ];
-						# configurePhase = ''
-						# 	sed -i -e 's/has_native_dynlink\ *:.*/has_native_dynlink:false/' setup.ml
-						# '';
 						installPhase = o.installPhase + '';
 							echo 'freestanding_linkopts = "-lsafepass_stubs"' >> $out/lib/safepass/META
 						'';

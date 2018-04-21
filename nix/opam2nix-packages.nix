@@ -1,13 +1,11 @@
-
-{ pkgs ? import <nixpkgs> {}, opam2nix ? null}:
-if opam2nix != null then opam2nix else (
-	with pkgs;
-	let
+{ pkgs ? import <nixpkgs> {}}:
+with pkgs;
+let
 		src = fetchgit {
 			"url" = "https://github.com/timbertson/opam2nix-packages.git";
 			"fetchSubmodules" = true;
-			"sha256" = "1siy7b82hfhmqzhzff5zmxzsdaw3xk0mpg2pliqhxjmii99sv2ky";
-			"rev" = "b2c769ea4218ac7e8f6a7d3f8be49693ba6bca13";
+			"sha256" = "17q31sm1g8yp9ax002nmmi07vmgkzarym0i3vljzhyp2nqb04dz7";
+			"rev" = "d85a6ae2f1b5f4e09696bee2ba572b800b7076c1";
 		};
 		opam2nixSrc = fetchgit {
 			"url" = "https://github.com/timbertson/opam2nix.git";
@@ -19,4 +17,3 @@ if opam2nix != null then opam2nix else (
 	callPackage "${src}/nix" {
 		opam2nixBin = callPackage "${opam2nixSrc}/nix" {};
 	}
-)

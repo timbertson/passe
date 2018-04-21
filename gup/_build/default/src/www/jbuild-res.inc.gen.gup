@@ -19,7 +19,7 @@ cat > "$1" <<EOF
 	(section share)
 	(files (
 $(echo "$files" | while read f; do
-	echo "		(\"$f\" as \"$f\")"
+	echo "		($f as $f)"
 done)
 	))
 ))

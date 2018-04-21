@@ -15,10 +15,10 @@ try:
 
 		return results
 
-	root = "../../../"
-	subprocess.check_call(["gup", "-u", root+'res/fonts', root+'res/images'])
+	res_root = '../../../../src/www/res'
+	subprocess.check_call(["gup", "-u", res_root+'/fonts', res_root+'/images'])
 
-	listed_sources = paths_in(root + "res") + [
+	listed_sources = paths_in(res_root) + [
 		"main.bc.js",
 		"style.css",
 	]

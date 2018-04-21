@@ -23,13 +23,6 @@ let
 	commonAttrs = {
 		inherit src;
 		name = "passe-${target}-${version}";
-		shellHook = ''
-			if ! which gup > /dev/null 2>&1; then
-				export PATH="$PWD/tools/bin:$PATH"
-			fi
-		'';
-
-		preConfigure = commonAttrs.shellHook;
 		buildPhase = ''
 			# hacky workaround for https://github.com/janestreet/jbuilder/issues/298:
 			# build the file, then pop it into the source tree.
@@ -48,6 +41,7 @@ let
 			selectionNames = lib.attrNames selections;
 		};
 		buildInputs = [
+			gup
 			coreutils
 			python
 			openssl
