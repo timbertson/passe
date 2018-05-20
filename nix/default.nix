@@ -1,8 +1,12 @@
-{ pkgs, opam2nix }:
-{ src,
-	version,
-	target,
+let defaultTarget = "devel"; in
+{ pkgs, lib,
+	nix-update-source,
+	opam2nix ? import ./opam2nix-packages.nix {},
+	target ? null
 }:
+
+let targetArg = target; in
+let target = pkgs.lib.findFirst (t: t != "" && t != null) defaultTarget [targetArg (builtins.getEnv "PASSE_TARGET")]; in
 with pkgs;
 let
 	targetParams =
@@ -53,8 +57,8 @@ let
 
 	makeTarget = target: { buildTargets, opamDepsFile, drvAttrs }:
 		stdenv.mkDerivation ({
-			inherit src;
-			name = "passe-${target}-${version}";
+			inherit (nix-update-source.fetch ./src.json) src;
+			name = "passe-${target}";
 			buildPhase = ''
 				# hacky workaround for https://github.com/janestreet/jbuilder/issues/298:
 				# build the file, then pop it into the source tree.

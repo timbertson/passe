@@ -1,0 +1,16 @@
+{
+  "fetch": {
+    "args": {
+      "owner": "timbertson",
+      "repo": "passe",
+      "rev": "master",
+      "sha256": "0rdpxmy945h4gn4xdvkk5j4iwcvwbxsc1y8p68pjb722ysrpgf0v"
+    },
+    "fn": "fetchFromGitHub",
+    "version": "0.1.1"
+  },
+  "owner": "timbertson",
+  "repo": "passe",
+  "rev": "master",
+  "type": "fetchFromGitHub"
+}
