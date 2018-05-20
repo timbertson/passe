@@ -4,7 +4,7 @@
 
 <img src="http://gfxmonk.net/dist/status/project/passe.png">
 
-There is a public instance running at [https://passe.gfxmonk.net/](https://passe.gfxmonk.net/),
+There is a public instance running on [openshift](https://passe-passe.a3c1.starter-us-west-1.openshiftapps.com/),
 but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
 
