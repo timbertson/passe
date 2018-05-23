@@ -39,14 +39,14 @@ let is_fully_selected ?length node =
 		else false
 	end else false
 
+let deselect () =
+	doc##getSelection##removeAllRanges
+
 let select node =
+	deselect ();
 	let sel = doc##getSelection in
 	let range = doc##createRange in
 	let node = (node :> #Dom.node Js.t) in
 	range##selectNodeContents node;
-	sel##removeAllRanges;
 	sel##addRange range
-
-let deselect () =
-	doc##getSelection##removeAllRanges
 

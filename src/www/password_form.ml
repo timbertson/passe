@@ -372,10 +372,27 @@ let view instance : state -> message Html.html =
 		) |> Event.optional
 	) in
 
-	let get_password_element () =
-		let sel = "#"^password_element_id in
-		Dom_html.document##.documentElement##querySelector (Js.string sel)
-			|> Js.Opt.to_option
+	let query_selector sel =
+		Dom_html.document##.documentElement##querySelector (Js.string sel) |> Js.Opt.to_option
+	in
+
+	let get_password_element () = query_selector ("#"^password_element_id) in
+
+	let with_no_selected_inputs: 'a. (unit -> 'a) -> 'a = fun fn ->
+		let initial = query_selector "input:focus" |> Option.map Dom_html.CoerceTo.input |> Option.bind Js.Opt.to_option in
+		match initial with
+			| None -> fn ()
+			| Some initial ->
+				let restore () = initial##focus in
+				initial##blur;
+				try (
+					let result = fn () in
+					restore ();
+					result
+				) with err -> (
+					restore ();
+					raise err
+				)
 	in
 
 	let update_highlight () =
@@ -386,16 +403,18 @@ let view instance : state -> message Html.html =
 
 	let copy_generated_password = handler (fun _ ->
 		get_password_element () |> Option.map (fun elem ->
-			Dom_selection.select elem;
-			Ui.emit instance (`password_fully_selected true);
-			match Clipboard.triggerCopy () with
-				| Some error ->
-					Log.err (fun m->m "%s" error);
-					Event.handle (`clipboard_supported false)
-				| None ->
-					(* give a bit of UI feedback in the default case that the
-					 * selection has been copied *)
-					Event.handle (`clear `password)
+			with_no_selected_inputs (fun () ->
+				Dom_selection.select elem;
+				Ui.emit instance (`password_fully_selected true);
+				match Clipboard.triggerCopy () with
+					| Some error ->
+						Log.err (fun m->m "%s" error);
+						Event.handle (`clipboard_supported false)
+					| None ->
+						(* give a bit of UI feedback in the default case that the
+						 * selection has been copied *)
+						Event.handle (`clear `password)
+			)
 		) |> Event.optional
 	) in
 
