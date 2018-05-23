@@ -3,8 +3,9 @@ set -eu
 dest="$1"
 gup --always
 cd ..
-installfile=passe-server.install
-gup -u "$installfile"
+installfile=_build/default/passe-server.install
+pwd
+jbuilder build "$installfile"
 opam-installer "$installfile" --prefix="$dest.full"
 mv "$dest.full/share/passe-server" "$dest"
 rm -r "$dest.full"

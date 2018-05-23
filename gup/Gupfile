@@ -9,4 +9,3 @@ gup-delegate:
 	res
 	mirage-xen
 	mirage-unix
-	passe.install
