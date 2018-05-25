@@ -32,20 +32,23 @@ let html ~implicit_auth ~offline_access () : html =
 
 	let script = ("\
 		window.PasseEnv = " ^ passe_env_json  ^ ";\n\
-		window.onerror = function(e) {\n\
-			console.error(e);\n\
-			var e = document.getElementById('main');\n\
-			e.innerHTML = '';\n\
+		window.onerror = function(error) {\n\
+			console.error(error);\n\
+			var elem = document.getElementById('main');\n\
+			elem.innerHTML = '';\n\
 \n\
+			var outer = document.createElement('div');\n\
+			outer.setAttribute('class', 'uncaught-error');\n
+			elem.appendChild(outer);\n\
 			var tag = function(name, text) {\n\
 				var node=document.createElement(name);\n\
 				node.appendChild(document.createTextNode(text));\n\
-				e.appendChild(node);\n\
+				outer.appendChild(node);\n\
 			};\n\
 \n\
 			tag('h1', 'Uncaught Error');\n\
 			tag('p', 'Sorry, an uncaught error occurred:');\n\
-			tag('p', String(e));\n\
+			tag('p', String(error));\n\
 			tag('p', 'Please reload the page to try again');\n\
 		}\
 	") in
