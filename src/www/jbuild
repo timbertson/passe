@@ -8,7 +8,8 @@
 		js_of_ocaml
 		js_of_ocaml-lwt
 		js_of_ocaml.weak
-		passe_client
+		passe
+		lwt_react
 		vdoml
 	))
 
