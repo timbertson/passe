@@ -23,3 +23,9 @@ let with_global_listeners builder =
 		events := []
 	in
 	fun node -> Vdoml.Ui.hook ~create ~destroy node
+
+let eqeqeq (type a) (type b): a Js.t -> b Js.t -> bool = fun a b ->
+(* let eqeqeq: 'a 'b. 'a Js.t -> 'b Js.t -> bool Js.t = *)
+	let open Js.Unsafe in
+	let fn = js_expr "(function(a, b) { return a == b; })" in
+	fun_call fn [|inject a; inject b|] |> Js.to_bool

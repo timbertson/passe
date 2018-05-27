@@ -112,8 +112,8 @@ type message = [
 	| `domain of string
 	| `clear of input_target
 	| `cancel
-	| `blur of input_target
-	| `focus of input_target
+	| `track_blur of input_target
+	| `track_focus of input_target
 	| `window_blur
 	| `window_focus
 	| `accept_suggestion of string
@@ -136,8 +136,8 @@ let string_of_message : message -> string = function
 	| `domain domain -> "`domain " ^ domain
 	| `clear target -> "`clear " ^ (string_of_target target)
 	| `cancel -> "`cancel"
-	| `blur target -> "`blur " ^ (string_of_target target)
-	| `focus target -> "`focus " ^ (string_of_target target)
+	| `track_blur target -> "`track_blur " ^ (string_of_target target)
+	| `track_focus target -> "`track_focus " ^ (string_of_target target)
 	| `window_blur -> "`window_blur"
 	| `window_focus -> "`window_focus"
 	| `db_changed _ -> "`db_changed"
@@ -189,7 +189,7 @@ let update : state -> message -> state =
 		| `clear `password -> update state (`master_password "") |> select_input `password
 		| `clear `domain -> update state (`domain "") |> select_input `domain
 		| `cancel ->
-			let update_with_focus target msg = update (update state (`focus target)) msg in
+			let update_with_focus target msg = update (update state (`track_focus target)) msg in
 			if state.generated_password <> None then
 				update_with_focus `password (`clear `password)
 			else
@@ -197,12 +197,12 @@ let update : state -> message -> state =
 					then update_with_focus `domain (`clear `domain)
 					else update_with_focus `password (`master_password "")
 
-		| `focus dest -> { state with active_input = Some dest }
-		| `blur dest ->
+		| `track_focus dest -> { state with active_input = Some dest }
+		| `track_blur dest ->
 				if state.active_input = Some dest
 					then { state with active_input = None }
 					else (
-						Log.debug (fun m->m "received blur for %s, but active_input = %s"
+						Log.debug (fun m->m "received track_blur for %s, but active_input = %s"
 							(string_of_target dest)
 							(Option.to_string string_of_target state.active_input)
 						);
@@ -251,7 +251,7 @@ let update : state -> message -> state =
 				{ password with visible = not password.visible }
 			)
 		| `generate_password ->
-			{ state with generated_password = Some {
+			{ state with active_input = None; generated_password = Some {
 				password = Password.generate
 					~domain:(Domain_form.current_of_state state.domain_form)
 					state.master_password;
@@ -289,7 +289,7 @@ let command ~sync ~emit =
 		| `window_blur when state.generated_password <> None ->
 			Log.debug (fun m->m "window blurred; clearing pwd in %fs" blur_timeout);
 			Some (timeout_generated_password true)
-		| `window_focus | `master_password _ | `domain _ | `focus _ ->
+		| `window_focus | `master_password _ | `domain _ | `track_focus _ ->
 			Log.debug (fun m->m "window back in focus or change made; clearing timeout");
 			Some (timeout_generated_password false)
 
@@ -306,22 +306,29 @@ let view instance : state -> message Html.html =
 	let track_master_password = track_input_contents (fun text -> `master_password text) in
 	let track_domain_text = track_input_contents (fun text -> `domain text) in
 	let on_submit_password = handler (fun e ->
-		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
 			if Keycode.of_event e = Keycode.Enter
-				then (
-					let input = Opt.bind e##.currentTarget (Dom_html.CoerceTo.input) in
-					(* if `input` maintains focus, ctrl+c doesn't copy the now-selected password form *)
-					Opt.iter input (fun input -> input##blur);
-					Some (Event.handle `generate_password)
-				)
+				then Some (Event.handle `generate_password)
 				else None
 		) |> Event.optional
 	) in
-	let focus = a_dynamic "data-focus" (fun elem _attr ->
-		Log.debug (fun m->m"focusing elment");
-		Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus)
-	) in
+	let apply_focus_state =
+		let ensure_focus = (fun elem _attr ->
+			Log.debug (fun m->m"focusing elment");
+			Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem -> elem##focus)
+		) in
+		let ensure_blur = (fun elem _attr ->
+			Js.Opt.iter (Dom_html.CoerceTo.input elem) (fun elem ->
+				if eqeqeq elem (Js.Unsafe.get Dom_html.document "activeElement") then (
+					Log.debug (fun m->m"blurring elment");
+					elem##blur
+				)
+			)
+		) in
+		fun field state ->
+			let action = if state.active_input = (Some field) then ensure_focus else ensure_blur in
+			a_dynamic "data-focus" action
+	in
 	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
 		let open Lwt in
 		let (_:unit Lwt.t) =
@@ -450,7 +457,7 @@ let view instance : state -> message Html.html =
 	) in
 
 	(fun state ->
-		let { domain; master_password; active_input; domain_suggestions; _ } = state in
+		let { domain; master_password; domain_suggestions; _ } = state in
 		let no_input_coersion = [
 			a_attr "autocomplete" "off";
 			a_attr "autocorrect" "off";
@@ -458,8 +465,8 @@ let view instance : state -> message Html.html =
 		] in
 
 		let track_focus dest = [
-			a_onblur @@ emitter (`blur dest);
-			a_onfocus @@ emitter (`focus dest);
+			a_onblur @@ emitter (`track_blur dest);
+			a_onfocus @@ emitter (`track_focus dest);
 		] in
 
 		let domain_input = input ~a:([
@@ -471,7 +478,7 @@ let view instance : state -> message Html.html =
 			a_oninput track_domain_text;
 			a_onkeydown domain_keydown;
 			a_name "domain";
-			(if active_input = Some `domain then focus else None);
+			apply_focus_state `domain state;
 		] @ no_input_coersion @ track_focus `domain) () in
 
 		let password_input = input ~a:([
@@ -481,7 +488,7 @@ let view instance : state -> message Html.html =
 			a_oninput track_master_password;
 			a_onkeydown on_submit_password;
 			a_value master_password;
-			(if active_input = Some `password then focus else None);
+			apply_focus_state `password state;
 		] @ no_input_coersion @ track_focus `password) () in
 
 		let clear_btn ?right target : message html =
