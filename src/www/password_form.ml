@@ -189,12 +189,14 @@ let update : state -> message -> state =
 		| `clear `password -> update state (`master_password "") |> select_input `password
 		| `clear `domain -> update state (`domain "") |> select_input `domain
 		| `cancel ->
+			let update_with_focus target msg = update (update state (`focus target)) msg in
 			if state.generated_password <> None then
-				update state (`clear `password)
+				update_with_focus `password (`clear `password)
 			else
 				if state.master_password = "" && state.active_input = Some `password
-					then update state (`clear `domain)
-					else update state (`master_password "")
+					then update_with_focus `domain (`clear `domain)
+					else update_with_focus `password (`master_password "")
+
 		| `focus dest -> { state with active_input = Some dest }
 		| `blur dest ->
 				if state.active_input = Some dest
@@ -303,10 +305,16 @@ let view instance : state -> message Html.html =
 	incr id_counter;
 	let track_master_password = track_input_contents (fun text -> `master_password text) in
 	let track_domain_text = track_input_contents (fun text -> `domain text) in
-	let submit_on_return = handler (fun e ->
+	let on_submit_password = handler (fun e ->
+		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
 			if Keycode.of_event e = Keycode.Enter
-				then Some (Event.handle `generate_password)
+				then (
+					let input = Opt.bind e##.currentTarget (Dom_html.CoerceTo.input) in
+					(* if `input` maintains focus, ctrl+c doesn't copy the now-selected password form *)
+					Opt.iter input (fun input -> input##blur);
+					Some (Event.handle `generate_password)
+				)
 				else None
 		) |> Event.optional
 	) in
@@ -471,7 +479,7 @@ let view instance : state -> message Html.html =
 			a_input_type `Password;
 			a_name "password";
 			a_oninput track_master_password;
-			a_onkeydown submit_on_return;
+			a_onkeydown on_submit_password;
 			a_value master_password;
 			(if active_input = Some `password then focus else None);
 		] @ no_input_coersion @ track_focus `password) () in
