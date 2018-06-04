@@ -5,3 +5,4 @@ add app/bin /app/bin
 add app/share /app/share
 volume /data
 cmd /app/bin/run.sh
+expose 2055

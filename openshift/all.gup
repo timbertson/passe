@@ -4,10 +4,7 @@ gup --always
 gup -u "../all"
 
 rm -rf "./app"
-../install.sh ./app
-
-# remove client binary
-rm -r app/bin/passe
+../install.sh ./app passe-server.install
 
 cp run.sh app/bin/
 
