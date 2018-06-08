@@ -121,6 +121,11 @@ let main () =
 	let log_level = Logging.(apply_verbosity (default_verbosity + !verbosity)) in
 	Logs.(app (fun m -> m " ( Log level: %a )" pp_level log_level));
 	Logs.debug log_version;
+
+	Lwt.async_exception_hook := (fun ex ->
+		Logs.err (fun m->m "ERROR: Uncaught exception from LWT: %s" (Printexc.to_string ex))
+	);
+
 	let document_root = Opt.get document_root in
 	let data_root = Opt.get data_root in
 

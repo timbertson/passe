@@ -6,5 +6,5 @@ exec /app/lib/ld.so \
 	--host 0.0.0.0 \
 	--data /data \
 	--timestamp \
-	-vv \
+	-v \
 	;
