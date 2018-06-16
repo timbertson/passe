@@ -45,7 +45,7 @@ let output_password ~use_clipboard ~term ~domain text =
 module Input_map = Zed_input.Make(LTerm_key)
 
 let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
-	let open CamomileLibraryDyn.Camomile in (* ??? *)
+	let open CamomileLibraryDefault.Camomile in (* ??? *)
 	let frame = new LTerm_widget.vbox in
 
 	let add_field ~label initial =

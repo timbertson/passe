@@ -83,11 +83,12 @@ let
 			lib.overrideExisting sels (commonOverrides // (if target == "mirage-xen" then xenOverrides else {}));
 		};
 	};
-in
-rec {
-	inherit specs opam2nix vdoml;
+
 	deps = opam2nix.build opamArgs;
 	selectionsFile = opam2nix.selectionsFileLax opamArgs;
-	selections = opam2nix.importSelectionsFile selectionsFile opamArgs;
+	selections = opam2nix.importSelectionsFileLax selectionsFile opamArgs;
+in
+{
+	inherit specs opam2nix vdoml deps selectionsFile selections;
 }
 

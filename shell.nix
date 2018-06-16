@@ -5,7 +5,7 @@ let
 	sandstormPackages = import /home/tim/dev/nix/sandstorm/deps.nix { inherit pkgs; };
 in
 lib.overrideDerivation (
-		callPackage ./nix/default.nix {
+		(nix-pin.api {}).callPackage ./nix/default.nix {
 			inherit target;
 		}
 	) (orig: {
