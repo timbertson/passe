@@ -21,10 +21,7 @@
 (rule (
 	(fallback)
 	(targets (version.ml))
-	(deps (
-		(file ${SCOPE_ROOT}/../../.git/HEAD)
-		(files_recursively_in ${SCOPE_ROOT}/../../.git/refs/heads)
-	))
+	(deps ((universe)))
 	(action (run gup -u ${@}))
 ))
 

@@ -60,12 +60,6 @@ let
 			inherit (nix-update-source.fetch ./src.json) src;
 			name = "passe-${target}";
 			buildPhase = ''
-				# hacky workaround for https://github.com/janestreet/jbuilder/issues/298:
-				# build the file, then pop it into the source tree.
-				# In the future jbuilder may complain about this, and we'll need to remove the version.ml rule entirely :(
-				gup _build/default/src/common/version.ml
-				cp _build/default/src/common/version.ml src/common/version.ml
-
 				echo "building passe ${target} (gup ${lib.concatStringsSep " " buildTargets})..."
 				gup ${lib.concatStringsSep " " buildTargets}
 			'';
