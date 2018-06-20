@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -eu
 [ -n "$PASSE_TARGET" ]
-bash <(curl -sS https://gist.githubusercontent.com/timbertson/f643b8ae3a175ba8da7f/raw/travis-nix-bootstrap.sh)
-source $HOME/.nix-profile/etc/profile.d/nix.sh
 
 # first, run a nix-shell to check dependencies
 # (verbose; so we only log it if it fails)

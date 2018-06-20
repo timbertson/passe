@@ -1,3 +1,4 @@
+language: nix
 env:
  - PASSE_TARGET=client
  - PASSE_TARGET=server
