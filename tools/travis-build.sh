@@ -4,7 +4,6 @@ set -eu
 bash <(curl -sS https://gist.githubusercontent.com/timbertson/f643b8ae3a175ba8da7f/raw/travis-nix-bootstrap.sh)
 source $HOME/.nix-profile/etc/profile.d/nix.sh
 
-tools/bin/gup -u nix/local.tgz
 # first, run a nix-shell to check dependencies
 # (verbose; so we only log it if it fails)
 if ! nix-shell --show-trace --run true >log 2>&1; then
@@ -15,7 +14,10 @@ fi
 # dependencies OK; run a build
 set +x
 function build {
-	nix-build --show-trace
+	NIX_PIN="$(nix-build --no-out-link '<nixpkgs>' -A 'nix-pin')/bin/nix-pin"
+	"$NIX_PIN" status | grep -q passe || "$NIX_PIN" create passe .
+	"$NIX_PIN" build
+	"$NIX_PIN" build --show-trace
 	echo "== Built files:"
 	ls -lR result/
 }

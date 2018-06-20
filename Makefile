@@ -4,9 +4,6 @@ GUP=tools/bin/gup
 all: phony ${GUP}
 	@+${GUP} all
 
-result: phony nix/local.tgz
-	nix-build --show-trace
-
 # Catch-all target which delgates to `gup`
 %: phony ${GUP}
 	@+${GUP} $@
