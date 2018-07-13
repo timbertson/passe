@@ -103,24 +103,30 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 				| Ok unix_path ->
 					Log.debug (fun m->m "Reading file stream: %a" Path.pp path);
 					let offset = ref 0 in
+					let eof = ref false in
 					let max_chunk_size = 4096 in
 					(Lwt_stream.from (fun () ->
-						Fs.read fs unix_path !offset max_chunk_size >>= (function
-							| Error err -> return (Some (Error err))
-							| Ok chunks ->
-								let initial_offset = !offset in
-								let chunks = chunks |> List.map (fun chunk ->
-									offset := !offset + (Cstruct.len chunk);
-									Cstruct.to_string chunk
-								) in
-								Log.debug (fun m->
-									let len = !offset - initial_offset in
-									m "read %d chunks from %a[%d] => %db" (List.length chunks) Path.pp path !offset len
-								);
-								let result = if chunks = []
-									then None
-									else (Some (Ok (String.concat "" chunks))) in
-								return result
+						Log.warn (fun m->m "reading at offset: %d" !offset);
+						if !eof then (return None) else (
+							Fs.read fs unix_path !offset max_chunk_size >>= (function
+								| Error err ->
+										eof := true;
+										return (Some (Error err))
+								| Ok chunks ->
+									let initial_offset = !offset in
+									let chunks = chunks |> List.map (fun chunk ->
+										offset := !offset + (Cstruct.len chunk);
+										Cstruct.to_string chunk
+									) in
+									Log.debug (fun m->
+										let len = !offset - initial_offset in
+										m "read %d chunks from %a[%d] => %db" (List.length chunks) Path.pp path !offset len
+									);
+									let result = if chunks = []
+										then None
+										else (Some (Ok (String.concat "" chunks))) in
+									return result
+								)
 						)
 					))
 			in

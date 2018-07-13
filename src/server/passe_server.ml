@@ -62,7 +62,7 @@ let start_server ~host ~port ~development ~document_root ~data_root () =
 	let config = HTTP.make ~callback ~conn_closed () in
 	let mode = `TCP (`Port port) in
 	let%lwt ctx = Conduit_lwt_unix.init ~src:host () in
-	let ctx = Cohttp_lwt_unix_net.init ~ctx () in
+	let ctx = Cohttp_lwt_unix.Net.init ~ctx () in
 	HTTP.create ~ctx ~mode config
 
 

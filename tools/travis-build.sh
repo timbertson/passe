@@ -2,22 +2,43 @@
 set -eu
 [ -n "$PASSE_TARGET" ]
 
-# first, run a nix-shell to check dependencies
-# (verbose; so we only log it if it fails)
-if ! nix-shell --show-trace --run true >log 2>&1; then
-	tail -n500 log
-	exit 1
+if [ "$TRAVIS" = true -a -n "$CACHIX_AUTH" ]; then
+	echo "Setting up cachix..."
+	nix-env -if https://github.com/cachix/cachix/tarball/master \
+		--substituters https://cachix.cachix.org \
+		--trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM='
+	cachix authtoken "$CACHIX_AUTH"
+	cachix use timbertson
+	cachix push timbertson -w &
+	cachix_pid=$!
+	function cachix_wait() {
+		status=$?
+		set +x
+		kill "$cachix_pid"
+		wait "$cachix_pid" || true
+		exit "$status"
+	}
+	trap cachix_wait EXIT
 fi
 
-# dependencies OK; run a build
-set +x
+
+NIX_PIN="$(nix-build --no-out-link '<nixpkgs>' -A 'nix-pin')/bin/nix-pin"
+export NTH_LINE=20
+export SUMMARIZE='stderr'
+
+set -x
+"$NIX_PIN" create passe . --path nix/default.nix
+
 function build {
-	NIX_PIN="$(nix-build --no-out-link '<nixpkgs>' -A 'nix-pin')/bin/nix-pin"
-	"$NIX_PIN" status | grep -q passe || "$NIX_PIN" create passe .
-	"$NIX_PIN" build
-	"$NIX_PIN" build --show-trace
+	python <(curl -sSL 'https://gist.githubusercontent.com/timbertson/0fe86d8208146232bf0931a525cd9a9f/raw/long-output.py') \
+		"$NIX_PIN" build --show-trace
 	echo "== Built files:"
-	ls -lR result/
+	find result/
+}
+
+function shell {
+	python <(curl -sSL 'https://gist.githubusercontent.com/timbertson/0fe86d8208146232bf0931a525cd9a9f/raw/long-output.py') \
+		"$NIX_PIN" shell "$@"
 }
 
 set -x
@@ -32,10 +53,11 @@ case "$PASSE_TARGET" in
 		./result/bin/passe --help >/dev/null
 		;;
 	devel)
-		nix-shell --pure --run "gup test"
+		build
+		shell --pure --run "gup -x test"
 		;;
 	mirage-*)
-		# no mirage tests yet
+		# no mirage tests yet; just check it builds
 		;;
 	*)
 		echo "Error:  unknown $PASSE_TARGET"

@@ -44,12 +44,17 @@ let
 
 	wwwVars =
 		let
-			nodeEnv = pkgs.callPackage ./node-env.nix {};
+			nodeEnv = let base = pkgs.callPackage ./node-env.nix {}; in base // {
+				# never NPM install, it can only cause you sadness
+				buildNodePackage = args: base.buildNodePackage (args // { dontNpmInstall = true; });
+			};
 			npm_deps = (pkgs.callPackage ./npm-deps.nix { inherit nodeEnv; });
 			nodePath = pkg: "${pkg}/lib/node_modules";
 			bootstrap = npm_deps."bootstrap-3.2.0";
+			# lesscPath = "bin/lessc";
+			lesscPath = "lib/node_modules/less/bin/lessc"; # This is weird, no idea if it's temporary :shrug:
 		in with npm_deps; {
-		LESSC = "${less}/bin/lessc";
+		LESSC = "${less}/${lesscPath}";
 		TWITTER_BOOTSTRAP = "${nodePath bootstrap}/bootstrap";
 		NODE_PATH = lib.concatMapStringsSep ":" nodePath [ less less-plugin-clean-css bootstrap ];
 		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
@@ -72,6 +77,7 @@ let
 			};
 			buildInputs = [
 				gup
+				git
 				coreutils
 				python
 				openssl

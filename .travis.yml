@@ -1,15 +1,26 @@
 language: nix
 env:
- - PASSE_TARGET=client
- - PASSE_TARGET=server
- - PASSE_TARGET=devel
- - PASSE_TARGET=mirage-unix
- - PASSE_TARGET=mirage-xen
+  global:
+    - secure: EF09txaJduuIokWVUmWVyaqYeuZgBFDX4MYB2NzggbFDSg6eE7mZegY8Q67FilpDoOs9jtXzlZar2j1U0W7TJjaoKsmGbvIr90fNdMvA+3Wdnsq5IRg4H4xq7RdbXA/hfhJ2htsFdT/buY7xyg29OdNj5hmtB6CCYNaY0wXrX5E=
+    - secure: EDFc9a48oOgXm/eaIGoH0WxlEKOnJckOny17IekAYMi3mWxk/IBv7IsVekl3MRJlays/gAozQ09Q4cFB2xRHXDF1Dnoa11aYES8PYaIMY/LebWaF4im8jXWpgHd2/LgQiCJRdrXMMPpau0Klq4Gw5wWdoD9vkmrQHQGiUqdUzX8=
+  matrix:
+    - PASSE_TARGET=client
+    - PASSE_TARGET=server
+    - PASSE_TARGET=mirage-unix
+    - PASSE_TARGET=mirage-xen
+stages:
+  - compile
+  - test
+jobs:
+  include:
+    stage: compile
+    env:
+      - PASSE_TARGET=devel
 matrix:
   allow_failures:
-  - env: PASSE_TARGET=mirage-unix
-  - env: PASSE_TARGET=mirage-xen
+    - env: PASSE_TARGET=mirage-unix
+    - env: PASSE_TARGET=mirage-xen
 script:
- - "tools/travis-build.sh"
+- tools/travis-build.sh
 notifications:
   email: false

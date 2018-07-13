@@ -7,14 +7,16 @@
 	(flags (:include ../flags))
 	(libraries (
 		extlib
+		hex
+		mirage-clock-unix
+		mirage-fs-unix
+		mirage-types
+		nocrypto
+		nocrypto.lwt
 		passe
 		passe_unix
-		hex
-		mirage-fs-unix
-		mirage-clock-unix
-		safepass
-		mirage-types
 		ptime
+		safepass
 	))
 	(modules (:standard \ main))
 	(preprocess (pps (lwt.ppx)))

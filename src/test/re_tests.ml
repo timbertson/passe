@@ -2,7 +2,7 @@ open Test_common
 open OUnit2
 
 (* TODO: test JS version somehow *)
-open Passe.Re_native
+open Passe_unix.Re
 
 let assert_matches re s = B.assert_equal true (string_match re s)
 let assert_not_matches re s = B.assert_equal false (string_match re s)

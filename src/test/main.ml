@@ -88,7 +88,7 @@ let () =
 	else begin
 		let server_pid = (
 			let here = Filename.dirname Sys.argv.(0) in
-			let path = Filename.concat here "../../../tools/server" in
+			let path = Filename.concat here "../../../../tools/server" in
 			let open Unix in
 
 			let cmd = [| path; "-qq"; "--port"; string_of_int test_port; "--data"; temp_root|] in

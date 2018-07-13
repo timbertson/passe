@@ -1,8 +1,0 @@
-{ "name": "passe-deps"
-, "version": "0.1.0"
-, "dependencies":
-  { "bootstrap": "3.2.0"
-  , "less": "*"
-  , "less-plugin-clean-css": "*"
-  }
-}

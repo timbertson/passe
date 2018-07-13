@@ -3,14 +3,15 @@
     "args": {
       "owner": "timbertson",
       "repo": "passe",
-      "rev": "master",
-      "sha256": "0rdpxmy945h4gn4xdvkk5j4iwcvwbxsc1y8p68pjb722ysrpgf0v"
+      "rev": "a2ccbb86ce4d324aa97af7dff2402f5f2a204495",
+      "sha256": "097vv0g5lmjf1p8kfba9xibb9mz661x3dfmpvjc0h44w0wklfciv"
     },
     "fn": "fetchFromGitHub",
     "version": "0.1.1"
   },
+  "localRepo": "..",
   "owner": "timbertson",
   "repo": "passe",
-  "rev": "master",
+  "rev": "refs/heads/master",
   "type": "fetchFromGitHub"
 }

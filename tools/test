@@ -3,8 +3,8 @@ set -eu
 if [ "${GUP_XTRACE:-}" = 1 ]; then
 	set -x
 fi
-t="_build/native/test/main.byte"
-gup -u -j4 "$t"
+t="_build/default/src/test/main.exe"
+jbuilder build "$t"
 # we poke the server on test boundaries,
 # which requires the sequential runner
 # to make sure tests don't overlap

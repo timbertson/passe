@@ -4,6 +4,8 @@ open Common
 open Astring
 module Header = Cohttp.Header
 module Connection = Cohttp.Connection
+module Body = Cohttp_lwt.Body
+module Request = Cohttp.Request
 module J = Json_ext
 module Str = Re_str
 
@@ -72,10 +74,10 @@ module Make
 	module Data_res = Static.Fs(Fs)
 
 	module type AuthContext = sig
-		val validate_user : Auth.storage -> Cohttp.Request.t
+		val validate_user : Auth.storage -> Request.t
 			-> (Auth.User.t option, Fs.error) result Lwt.t
 
-		val implicit_user : Cohttp.Request.t
+		val implicit_user : Request.t
 			-> [`Anonymous | `Sandstorm_user of User.sandstorm_user] option
 
 		val offline_access : bool
@@ -86,7 +88,7 @@ module Make
 		let offline_access = false
 		let implicit_auth = true
 		let _validate_user req =
-			let headers = Cohttp.Request.headers req in
+			let headers = Request.headers req in
 			Header.get headers "X-Sandstorm-User-Id" |> Option.map (fun (id:string) ->
 				let name: string = Header.get headers "X-Sandstorm-Username" |> Option.force |> Uri.pct_decode in
 				`Sandstorm_user (User.sandstorm_user ~id ~name ())
@@ -111,7 +113,7 @@ module Make
 				| None -> return (Ok None)
 			in
 
-			let tok = Header.get (Cohttp.Request.headers req) "Authorization" |> Option.bind (fun tok ->
+			let tok = Header.get (Request.headers req) "Authorization" |> Option.bind (fun tok ->
 				let tok =
 					try Some (Str.split (Str.regexp " ") tok |> List.find (fun tok ->
 							Str.string_match (Str.regexp "t=") tok 0
@@ -261,7 +263,7 @@ module Make
 						"application/octet-stream"
 				) in
 
-				let client_etag = Header.get (Cohttp.Request.headers req) "if-none-match" in
+				let client_etag = Header.get (Request.headers req) "if-none-match" in
 				let headers = headers |> Option.default_fn Header.init
 					|> no_cache
 					|> maybe_add_header content_type_key content_type in
@@ -271,7 +273,7 @@ module Make
 					| _ -> false
 				then
 					Server.respond
-						~body:Cohttp_lwt_body.empty
+						~body:Body.empty
 						~headers
 						~status:`Not_modified ()
 				else (
@@ -280,7 +282,7 @@ module Make
 						Server.respond
 							~headers
 							~status:`OK
-							~body:(Cohttp_lwt_body.of_stream contents) ()
+							~body:(Body.of_stream contents) ()
 					) in
 					match response with
 						| Ok result -> return result
@@ -327,9 +329,9 @@ module Make
 		let storage = !user_db in
 
 		try%lwt
-			let uri = Cohttp.Request.uri req in
+			let uri = Request.uri req in
 			let path = Uri.path uri in
-			Log.debug (fun m->m "+ %s: %s" (string_of_method (Cohttp.Request.meth req)) path);
+			Log.debug (fun m->m "+ %s: %s" (string_of_method (Request.meth req)) path);
 			let path = normpath path in
 			let validate_user () = AuthContext.validate_user !user_db req in
 			let authorized fn =
@@ -346,7 +348,7 @@ module Make
 			in
 
 			let check_version () =
-				match Header.get (Cohttp.Request.headers req) "x-passe-version" with
+				match Header.get (Request.headers req) "x-passe-version" with
 					| None -> Log.debug (fun m->m "client did not provide a version - good luck!")
 					| Some client_version ->
 						(* this will be used when breaking format changes *)
@@ -354,7 +356,7 @@ module Make
 						()
 			in
 
-			match Cohttp.Request.meth req with
+			match Request.meth req with
 				| `GET -> (
 					match path with
 						| ["db"] ->
@@ -398,7 +400,7 @@ module Make
 				| `POST -> (
 					check_version ();
 					let _params = lazy (
-						let%lwt json = (Cohttp_lwt_body.to_string body) in
+						let%lwt json = (Body.to_string body) in
 						(* Log.debug (fun m->m "got body: %s" json); *)
 						return (J.from_string json)
 					) in
