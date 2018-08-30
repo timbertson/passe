@@ -214,13 +214,19 @@ let lterm_reporter term =
 	in
 	Lwt.return Logs.({ report = lterm_print })
 
-let main ~domain ~edit ~one_time ~use_clipboard ~env () =
+let main ~domain ~edit ~one_time ~use_clipboard ~length ~suffix ~env () =
 	let sync_state = Sync.build env in
 	let%lwt term = Lazy.force LTerm.stderr in
 	let%lwt reporter = lterm_reporter term in
 	Logging.set_reporter reporter;
 	let user_db () = S.value (sync_state.Sync.db_signal) in
 	let db_fallback () = S.value (sync_state.Sync.db_fallback) in
+	let with_overrides ~length ~suffix domain =
+		let domain = ref domain in
+		length |> Option.may (fun l -> domain := Store.{ !domain with length = l });
+		suffix |> Option.may (fun s -> domain := Store.{ !domain with suffix = Some(s) });
+		!domain
+	in
 
 	(* unbind default actions we don't want *)
 	Input_map.bindings !LTerm_edit.bindings |> List.iter (let open LTerm_key in function
@@ -317,6 +323,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~env () =
 			if edited then return ()
 			else exit 1
 		else begin
+			let domain = with_overrides ~length ~suffix domain in
 			Log.app (fun m->m " - Length: %d" domain.length);
 			begin match stored_domain with
 				| None ->

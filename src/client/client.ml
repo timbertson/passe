@@ -12,13 +12,13 @@ module Log = (val Logging.log_module "passe")
 let too_many_args () = raise @@ SafeError "too many arguments"
 
 module Actions = struct
-	let generate ~use_clipboard ~one_time ~edit env args =
+	let generate ~use_clipboard ~one_time ~edit ~length ~suffix env args =
 		let domain = match args with
 			| [] -> None
 			| [d] -> Some d
 			| _ -> too_many_args ()
 		in
-		Lwt_main.run (Ui.main ~domain ~edit ~one_time ~use_clipboard ~env ())
+		Lwt_main.run (Ui.main ~domain ~edit ~one_time ~use_clipboard ~env ~length ~suffix ())
 
 	let sync env args =
 		let () = match args with
@@ -99,6 +99,11 @@ struct
 	let list_only = StdOpt.store_true ()
 	let config = StdOpt.store_true ()
 	let edit = StdOpt.store_true ()
+
+	(* overrides *)
+	let length_override = StdOpt.int_option ()
+	let suffix_override = StdOpt.str_option ()
+
 	let action env posargs =
 		let log_level = Logging.apply_verbosity !verbosity in
 		Logs.(info (fun m -> m "Log level: %a" pp_level log_level));
@@ -113,6 +118,8 @@ struct
 			Actions.generate
 				~use_clipboard:(Opt.get use_clipboard)
 				~one_time:(Opt.get one_time)
+				~length:(Opt.opt length_override)
+				~suffix:(Opt.opt suffix_override)
 				~edit:(Opt.get edit) env posargs
 
 	open OptParser
@@ -124,6 +131,10 @@ struct
 		add options ~short_name:'q' ~long_name:"quiet" quiet;
 		add options ~short_name:'v' ~long_name:"verbose" verbose;
 		add options ~short_name:'l' ~long_name:"list" list_only;
+
+		add options ~long_name:"length" length_override;
+		add options ~long_name:"suffix" suffix_override;
+
 		add options ~long_name:"config" config;
 		add options ~short_name:'e' ~long_name:"edit" edit;
 		add options ~long_name:"sync" sync;
