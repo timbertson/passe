@@ -3,7 +3,6 @@
 	"hex"
 	"js_of_ocaml"
 	"jbuilder"
-	"lambda-term"
 	"logs"
 	{ name = "lwt"; constraint = ">=3.1.0"; }
 	"lwt_react"

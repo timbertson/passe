@@ -163,4 +163,7 @@ let main () =
 			env_initial_auth = `Explicit; (* TODO: support implicit in native client *)
 		} in
 		Options.action env posargs
-	with SafeError e -> (prerr_endline e; exit 1)
+	with
+		| SafeError e -> (prerr_endline e; exit 1)
+		| LTerm_read_line.Interrupt | Sys.Break -> exit 1
+		| e -> raise e

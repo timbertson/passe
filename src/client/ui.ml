@@ -342,13 +342,11 @@ let main ~domain ~edit ~one_time ~use_clipboard ~length ~suffix ~env () =
 		end
 	in
 
-
-	(try%lwt
+	Lwt.finalize (fun () ->
 		input_loop ~domain ()
-	with
-		| LTerm_read_line.Interrupt
-		| Sys.Break -> exit 1
-	) [%lwt.finally LTerm.flush term ]
+	) (fun () ->
+		LTerm.flush term
+	)
 
 let list_domains env domain =
 	let sync_state = Sync.build env in
