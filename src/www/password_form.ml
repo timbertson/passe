@@ -114,6 +114,7 @@ type message = [
 	| `cancel
 	| `track_blur of input_target
 	| `track_focus of input_target
+	| `focus_element of input_target (* explicit focus request *)
 	| `window_blur
 	| `window_focus
 	| `accept_suggestion of string
@@ -138,6 +139,7 @@ let string_of_message : message -> string = function
 	| `cancel -> "`cancel"
 	| `track_blur target -> "`track_blur " ^ (string_of_target target)
 	| `track_focus target -> "`track_focus " ^ (string_of_target target)
+	| `focus_element target -> "`focus_element " ^ (string_of_target target)
 	| `window_blur -> "`window_blur"
 	| `window_focus -> "`window_focus"
 	| `db_changed _ -> "`db_changed"
@@ -189,18 +191,18 @@ let update : state -> message -> state =
 		| `clear `password -> update state (`master_password "") |> select_input `password
 		| `clear `domain -> update state (`domain "") |> select_input `domain
 		| `cancel ->
-			let update_with_focus target msg = update (update state (`track_focus target)) msg in
+			let update_with_focus target msg = update (update state (`focus_element target)) msg in
 			if state.generated_password <> None then
 				update_with_focus `password (`clear `password)
 			else
-				if state.master_password = "" && state.active_input = Some `password
+				if state.master_password = ""
 					then update_with_focus `domain (`clear `domain)
 					else update_with_focus `password (`master_password "")
 
-		| `track_focus dest -> { state with active_input = Some dest }
+		| `track_focus dest | `focus_element dest -> { state with active_input = Some dest }
 		| `track_blur dest ->
 				if state.active_input = Some dest
-					then { state with active_input = None }
+					then { state with active_input = None; domain_suggestions = None }
 					else (
 						Log.debug (fun m->m "received track_blur for %s, but active_input = %s"
 							(string_of_target dest)
@@ -351,39 +353,36 @@ let view instance : state -> message Html.html =
 		Event.handle (`password_fully_selected true)
 	in
 	let domain_keydown = handler @@ Ui.bind instance (fun { domain_suggestions; _ } e ->
-		let open Js in
 		e |> Event.keyboard_event |> Option.bind (fun e ->
-			if Keycode.of_event e = Keycode.Escape then (
-				Some (Event.handle (`domain ""))
-			) else (
-				match Keycode.of_event e with
-					| Keycode.ArrowUp -> Some (Event.handle (`select_cursor `up))
-					| Keycode.ArrowDown -> Some (Event.handle (`select_cursor `down))
-					| code -> (
-						let select_current () =
-							domain_suggestions |> Option.bind (fun {suggestions; selected} ->
-								selected |> Option.bind (fun idx ->
-									try
-										let result = `accept_suggestion (List.nth suggestions idx) in
-										Log.debug (fun m->m "selecting item %d" idx);
-										Some (Event.handle result)
-									with Not_found -> (
-										Log.debug (fun m->m "can't select (no such item): %d" idx);
-										None
-									)
-								)
+			Log.debug (
+				fun m->
+					let str_opt v sub = (v |> Js.Optdef.to_option) |> Option.to_string sub in
+					m"Event code: %s, which = %s, keyCode = %s, key = %s"
+					(str_opt e##.code Js.to_string)
+					(str_opt e##.which string_of_int)
+					(string_of_int e##.keyCode)
+					(str_opt e##.key Js.to_string)
+			);
+			match Keycode.of_event e with
+				(* | Keycode.Enter -> Some (Event.handle (`focus_element `password)) *)
+				| Keycode.Escape -> Some (Event.handle (`domain ""))
+				| Keycode.ArrowUp -> Some (Event.handle (`select_cursor `up))
+				| Keycode.ArrowDown -> Some (Event.handle (`select_cursor `down))
+				| Keycode.Tab | Keycode.Enter -> Some (
+					domain_suggestions |> Option.bind (fun {suggestions; selected} ->
+						selected |> Option.bind (fun idx ->
+							try
+								let result = `accept_suggestion (List.nth suggestions idx) in
+								Log.debug (fun m->m "selecting item %d" idx);
+								Some (Event.handle result)
+							with Not_found -> (
+								Log.debug (fun m->m "can't select (no such item): %d" idx);
+								None
 							)
-						in
-						Optdef.iter e##.code (fun code ->
-							Log.debug (fun m->m "Processing key code %s" (Js.to_string code))
-						);
-						begin match code with
-							| Keycode.Tab -> select_current ()
-							| Keycode.Enter -> select_current ()
-							| _ -> Log.debug (fun m->m "ignoring unknown key code"); None
-						end
+						)
+					) |> Option.default (Event.handle (`focus_element `password))
 				)
-			)
+				| _ -> None
 		) |> Event.optional
 	) in
 
