@@ -1,7 +1,6 @@
 [
 	"cohttp"
 	"hex"
-	"js_of_ocaml"
 	"jbuilder"
 	"logs"
 	{ name = "lwt"; constraint = ">=3.1.0"; }

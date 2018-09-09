@@ -2,6 +2,7 @@ let defaultTarget = "devel"; in
 { pkgs, lib,
 	nix-update-source,
 	opam2nix ? import ./opam2nix-packages.nix {},
+	vdoml ? null,
 	target ? null
 }:
 
@@ -13,7 +14,7 @@ let
 		let
 			generic = target: {
 				buildTargets = ["www" target];
-				opamDepsFile = (import ./opam-deps.nix {inherit target pkgs opam2nix;});
+				opamDepsFile = (import ./opam-deps.nix {inherit target pkgs opam2nix vdoml;});
 				drvAttrs = wwwVars;
 			};
 		in

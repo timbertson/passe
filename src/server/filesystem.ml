@@ -106,7 +106,6 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 					let eof = ref false in
 					let max_chunk_size = 4096 in
 					(Lwt_stream.from (fun () ->
-						Log.warn (fun m->m "reading at offset: %d" !offset);
 						if !eof then (return None) else (
 							Fs.read fs unix_path !offset max_chunk_size >>= (function
 								| Error err ->

@@ -12,17 +12,15 @@
 		lwt_react
 		vdoml
 	))
-
+	(js_of_ocaml (
+		(flags (:standard --source-map --pretty))
+	))
 	(preprocess (pps (lwt.ppx js_of_ocaml.ppx)))
 ))
 
 (rule (
 	(targets (about.ml))
-	(deps (
-		(file ${SCOPE_ROOT}/../../README.md)
-		(file ${SCOPE_ROOT}/../../gup/_build/default/src/www/about.ml.gup)
-		(file ${SCOPE_ROOT}/../../gup/_build/default/src/www/about.md.gup)
-	))
+	(deps ((universe)))
 	(action (run gup -u ${@}))
 ))
 
@@ -40,7 +38,7 @@
 
 (rule (
 	(targets (res.files))
-	(deps (${SCOPE_ROOT}/../../gup/_build/default/src/www/res.files.gup (files_recursively_in ../../res)))
+	(deps ((universe)))
 	(action (run gup -u ${@}))
 ))
 
