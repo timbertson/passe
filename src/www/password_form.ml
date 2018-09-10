@@ -30,6 +30,11 @@ type state = {
 	domain_form : Domain_form.state;
 }
 
+let string_of_domain_suggestions { suggestions; selected } =
+	"{ suggestsions = (list of length " ^ (string_of_int (List.length suggestions)) ^ ")" ^
+	"; selected = " ^ (Option.to_string string_of_int selected) ^
+	"}"
+
 let string_of_generated_password { password; visible; fully_selected } =
 	"{ password = " ^ (mask_string password) ^
 	"; visible = " ^ (string_of_bool visible) ^
@@ -43,7 +48,7 @@ let string_of_target = function
 let string_of_state state =
 	"{ domain = " ^ (quote_string state.domain) ^
 	"; db = (...)" ^
-	"; domain_suggestions = (...)" ^
+	"; domain_suggestions = " ^ (Option.to_string string_of_domain_suggestions state.domain_suggestions) ^
 	"; master_password = " ^ (mask_string state.master_password) ^
 	"; generated_password = " ^ (Option.to_string string_of_generated_password state.generated_password) ^
 	"; active_input = " ^ (Option.to_string string_of_target state.active_input) ^
@@ -199,10 +204,11 @@ let update : state -> message -> state =
 					then update_with_focus `domain (`clear `domain)
 					else update_with_focus `password (`master_password "")
 
-		| `track_focus dest | `focus_element dest -> { state with active_input = Some dest }
+		| `track_focus dest | `focus_element dest ->
+				update_suggestions { state with active_input = Some dest }
 		| `track_blur dest ->
 				if state.active_input = Some dest
-					then { state with active_input = None; domain_suggestions = None }
+					then update_suggestions { state with active_input = None; domain_suggestions = None }
 					else (
 						Log.debug (fun m->m "received track_blur for %s, but active_input = %s"
 							(string_of_target dest)
