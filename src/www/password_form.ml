@@ -30,6 +30,9 @@ type state = {
 	domain_form : Domain_form.state;
 }
 
+let string_of_list string_of_item items =
+	"[" ^ (String.concat ", " (List.map string_of_item items)) ^ "]"
+
 let string_of_domain_suggestions { suggestions; selected } =
 	"{ suggestsions = (list of length " ^ (string_of_int (List.length suggestions)) ^ ")" ^
 	"; selected = " ^ (Option.to_string string_of_int selected) ^
@@ -113,6 +116,7 @@ let initial ((db, domain_form_state):external_state) domain_text =
 type direction = [ `up | `down ]
 
 type message = [
+	| `list of message list
 	| `master_password of string
 	| `domain of string
 	| `clear of input_target
@@ -137,7 +141,8 @@ let string_of_direction : direction -> string = function
 	| `up -> "`up"
 	| `down -> "`down"
 
-let string_of_message : message -> string = function
+let rec string_of_message : message -> string = function
+	| `list items -> "`list " ^ (string_of_list string_of_message items)
 	| `master_password password -> "`master_password " ^ (mask_string password)
 	| `domain domain -> "`domain " ^ domain
 	| `clear target -> "`clear " ^ (string_of_target target)
@@ -193,6 +198,7 @@ let update : state -> message -> state =
 	let select_input target state = { state with active_input = Some target } in
 
 	let rec update = (fun state -> function
+		| `list messages -> List.fold_left update state messages
 		| `clear `password -> update state (`master_password "") |> select_input `password
 		| `clear `domain -> update state (`domain "") |> select_input `domain
 		| `cancel ->
@@ -273,17 +279,21 @@ let update : state -> message -> state =
 	) in
 	update
 
-let command ~sync ~emit =
+let command ~show_debug ~sync ~emit =
 	let blur_timeout = 5.0 in
-	let timeout_generated_password = let open Lwt in Ui.supplantable (function
-		| false -> return_unit
-		| true ->
-			let%lwt () = Lwt_js.sleep blur_timeout in
-			Log.info (fun m->m "clearing generated password");
-			(* cancels this branch because the other one is waiting
-			 * on `password_input_data` changes *)
-			emit `cancel;
-			return_unit
+	let timeout_generated_password =
+		let open Lwt in
+		if show_debug then
+			(fun _ -> return_unit)
+		else Ui.supplantable (function
+			| false -> return_unit
+			| true ->
+				let%lwt () = Lwt_js.sleep blur_timeout in
+				Log.info (fun m->m "clearing generated password");
+				(* cancels this branch because the other one is waiting
+				 * on `password_input_data` changes *)
+				emit `cancel;
+				return_unit
 	) in
 
 	fun state msg -> match msg with
@@ -340,6 +350,8 @@ let view instance : state -> message Html.html =
 	let all_text_selected = a_dynamic "data-selected" (fun elem _attr ->
 		let open Lwt in
 		let (_:unit Lwt.t) =
+			(* attr is attached to element before the result is inserted into the document,
+			 * so delay until next tick *)
 			Lwt_js.yield () >>= fun () -> return (Dom_selection.select elem) in
 		()
 	) in
@@ -423,13 +435,13 @@ let view instance : state -> message Html.html =
 
 	let copy_generated_password = handler (fun _ ->
 		get_password_element () |> Option.map (fun elem ->
+			Log.debug (fun m->m"copying generated password");
 			with_no_selected_inputs (fun () ->
 				Dom_selection.select elem;
-				Ui.emit instance (`password_fully_selected true);
 				match Clipboard.triggerCopy () with
 					| Some error ->
 						Log.err (fun m->m "%s" error);
-						Event.handle (`clipboard_supported false)
+						Event.handle (`list [`clipboard_supported false; `password_fully_selected true])
 					| None ->
 						(* give a bit of UI feedback in the default case that the
 						 * selection has been copied *)

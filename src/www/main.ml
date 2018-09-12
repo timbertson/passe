@@ -187,10 +187,10 @@ let update ~sync ~storage_provider =
 		state
 	)
 
-let command ~sync instance =
+let command ~show_debug ~sync instance =
 	let do_async = Ui.async instance in
 	let sync_ui_command = Sync_ui.command ~sync ~do_async ~emit:(Ui.emit instance % sync_ui_message) in
-	let password_form_command = Password_form.command ~sync ~emit:(Ui.emit instance % password_form_message) in
+	let password_form_command = Password_form.command ~sync ~show_debug ~emit:(Ui.emit instance % password_form_message) in
 	(fun state message ->
 		match message with
 			| Sync msg -> sync_ui_command state.sync_state msg
@@ -294,7 +294,7 @@ let component ~show_debug ~tasks ~storage_provider (sync:Sync.state) =
 	let external_messages = external_state |> S.map external_messages in
 	let initial_state = initial ~show_debug (S.value external_state) in
 	let update = update ~sync ~storage_provider in
-	let command = command ~sync in
+	let command = command ~sync ~show_debug in
 
 	Ui.Tasks.async tasks (fun instance ->
 		external_messages |> S.changes |> Lwt_react.E.to_stream |> Lwt_stream.iter (fun messages ->
