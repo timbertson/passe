@@ -4,13 +4,11 @@ with pkgs;
 let _vdoml = if vdoml == null then pkgs.callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; } else vdoml; in
 let
 	vdoml = _vdoml;
-	opam-installer = callPackage ./opam-installer.nix { inherit opam2nix ocamlAttr; };
 	specs = opam2nix.toSpecs (import (./opam-deps + "/${target}.nix" ));
 	opamArgs = {
 		inherit ocamlAttr specs;
 		extraRepos = [
 			vdoml.opam2nix.repo
-			opam-installer.opam2nix.repo
 		];
 		# args = [ "--verbose" ];
 

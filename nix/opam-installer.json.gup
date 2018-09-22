@@ -1,9 +1,0 @@
-#!bash -eu
-"$(nix-build --no-out-link -A nix-update-source '<nixpkgs>')/bin/nix-update-source" \
-	-o "$1" \
-	--set type fetchFromGitHub \
-	--set repo opam \
-	--set owner timbertson \
-	--set rev "$(env GIT_DIR=$HOME/dev/ocaml/opam/.git git rev-parse tim/opam-installer-passe)" \
-;
-
