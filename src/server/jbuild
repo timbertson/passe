@@ -19,7 +19,7 @@
 		safepass
 	))
 	(modules (:standard \ main))
-	(preprocess (pps (lwt.ppx)))
+	(preprocess (pps (lwt_ppx)))
 ))
 
 (executable (

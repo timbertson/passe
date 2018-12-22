@@ -1,3 +1,3 @@
-true: debug, package(tcpip.tcpv4-socket,tcpip.udpv4-socket,astring,react, yojson, safepass, hex, lwt, lwt.ppx, mirage-http, lwt, mirage-runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix, astring)
+true: debug, package(tcpip.tcpv4-socket,tcpip.udpv4-socket,astring,react, yojson, safepass, hex, lwt, lwt_ppx, mirage-http, lwt, mirage-runtime, tcpip.stack-direct,tcpip.stack-socket,mirage-clock-unix,conduit.lwt-unix, astring)
 <src>: include
 ".configure": -traverse

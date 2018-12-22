@@ -13,9 +13,11 @@
 /*-local.xml
 /src/common/version.ml
 /src/common/domain_list.ml
+/nix/opam2nix-packages/overlay.nix
+/nix/opam2nix-packages/*.commit
+/nix/opam2nix-packages.gup
 /src/js/about.md
 /src/js/about.ml
-/nix/opam2nix-packages
 /nix/opam2nix
 /.sandstorm
 /openshift/app

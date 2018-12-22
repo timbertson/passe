@@ -15,7 +15,7 @@
 		react
 		yojson
 	))
-	(preprocess (pps (lwt.ppx)))
+	(preprocess (pps (lwt_ppx)))
 ))
 
 (rule (

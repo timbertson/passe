@@ -9,6 +9,6 @@
 		passe
 		passe_unix
 	))
-	(preprocess (pps (lwt.ppx)))
+	(preprocess (pps (lwt_ppx)))
 	(flags (:include ../flags))
 ))

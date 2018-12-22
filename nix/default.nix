@@ -1,7 +1,7 @@
 let defaultTarget = "devel"; in
 { pkgs, lib,
 	nix-update-source,
-	opam2nix ? import ./opam2nix-packages.nix {},
+	opam2nix ? import ./opam2nix-packages {},
 	vdoml ? null,
 	target ? null
 }:

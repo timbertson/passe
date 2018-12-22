@@ -5,6 +5,7 @@
 	"logs"
 	{ name = "lwt"; constraint = ">=3.1.0"; }
 	"lwt_react"
+	"lwt_ppx"
 	"mirage"
 	"mirage-clock-unix"
 	"mirage-fs-unix"

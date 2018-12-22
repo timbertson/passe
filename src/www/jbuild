@@ -15,7 +15,7 @@
 	(js_of_ocaml (
 		(flags (:standard --source-map --pretty))
 	))
-	(preprocess (pps (lwt.ppx js_of_ocaml.ppx)))
+	(preprocess (pps (lwt_ppx js_of_ocaml.ppx)))
 ))
 
 (rule (
