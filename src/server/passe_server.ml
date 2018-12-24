@@ -3,58 +3,48 @@ module Header = Cohttp.Header
 module Connection = Cohttp.Connection
 module J = Json_ext
 open Common
-
-let cwd = Unix.getcwd ()
-
-let abs p = if Filename.is_relative p
-	then Filename.concat cwd p
-	else p
-
-module HTTP = Cohttp_lwt_unix.Server
-
-module Fs = struct
-	include Filesystem.Make(FS_unix)(Filesystem_unix.Atomic)
-	let connect () = FS_unix.connect "/"
-end
-
-module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Fs)
-module Static_files = Static.Fs(Fs)
-module Version = Version.Make(Passe_unix.Re)
-module Unix_server = Service.Make(Version)(Pclock)(Static_files)(Fs)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re)
-open Unix_server
-module Timed_log = Timed_log.Make(Pclock)
 module Log = (val Logging.log_module "service")
 
-let start_server ~host ~port ~development ~document_root ~data_root () =
+module HTTP = Cohttp_lwt_unix.Server
+module Fs = Filesystem.Make(FS_unix)(Filesystem_unix.Atomic)
+
+module Kv_fs = Kv_store.Of_fs(Fs)
+module Version = Version.Make(Passe_unix.Re)
+module Timed_log = Timed_log.Make(Pclock)
+
+
+type data_source = [
+	| `Cloud_datastore of string
+	| `Fs of string
+]
+
+let start_server ~host ~port ~development ~document_root ~data_source () =
+	let (data_module, data_root) =
+		match data_source with
+			| `Cloud_datastore url -> (module Cloud_datastore: Kv_store.Sig), url
+			| `Fs root -> (module Kv_fs : Kv_store.Sig), root
+	in
+
+	let module Data = (val data_module) in
+	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
+	let module Static_files = Static.Store(Kv_fs) in
+	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
+
 	Log.info (fun m->m "Listening on: %s %d" host port);
-	let document_root = abs document_root
-	and data_root = abs data_root in
 	Log.info (fun m->m "Document root: %s" document_root);
 	Log.info (fun m->m "Data root: %s" data_root);
-	let document_root = Fs.Path.base document_root in
+	let static_store = Static_files.init (Kv_fs.connect document_root) in
+	let make_data_kv root = Data.connect (root |> Option.default data_root) in
 
+	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
-	let%lwt fs = Fs.connect () in
-	let%lwt clock = Pclock.connect () in
-
-	let dbdir = db_path_for ?user:None (Fs.Path.base data_root)
-		|> R.assert_ok string_of_invalid_path in
-	let%lwt () = Fs.mkdir fs dbdir |> Lwt.map (function
-		| Ok () | Error `File_already_exists -> ()
-		| Error e -> failwith (Printf.sprintf "Couldn't create dbdir (%s): %s"
-			(Fs.Path.to_unix dbdir)
-			(Fs.string_of_write_error e)
-		)
-	) in
 
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
-	let static_files = Static_files.init ~fs document_root in
 	let callback = Unix_server.handler
-		~static:static_files
-		~data_root:data_root
+		~static:static_store
+		~make_data_kv
 		~clock
-		~fs
 		~enable_rc
 		~development
 	in
@@ -83,6 +73,9 @@ let main () =
 	let louder = StdOpt.incr_option ~dest:verbosity () in
 	let quieter = StdOpt.decr_option ~dest:verbosity () in
 
+	let cloud_datastore = ref None in
+	let cloud_datastore_opt = StdOpt.str_callback (fun s -> cloud_datastore := Some s) in
+
 	let options = OptParser.make ~usage: ("Usage: service [OPTIONS]") () in
 	add options ~short_name:'p' ~long_name:"port" port;
 	add options ~long_name:"host" host;
@@ -91,6 +84,7 @@ let main () =
 	add options ~long_name:"development" ~help:"disable appcache" development;
 	add options ~long_name:"version" show_version;
 	add options ~long_name:"timestamp" timestamp;
+	add options ~long_name:"cloud-datastore" cloud_datastore_opt;
 	add options ~short_name:'v' ~long_name:"verbose" louder;
 	add options ~short_name:'q' ~long_name:"quiet" quieter;
 	let posargs = OptParse.OptParser.parse ~first:1 options Sys.argv in
@@ -126,18 +120,26 @@ let main () =
 		Logs.err (fun m->m "ERROR: Uncaught exception from LWT: %s" (Printexc.to_string ex))
 	);
 
-	let document_root = Opt.get document_root in
-	let data_root = Opt.get data_root in
+	let abs p = if Filename.is_relative p
+		then Filename.concat (Unix.getcwd ()) p
+		else p
+	in
+	let document_root = abs (Opt.get document_root) in
+	let data_source = match !cloud_datastore with
+		| Some url -> `Cloud_datastore url
+		| None -> `Fs (abs (Opt.get data_root))
+	in
 
 	let host = match (Opt.get host) with
 		| "any" -> "0.0.0.0"
 		| h -> h
 	in
+
 	Lwt_main.run (start_server
 		~port:(Opt.get port)
 		~host
 		~development:(Opt.get development)
-		~data_root
+		~data_source
 		~document_root
 	())
 

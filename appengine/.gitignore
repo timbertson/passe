@@ -1,0 +1,12 @@
+*.ml*
+*.byte
+*.o
+*.where
+myocamlbuild
+*.cm*
+_log
+_digests
+/image
+/build
+!/build/native/bin/server.native
+/app/lib

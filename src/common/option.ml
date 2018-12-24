@@ -12,6 +12,10 @@ let default_fn f opt = match opt with
 
 let default (d:'a) (opt:'a option) : 'a = match opt with Some x -> x | None -> d
 
+let fold fn dfl = function
+	| Some x -> fn x
+	| None -> dfl
+
 let print_chan sub_printer chan v = match v with
 	| Some x -> output_string chan "Some("; sub_printer chan x; output_char chan ')'
 	| None -> output_string chan "None()"

@@ -40,7 +40,7 @@ let content_type_header v = Header.init_with content_type_key v
 let json_content_type = content_type_header "application/json"
 let text_content_type = content_type_header "text/plain"
 let no_cache h = Header.add h "Cache-control" "no-cache"
-
+type error = Kv_store.Core.error
 
 let string_of_method = function
 	| `GET -> "GET"
@@ -62,20 +62,20 @@ let maybe_add_header k v headers =
 module Make
 	(Version: Version.Sig)
 	(Clock: Mirage_types.PCLOCK)
+	(Kv: Kv_store.Sig)
 	(Static_res:Static.Sig)
-	(Fs: Filesystem.Sig)
 	(Server:Cohttp_lwt.S.Server)
 	(Server_config:Server_config.Sig)
-	(Auth:Auth.Sig with module Fs = Fs and module Clock = Clock)
+	(Auth:Auth.Sig with module Kv = Kv and module Clock = Clock)
 	(Re:Re_ext.Sig)
 = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
-	module Data_res = Static.Fs(Fs)
+	module Data_res = Static.Store(Kv)
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Request.t
-			-> (Auth.User.t option, Fs.error) result Lwt.t
+			-> (Auth.User.t option, Kv.error) result Lwt.t
 
 		val implicit_user : Request.t
 			-> [`Anonymous | `Sandstorm_user of User.sandstorm_user] option
@@ -140,12 +140,9 @@ module Make
 
 	let empty_user_db = (Store.empty_core |> Store.Format.json_of_core |> J.to_string)
 
-	let db_path_for ?user data_root =
-		let components = "user_db" :: (match user with
-			| Some user -> [(string_of_uid user) ^ ".json"]
-			| None -> []
-		) in
-		Fs.Path.make data_root components
+	let db_path_for user =
+		let components = ["user_db"; (string_of_uid user) ^ ".json"] in
+		Kv.Path.make components
 
 	let respond_json ~status ~body () =
 		Server.respond_string
@@ -163,31 +160,29 @@ module Make
 	let respond_forbidden () =
 		respond_json ~status:`Forbidden ~body:(`Assoc [("reason",`String "Request forbidden")]) ()
 
-	let string_of_invalid_path = function `Invalid_path -> "`Invalid_path"
+	let fallible_stream_of_results : ('a, 'e) result Lwt_stream.t -> 'a Lwt_stream.t
+	= fun stream ->
+		stream |> Lwt_stream.map (R.assert_ok Kv_store.Core.string_of_error)
 
-	let handler ~static ~data_root:initial_data_root ~clock ~fs ~enable_rc ~development =
+	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
+
+	let handler ~static ~clock ~make_data_kv ~enable_rc ~development =
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 
 		let adopt_data_root root =
-			let base = Fs.Path.base root in
-			let user_db_path = Fs.Path.make base ["users.db.json"] |> R.assert_ok string_of_invalid_path in
-			(base,
-				Data_res.init ~fs base,
-				new Auth.storage clock fs user_db_path
+			let data_kv : Kv.t = make_data_kv root in
+			let user_db_path = Kv.Path.make ["users.db.json"] |> R.assert_ok Kv.string_of_error in
+			(data_kv,
+				Data_res.init data_kv,
+				new Auth.storage clock data_kv user_db_path
 			)
 		in
 
-		let data_root, data_ro, user_db =
-			let (a,b,c) = adopt_data_root initial_data_root in
+		let data_kv, data_ro, user_db =
+			let (a,b,c) = adopt_data_root None in
 			(ref a, ref b, ref c)
 		in
-
-		(* result / lwt helpers *)
-		let reword_error_lwt f = Lwt.map (R.reword_error f) in
-		let reword_fs_error = reword_error_lwt Fs.string_of_error in
-		let reword_fs_write_error = reword_error_lwt Fs.string_of_write_error in
-		let reword_invalid_path_error = R.reword_error string_of_invalid_path in
 
 		let response_of_result result =
 			result |> Lwt.bindr (function
@@ -195,63 +190,75 @@ module Make
 				| Error e ->
 					Server.respond_error
 						~status:(`Code 500)
-						~body:("internal error: " ^ e) ()
+						~body:("internal error: " ^ (Kv_store.Core.string_of_error e)) ()
 			)
 		in
 
 		(* hooks for unit test controlling *)
-		let override_data_root = (fun newroot ->
+		let override_data_root = (fun newroot : unit ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
-			let new_data_root, new_data_ro, new_user_db = adopt_data_root newroot in
-			data_root := new_data_root;
+			let new_data_kv, new_data_ro, new_user_db = adopt_data_root (Some newroot) in
+			data_kv := new_data_kv;
 			data_ro := new_data_ro;
-			user_db := new_user_db;
-
-			let dbdir = db_path_for ?user:None new_data_root |> R.assert_ok string_of_invalid_path in
-			Fs.stat fs dbdir |> Lwt.bindr (function
-				| Ok _ -> return (Ok ())
-				| Error `No_directory_entry -> Fs.mkdir fs dbdir
-				| Error e -> return (Error (e |> Fs.as_write_error))
-			)
+			user_db := new_user_db
 		) in
-
-		let db_path_for user = db_path_for ~user !data_root in
 
 		let wipe_user_db = (fun uid ->
 			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
-			let path = db_path_for uid |> R.assert_ok string_of_invalid_path in
-			Fs.destroy_if_exists fs path
+			let path = db_path_for uid |> R.assert_ok Kv.string_of_error in
+			Kv.delete !data_kv path
 		) in
 
+		let respond_not_found =
+			Server.respond_error ~status:`Not_found ~body:"not found" in
+
 		let respond_file_error = function
-			| `Not_found -> Server.respond_error ~status:`Not_found ~body:"not found" ()
-			| `Invalid_path -> Server.respond_error ~status:`Bad_request ~body:"invalid path" ()
-			| `Read_error e -> Server.respond_error ~status:(`Code 500) ~body:("internal error: " ^ e) ()
+			| `Invalid -> Server.respond_error ~status:`Bad_request ~body:"invalid" ()
+			| `Failed e -> Server.respond_error ~status:(`Code 500) ~body:("internal error: " ^ e) ()
 		in
 
 		let maybe_read_file path =
 			(* XXX streaming? *)
-			Fs.read_file fs path |> Lwt.map (function
-				| Ok contents -> Some contents
-				| Error `No_directory_entry -> None
-				| Error e -> failwith (Fs.string_of_error e)
-			)
-			(* Log.debug (fun m->m "read file contents: %s" contents); *)
+			Kv.read !data_kv path
 		in
 
 		let serve_file ~req ?headers contents = (
-			let etag_of_chunks chunks =
+			let etag_buidler (type a): ((string -> unit) -> (unit -> string) -> a) -> a = fun apply ->
 				let open Nocrypto.Hash in
 				(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
 				let hash = SHA256.init () in
-				let%lwt () = Lwt_stream.iter (fun chunk ->
-					SHA256.feed hash (Cstruct.of_string chunk)
-				) chunks in
-				let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
-				return ("\"" ^ (digest ) ^ "\"")
+				let append chunk = SHA256.feed hash (Cstruct.of_string chunk) in
+				let finalize () =
+					let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
+					("\"" ^ (digest ) ^ "\"")
+				in
+				apply append finalize
 			in
 
-			let respond_file_chunks ~ext ~etag iter_file_chunks = (
+			let etag_of_single chunk =
+				etag_buidler (fun add_chunk complete ->
+					add_chunk chunk;
+					complete ()
+				)
+			in
+
+			let etag_of_chunks chunks : (string, error) result Lwt.t =
+				etag_buidler (fun add_chunk complete ->
+					let rec consume () =
+						Lwt_stream.get chunks |> LwtMonad.bind (function
+							| Some (Ok chunk) -> (
+								add_chunk chunk;
+								consume ()
+							)
+							| Some (Error _ as err) -> return err
+							| None -> return (Ok (complete ()))
+						)
+					in
+					consume ()
+				)
+			in
+
+			let respond_file_chunks ~ext ~etag chunks : http_response Lwt.t = (
 				let content_type = ext |> Option.map (function
 					| ("html" | "css") as t -> "text/" ^ t
 					| ("png" | "ico") as t -> "image/" ^ t
@@ -278,50 +285,51 @@ module Make
 						~status:`Not_modified ()
 				else (
 					let headers = headers |> maybe_add_header "etag" etag in
-					let%lwt response = iter_file_chunks (fun contents ->
-						Server.respond
-							~headers
-							~status:`OK
-							~body:(Body.of_stream contents) ()
-					) in
-					match response with
-						| Ok result -> return result
-						| Error e -> respond_file_error e
+					Server.respond
+						~headers
+						~status:`OK
+						~body:(Body.of_stream chunks) ()
 				)
 			) in
 
 			match contents with
 				| `File path -> (
-					return (Static_res.key static path) |> Lwt_r.bind (fun key ->
-						Static_res.etag static key etag_of_chunks |> Lwt.bindr (function
-							| Ok etag -> return (Ok (etag, Static_res.read_s static key))
-							| Error `Invalid_path | Error `Read_error _ as e -> return e
-							| Error `Not_found -> (
+					return (Static_res.key path) |> Lwt_r.bind (fun key : (http_response option, error) result Lwt.t ->
+						let respond_chunks etag chunks : (http_response, error) result Lwt.t =
+							let rec last = function [] -> assert false | [x] -> x | _::tail -> last tail in
+							let ext = String.cut ~rev:true ~sep:"." (last path) |> Option.map snd in
+							respond_file_chunks ~ext ~etag:etag (fallible_stream_of_results chunks)
+								|> Lwt.map (R.ok)
+						in
+						let static_etag : (string option, error) result Lwt.t = Static_res.etag static key etag_of_chunks in
+						static_etag |> Lwt_r.bind (function
+							| Some _ as etag -> Static_res.read_s static key (respond_chunks etag)
+							| None -> (
 								(* try data *)
 								Log.debug (fun m->m "Path %s not found in static files; trying data"
 									(String.concat ~sep:"/" path)
 								);
 								let data_ro = !data_ro in
-								return (Data_res.key data_ro path) |> Lwt_r.bind (fun key ->
-									Data_res.etag data_ro key etag_of_chunks
-									|> Lwt_r.map (fun etag -> (etag, Data_res.read_s data_ro key))
+								return (Data_res.key path) |> Lwt_r.bind (fun key ->
+									(* TODO: this reads the file twice... *)
+									Data_res.read_s data_ro key (fun chunks ->
+										Data_res.etag data_ro key etag_of_chunks |> Lwt_r.bind (fun etag ->
+											respond_chunks etag chunks
+										)
+									)
 								)
 							)
 						)
 					) |> Lwt.bindr (function
-						| Ok (etag, read) -> (
-							let rec last = function [] -> assert false | [x] -> x | _::tail -> last tail in
-							let ext = String.cut ~rev:true ~sep:"." (last path) |> Option.map snd in
-							respond_file_chunks ~ext ~etag:(Some etag) read
-						)
+						| Ok (Some response) -> return response
+						| Ok None -> respond_not_found ()
 						| Error e -> respond_file_error e
 					)
 				)
-				| `Dynamic (ext, contents) ->
-					let contents () = Lwt_stream.of_list [ contents ] in
-					let%lwt etag = etag_of_chunks (contents ()) in
-					let iter_file_chunks fn = fn (contents ()) |> Lwt.map R.ok in
-					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) iter_file_chunks
+				| `Dynamic (ext, contents) -> (
+					let etag = etag_of_single contents in
+					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) (Lwt_stream.of_list [ contents ])
+				)
 		) in
 
 	(* actual handle function *)
@@ -335,7 +343,7 @@ module Make
 			let path = normpath path in
 			let validate_user () = AuthContext.validate_user !user_db req in
 			let authorized fn =
-				validate_user () |> Lwt.map (R.reword_error Fs.string_of_error) |> Lwt_r.bind (function
+				validate_user () |> Lwt_r.bind (function
 					| None -> respond_unauthorized () |> ok_lwt
 					| Some u -> fn u
 				) |> response_of_result
@@ -356,7 +364,7 @@ module Make
 						()
 			in
 
-			match Request.meth req with
+			let response: http_response Lwt.t = (match Request.meth req with
 				| `GET -> (
 					match path with
 						| ["db"] ->
@@ -364,8 +372,8 @@ module Make
 								authorized (fun user ->
 									let uid = User.uid user in
 									Log.debug (fun m->m "serving db for user: %s" (string_of_uid uid));
-									db_path_for uid |> reword_invalid_path_error |> return
-										|> Lwt_r.bindM maybe_read_file
+									db_path_for uid |> return
+										|> Lwt_r.bind maybe_read_file
 										|> Lwt_r.bindM (fun body ->
 											let body = body |> Option.default_fn (fun () ->
 												Log.warn (fun m->m "no stored db found for %s" (string_of_uid uid));
@@ -386,7 +394,7 @@ module Make
 								(`Dynamic ("html", contents))
 
 						| ["index.appcache"] when not offline_access ->
-							Server.respond_error ~status:`Not_found ~body:"not found" ()
+							respond_not_found ()
 
 						| ["version"] ->
 							Server.respond_string
@@ -425,8 +433,8 @@ module Make
 									(params
 										|> mandatory J.string_field "data"
 										|> override_data_root
-										|> Lwt_r.bindM respond_ok
-									) |> reword_fs_write_error |> response_of_result
+									);
+									respond_ok ()
 							| ["reset_db"] ->
 									let%lwt params = params () in
 									params
@@ -434,7 +442,7 @@ module Make
 										|> Auth.User.uid_of_string
 										|> wipe_user_db
 										|> Lwt_r.bindM respond_ok
-										|> reword_fs_write_error |> response_of_result
+										|> response_of_result
 							| _ -> Server.respond_not_found ~uri ()
 						end
 						| ["auth"; "signup"] -> (
@@ -466,14 +474,14 @@ module Make
 								let token = Auth.Token.of_json params in
 								Auth.logout ~storage token |> Lwt_r.bindM (fun () ->
 									respond_json ~status:`OK ~body:(`Assoc []) ()
-								) |> reword_fs_write_error |> response_of_result
+								) |> response_of_result
 							)
 						| ["auth"; "validate"] -> (
 								let%lwt params = params () in
 								let token = Auth.Token.of_json params in
 								Auth.validate ~storage token |> Lwt_r.bindM (fun user ->
 									respond_json ~status:`OK ~body:(`Assoc [("valid",`Bool (Option.is_some user))]) ()
-								) |> reword_fs_error |> response_of_result
+								) |> response_of_result
 						)
 						| ["auth"; "change-password"] -> (
 								let%lwt params = params () in
@@ -485,7 +493,7 @@ module Make
 											respond_token (Ok tok)
 										| None ->
 											respond_error "Failed to update password"
-									) |> reword_error_lwt Fs.string_of_write_error
+									)
 								)
 							)
 						| ["auth"; "delete"] -> (
@@ -493,16 +501,16 @@ module Make
 								authorized_db (fun user ->
 									let uid = User.uid_db user in
 									let password = params |> J.mandatory J.string_field "password" in
-									db_path_for uid |> reword_invalid_path_error |> return |> Lwt_r.bind (fun db_path ->
+									db_path_for uid |> return |> Lwt_r.bind (fun db_path ->
 										(* delete user from DB, and also delete their DB *)
 										Auth.delete_user ~storage user password |> Lwt_r.bind (fun deleted ->
 											if deleted then (
 												Log.warn (fun m->m "deleted user %s" (User.string_of_uid uid));
-												Fs.destroy_if_exists fs db_path |> Lwt_r.bindM (fun () ->
+												Kv.delete !data_kv db_path |> Lwt_r.bindM (fun () ->
 													respond_json ~status:`OK ~body:(J.empty) ()
 												)
 											) else respond_error "Couldn't delete user (wrong password?)" |> ok_lwt
-										) |> reword_error_lwt Fs.string_of_write_error
+										)
 									)
 								)
 							)
@@ -535,7 +543,7 @@ module Make
 												version = new_version;
 											} in
 											let payload = updated_core |> json_of_core |> J.to_string in
-											Fs.write_file fs db_path payload |> Lwt_r.map (fun () ->
+											Kv.write !data_kv db_path payload |> Lwt_r.map (fun () ->
 												updated_core
 											)
 										) in
@@ -549,7 +557,7 @@ module Make
 												else
 													json_of_core core
 											) ()
-										) |> reword_fs_write_error
+										)
 									in
 
 									let existing_version = stored_core.version in
@@ -570,9 +578,10 @@ module Make
 								authorized (fun user ->
 									let uid = User.uid user in
 									Log.debug (fun m->m "saving db for user: %s" (string_of_uid uid));
-									db_path_for uid |> reword_invalid_path_error |> return |> Lwt_r.bind (fun db_path ->
+									db_path_for uid |> return |> Lwt_r.bind (fun db_path ->
 										(* XXX locking *)
-										maybe_read_file db_path >>= process_db_changes ~db_path
+										maybe_read_file db_path
+											|> Lwt_r.bind (process_db_changes ~db_path)
 									)
 								)
 						| _ -> Server.respond_not_found ~uri ()
@@ -580,6 +589,8 @@ module Make
 				| _ ->
 					Log.debug (fun m->m "unknown method; sending 500");
 					Server.respond_error ~status:`Bad_request ~body:"unsupported method" ()
+			) in
+			response
 		with e ->
 			let bt = Printexc.get_backtrace () in
 			Log.err (fun m->m "Error handling request: %s\n%s" (Printexc.to_string e) bt);

@@ -1,0 +1,7 @@
+.gcloudignore
+.git
+.gitignore
+data/
+*.gup
+gup/
+__pycache__/

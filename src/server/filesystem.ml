@@ -15,9 +15,10 @@ module type Sig = sig
 		-> (unit, write_error) result Lwt.t
 
 	val read_file_s : t -> ?proof:Lock.proof -> Path.t
-		-> (Lock.proof -> (string, error) result Lwt_stream.t -> 'a Lwt.t) -> 'a Lwt.t
+		-> (Lock.proof -> (string, error) result Lwt_stream.t -> ('a, error) result Lwt.t)
+		-> ('a, error) result Lwt.t
 
-	val read_file : t -> ?proof:Lock.proof -> Path.t
+	val read_file : t -> Path.t
 		-> (string, error) result Lwt.t
 end
 
@@ -95,17 +96,15 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 
 	let read_file_s = fun fs ?proof path consumer ->
 		locked_atomic_read fs ?proof path (fun proof readable_path ->
-			let stream = match readable_path with
+			match readable_path with
 				| Error _ as read_err ->
-					(* lift read error into first element to remove restriction on return value;
-					 * returning an Error directly makes the return value awkward *)
-					(Lwt_stream.of_list [read_err])
+					Lwt.return read_err
 				| Ok unix_path ->
 					Log.debug (fun m->m "Reading file stream: %a" Path.pp path);
 					let offset = ref 0 in
 					let eof = ref false in
 					let max_chunk_size = 4096 in
-					(Lwt_stream.from (fun () ->
+					let stream = (Lwt_stream.from (fun () ->
 						if !eof then (return None) else (
 							Fs.read fs unix_path !offset max_chunk_size >>= (function
 								| Error err ->
@@ -127,13 +126,12 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 									return result
 								)
 						)
-					))
-			in
-			consumer proof stream
+					)) in
+					consumer proof stream
 		)
 
-	let read_file fs ?proof path =
-		read_file_s fs path ?proof (fun _proof stream ->
+	let read_file fs path =
+		read_file_s fs path (fun _proof stream ->
 			Lwt_stream.fold (fun (chunk:(string, error) result) (acc:(string, error) result) ->
 				R.bind acc (fun acc ->
 					chunk |> R.map ((^) acc)

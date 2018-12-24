@@ -1,4 +1,4 @@
-type ('a, 'err) result = ('a, 'err) Rresult.result
+type ('a, 'err) result = ('a, 'err) Pervasives.result
 
 exception SafeError of string
 exception AssertionError of string
@@ -9,8 +9,13 @@ module R = struct
 	let recover : ('e -> 'a) -> ('a, 'e) result -> 'a = fun fn -> function
 		| Ok v -> v
 		| Error e -> fn e
+
 	let assert_ok convert =
 		function Ok x -> x | Error e -> raise (AssertionError (convert e))
+
+	let fold ok err = function
+		| Ok x -> ok x
+		| Error x -> err x
 end
 
 module Lwt = struct
@@ -129,3 +134,4 @@ module Lwt_r = struct
 		)
 end
 let ok_lwt x = Lwt.map R.ok x
+let pp_strf pp obj = Format.asprintf "%a" pp obj

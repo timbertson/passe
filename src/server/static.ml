@@ -1,19 +1,24 @@
 open Passe
-open Common
 open Lwt
 open Rresult
+open Common
 open Astring
 
 module Log = (val Logging.log_module "static")
 
-type error = [ `Not_found | `Invalid_path | `Read_error of string ]
+type error = Kv_store.Core.error
 
 module type Sig = sig
 	type t
 	type key
-	val key : t -> string list -> (key, error) result
-	val read_s : t -> key -> (string Lwt_stream.t -> 'a Lwt.t) -> ('a, error) result Lwt.t
-	val etag : t -> key -> (string Lwt_stream.t -> string Lwt.t) -> (string, error) result Lwt.t
+	val key : string list -> (key, error) result
+	val read_s : t -> key
+		-> ((string, error) result Lwt_stream.t -> ('a, error) result Lwt.t)
+		-> ('a option, error) result Lwt.t
+
+	val etag : t -> key
+		-> ((string, error) result Lwt_stream.t -> (string, error) result Lwt.t)
+		-> (string option, error) result Lwt.t
 end
 
 module type Kv_RO = sig
@@ -24,71 +29,58 @@ module type Kv_RO = sig
 	val string_of_error : error -> string
 end
 
-module Kv(Impl:Kv_RO) : sig
+module Readonly(Impl:Kv_RO) : sig
 	include Sig
 	val init : Impl.t -> t
 end = struct
 	type key = string
-	let key _t parts = Ok (String.concat ~sep:"/" parts)
+	let key parts = Ok (String.concat ~sep:"/" parts)
 
-	let map_error : Impl.error -> error = function
-		| `Unknown_key _ -> `Not_found
-		| e -> `Read_error (Impl.string_of_error e)
-
-	let reword_error res = R.reword_error map_error res
-
-	type t = Impl.t * string StringMap.t ref
+	type t = Impl.t * string option StringMap.t ref
 	let init t = (t, ref StringMap.empty)
+	let string_of_impl_error err = pp_strf Impl.pp_error err
 
-	let read_s (t,_) path fn =
-		Impl.size t path |> Lwt_r.bind (fun (size:int64) ->
-			Impl.read t path 0L size |> Lwt_r.bindM (fun contents ->
-				fn (Lwt_stream.of_list contents |> Lwt_stream.map Cstruct.to_string)
+	let read_s (t,_) path (fn) =
+		let contents = Impl.size t path |> Lwt_r.bind (fun (size:int64) ->
+			Impl.read t path 0L size |> Lwt_r.map (fun contents ->
+				Lwt_stream.of_list contents |> Lwt_stream.map (R.ok % Cstruct.to_string)
 			)
-		) |> Lwt.map reword_error
+		) in
+		Lwt.bind contents (function
+			| Ok stream -> fn stream |> Lwt_r.map Option.some
+			| Error (`Unknown_key _) -> return (Ok None)
+			| Error err -> return (Error (`Failed (string_of_impl_error err)))
+		)
 
-	let etag (t, cache) path fn : (string, error) result Lwt.t =
+	let etag (t, cache) path fn =
 		match (try Some (StringMap.find path !cache) with Not_found -> None) with
 			| Some cached -> return (Ok cached)
 			| None ->
-				read_s (t, cache) path fn |> Lwt_r.map (fun (etag:string) ->
+				read_s (t, cache) path fn |> Lwt_r.map (fun (etag:string option) ->
 					cache := StringMap.add path etag !cache;
 					etag
 				)
 end
 
-module Fs(Impl:Filesystem.Sig) : sig
+module type Kv_sig = sig
 	include Sig
-	val init : fs:Impl.t -> Impl.Path.base -> t
+	type impl
+	val init : impl -> t
+end
+
+module Store(Impl:Kv_store.Sig) : sig
+	include Sig
+	val init : Impl.t -> t
 end = struct
 	module Path = Impl.Path
-	type t = Impl.t * Path.base
+	type t = Impl.t
 	type key = Path.t
 
-	let init ~fs root : t = (fs, root)
-	let key (_fs, base) parts = Path.make base parts |> R.reword_error (fun e -> (e:>error))
+	let init store = store
+	let key parts = Path.make parts
 
-	let read_s t path fn : ('a, error) result Lwt.t =
-		let (fs, _root) = t in
-		Impl.read_file_s fs path (fun _proof contents ->
-			Lwt_stream.peek contents |> Lwt.bindr (function
-				| None -> return (Error `Not_found)
-				| Some (Ok _) ->
-					let lines = contents |> Lwt_stream.map (function
-						| Ok s -> s
-						| Error _ -> failwith "fs error mid-stream"
-						(* ^ shouldn't happen, as long as files don't disappear mid-read *)
-					) in
-					fn lines |> Lwt.map R.ok
-				| Some (Error e) -> return (Error (match e with
-					| `Is_a_directory | `No_directory_entry | `Not_a_directory -> (
-						Log.debug (fun m->m "not found: %a" Path.pp_full path);
-						`Not_found
-					)
-					| err -> `Read_error (Impl.string_of_error err)
-				))
-			)
-		)
+	let read_s store path fn : ('a option, error) result Lwt.t =
+		Impl.read_s store path fn
 
 	let etag = read_s
 end

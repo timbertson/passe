@@ -59,13 +59,13 @@ type cancel = [`Cancel]
 let rollback e = `Rollback e
 
 module type Sig = sig
-	module Fs : Filesystem.Sig
+	module Kv : Kv_store.Sig
 	module Clock : Mirage_types.PCLOCK
 
 	type 'err cancel_write = [
 		| `Cancel
 		| `Rollback of 'err
-		| `Write_error of Fs.write_error
+		| `Write_error of Kv.error
 	]
 
 	module Token : sig
@@ -90,11 +90,11 @@ module type Sig = sig
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
-	class storage : Clock.t -> Fs.t -> Fs.Path.t -> object
+	class storage : Clock.t -> Kv.t -> Kv.Path.t -> object
 		method clock : Clock.t
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
-				-> (User.db_user, Fs.error) result Lwt_stream.t (* users *)
+				-> (User.db_user, Kv.error) result Lwt_stream.t (* users *)
 				-> ('a, 'err cancel_write) result Lwt.t
 			)
 			-> ('a, 'err cancel_write) result Lwt.t
@@ -104,23 +104,23 @@ module type Sig = sig
 			-> ((User.db_user -> unit Lwt.t) -> User.db_user -> ('a, 'err cancel_write) result Lwt.t)
 			-> ('a, 'err cancel_write) result Lwt.t
 		method read: 'a.
-			((User.db_user, Fs.error) result Lwt_stream.t -> ('a, Fs.error) result Lwt.t)
-			-> ('a, Fs.error) result Lwt.t
+			((User.db_user, Kv.error) result Lwt_stream.t -> ('a, Kv.error) result Lwt.t)
+			-> ('a, Kv.error) result Lwt.t
 	end
 
 	val signup : storage:storage -> string -> string -> (Token.sensitive_token, string) result Lwt.t
 	val login : storage:storage -> string -> string -> (Token.sensitive_token, string) result Lwt.t
 
-	val validate : storage:storage -> Token.sensitive_token -> (User.db_user option, Fs.error) result Lwt.t
-	val logout : storage:storage -> Token.sensitive_token -> (unit, Fs.write_error) result Lwt.t
+	val validate : storage:storage -> Token.sensitive_token -> (User.db_user option, Kv.error) result Lwt.t
+	val logout : storage:storage -> Token.sensitive_token -> (unit, Kv.error) result Lwt.t
 	val change_password : storage:storage -> User.db_user -> string -> string
-		-> (Token.sensitive_token option, Fs.write_error) result Lwt.t
-	val delete_user : storage:storage -> User.db_user -> string -> (bool, Fs.write_error) result Lwt.t
+		-> (Token.sensitive_token option, Kv.error) result Lwt.t
+	val delete_user : storage:storage -> User.db_user -> string -> (bool, Kv.error) result Lwt.t
 end
 
-module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig) = struct
-	module Fs = Fs
-	module Path = Fs.Path
+module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) = struct
+	module Kv = Kv
+	module Path = Kv.Path
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
 	let time clock = Clock.now_d_ps clock |> Ptime.v
@@ -128,10 +128,10 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 	type 'err cancel_write = [
 		| `Cancel
 		| `Rollback of 'err
-		| `Write_error of Fs.write_error
+		| `Write_error of Kv.error
 	]
 
-	let write_error (e:Fs.error) = `Write_error (Fs.as_write_error e)
+	let write_error (e:Kv.error) = `Write_error e
 
 	let mandatory = J.mandatory
 
@@ -437,31 +437,28 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 	class storage clock fs path =
 		let () = Log.info (fun m->m "storage located at %a" Path.pp path) in
 
-		let read_with_proof (type a)(type err):
+		let read_with_write_permission (type a)(type err):
 			(* cast_read_err is required due to https://caml.inria.fr/mantis/view.php?id=6137 *)
-			cast_read_err:(Fs.error -> err)
-			-> (Lock.proof -> (User.db_user, Fs.error) result Lwt_stream.t -> (a, err) result Lwt.t)
+			cast_read_err:(Kv.error -> err)
+			-> (Lock.proof -> (User.db_user, Kv.error) result Lwt_stream.t -> (a, err) result Lwt.t)
 			-> (a, err) result Lwt.t
 		= fun ~cast_read_err fn ->
-			(Fs.read_file_s fs path) (fun proof s ->
-				let lines = lines_stream s in
-				let db_users: (User.db_user, Fs.error) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
-					line |> R.map (fun line ->
-						Option.non_empty ~zero:"" line |>
-							Option.map (fun line -> J.from_string line |> User.of_json)
-					) |> Option_r.unwrap
-				) in
-
-				(* force evaluation of the first line, so we get ENOENT immediately *)
-				Lwt.bind (Lwt_stream.peek lines) (function
-					| None  | Some (Ok (_:string)) ->
-						(* got the first line, so the DB is readable *)
-						fn proof db_users
-					| Some (Error `No_directory_entry) -> (
-						Log.debug (fun m->m "Ignoring missing user DB");
-						fn proof (Lwt_stream.of_list [])
-					)
-					| Some (Error err) -> return (Error (cast_read_err err))
+			Kv.read_for_writing fs path (fun proof response_f ->
+				Lwt.bind response_f (fun response ->
+					response |> R.fold (function
+						| None ->
+							Log.debug (fun m->m "Ignoring missing user DB");
+							fn proof (Lwt_stream.of_list [])
+						| Some stream ->
+							let lines = lines_stream stream in
+							let db_users: (User.db_user, Kv.error) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
+								line |> R.map (fun line ->
+									Option.non_empty ~zero:"" line |>
+										Option.map (fun line -> J.from_string line |> User.of_json)
+								) |> Option_r.unwrap
+							) in
+							fn proof db_users
+					) (fun err -> Lwt.return (Error (cast_read_err err)))
 				)
 			)
 		in
@@ -475,7 +472,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		method clock = clock
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
-				-> (User.db_user, Fs.error) result Lwt_stream.t (* users *)
+				-> (User.db_user, Kv.error) result Lwt_stream.t (* users *)
 				-> ('a, 'err cancel_write) result Lwt.t
 			)
 			-> ('a, 'err cancel_write) result Lwt.t
@@ -506,7 +503,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 				output#push (`Output (line^"\n"))
 			in
 
-			read_with_proof ~cast_read_err:write_error (fun proof users ->
+			read_with_write_permission ~cast_read_err:write_error (fun proof users ->
 				(* stream output while processing input *)
 				let write_result = (fn write_user users |> LwtMonad.bind (function
 					| Ok _ as result ->
@@ -519,11 +516,11 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 					Log.debug (fun m->m "closing output");
 					return output#close
 				)) in
-				let write_io = Fs.write_file_s fs path ~proof output_chunks in
+				let write_io = Kv.write_s fs path ~proof output_chunks in
 				lwt_join2 write_io write_result |> Lwt.map (fun (write_io, write_result) ->
 					match write_io with
 						| Ok () -> write_result
-						| Error err -> Error (`Write_error err)
+						| Error err -> Error (write_error err)
 				)
 			)
 		)
@@ -536,7 +533,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		= fun username ?(commit=default_commit_policy) fn -> self#modify (fun write_user users ->
 			Lwt_stream.fold_s (fun user result -> match (result, user) with
 				| (Error _ as e, _) -> return e
-				| (Ok _, Error (e:Fs.error)) -> return (Error (write_error e))
+				| (Ok _, Error (e:Kv.error)) -> return (Error (write_error e))
 				| Ok result as acc, Ok user -> (
 					if user.User.name = username then (
 						match result with
@@ -558,11 +555,10 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		)
 
 		method read: 'a.
-			((User.db_user, Fs.error) result Lwt_stream.t -> ('a, Fs.error) result Lwt.t)
-			-> ('a, Fs.error) result Lwt.t
-		= fun fn -> read_with_proof
-			~cast_read_err:(fun err -> (err:>Fs.error))
-			(fun _proof -> fn)
+			((User.db_user, Kv.error) result Lwt_stream.t -> ('a, Kv.error) result Lwt.t)
+			-> ('a, Kv.error) result Lwt.t
+		= fun fn -> read_with_write_permission
+			~cast_read_err:identity (fun _proof -> fn)
 
 	end
 
@@ -596,12 +592,12 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 				| `Rollback `Invalid_username -> "Username must start with a letter and contain only letters, numbers dashes and underscores"
 				| `Cancel -> failed
 				| `Write_error e ->
-						Log.warn (fun m->m "Unexpected error in account creation: %s" (Fs.string_of_write_error e));
+						Log.warn (fun m->m "Unexpected error in account creation: %s" (Kv.string_of_error e));
 						failed
 		))
 	)
 
-	let get_user ~(storage:storage) username : (User.db_user option, Fs.error) result Lwt.t =
+	let get_user ~(storage:storage) username : (User.db_user option, Kv.error) result Lwt.t =
 		storage#read (fun users ->
 			users |> Lwt_stream.find (function
 				| Ok user -> user.User.name = username
@@ -621,7 +617,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		) |> Lwt.map @@ R.reword_error (function
 			| `Cancel | `Rollback `Authentication_failed -> "Authentication failed"
 			| `Write_error e ->
-				Log.warn (fun m->m "Unexpected error in login: %s" (Fs.string_of_write_error e));
+				Log.warn (fun m->m "Unexpected error in login: %s" (Kv.string_of_error e));
 				"Authentication error"
 		)
 
@@ -629,7 +625,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		let expires = info.Token.expires in
 		Ptime.is_earlier expires ~than:(time storage#clock)
 
-	let validate ~(storage:storage) token : (User.db_user option, Fs.error) result Lwt.t =
+	let validate ~(storage:storage) token : (User.db_user option, Kv.error) result Lwt.t =
 		let info = token.sensitive_metadata in
 		if token_has_expired ~storage info then
 			return (Ok None)
@@ -643,7 +639,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 			)
 		)
 
-	let logout ~(storage:storage) token : (unit, Fs.write_error) result Lwt.t =
+	let logout ~(storage:storage) token : (unit, Kv.error) result Lwt.t =
 		let info = token.sensitive_metadata in
 		if token_has_expired ~storage info then
 			return (Ok ())
@@ -660,7 +656,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		)
 
 	let change_password ~(storage:storage) user old new_password
-		: (Token.sensitive_token option, Fs.write_error) result Lwt.t = (
+		: (Token.sensitive_token option, Kv.error) result Lwt.t = (
 		if User.verify (user.User.password) old then (
 			storage#modify_user user.User.name (fun write_user db_user ->
 				User.create ~clock:storage#clock ~username:db_user.User.name new_password
@@ -688,7 +684,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Fs:Filesystem.Sig)
 		)
 	)
 
-	let delete_user ~(storage:storage) user password : (bool, Fs.write_error) result Lwt.t =
+	let delete_user ~(storage:storage) user password : (bool, Kv.error) result Lwt.t =
 		if User.verify (user.User.password) password then (
 			storage#modify_user user.User.name (fun _write _user ->
 				return (Ok true)

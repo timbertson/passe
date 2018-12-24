@@ -1,0 +1,12 @@
+#!bash -eu
+set -x
+gup --always
+gup -u "../all"
+
+rm -rf "./app"
+../install.sh ./app passe-server.install
+
+cp run.sh app/bin/
+
+# copy dependencies
+gup app/lib

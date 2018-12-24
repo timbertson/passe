@@ -18,8 +18,8 @@ let use ?proof lock fn =
 				then fn proof
 				else raise Stale_lock
 		| None -> (
-			let proof = { lock; valid = ref true; } in
 			let%lwt () = Lwt_mutex.lock lock in
+			let proof = { lock; valid = ref true; } in
 			(try%lwt
 				fn proof
 			with e -> raise e
