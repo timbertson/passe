@@ -7,8 +7,8 @@ module Log = (val Logging.log_module "service")
 
 module HTTP = Cohttp_lwt_unix.Server
 
-module Fs_ext = Fs_ext.Make(FS_unix)
-module Kv_fs = Kv_store.Of_fs(Fs_ext)(Filesystem_unix.Atomic)
+module Fs_ext = Fs_ext.Augment(FS_unix)
+module Kv_fs = Kv_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 

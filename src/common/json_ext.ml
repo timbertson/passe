@@ -48,7 +48,7 @@ type obj = [
 
 let as_object = function
 	| `Assoc _ as obj -> obj
-	| j -> raise @@ Common.AssertionError ("Expected JSON object, got " ^ (to_string j))
+	| j -> Error.failwith (`AssertionError ("Expected JSON object, got " ^ (to_string j)))
 
 let without_field key (obj:obj option) = match obj with
 	| Some (`Assoc pairs) -> (

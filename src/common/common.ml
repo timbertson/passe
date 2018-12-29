@@ -1,7 +1,9 @@
 type ('a, 'err) result = ('a, 'err) Pervasives.result
 
+(* TODO: use Error.t *)
 exception SafeError of string
-exception AssertionError of string
+
+let pp_strf pp obj = Format.asprintf "%a" pp obj
 
 module R = struct
 	include Rresult.R
@@ -14,8 +16,8 @@ module R = struct
 		| Ok v -> Ok v
 		| Error e -> fn e
 
-	let assert_ok convert =
-		function Ok x -> x | Error e -> raise (AssertionError (convert e))
+	let assert_ok pp =
+		function Ok x -> x | Error e -> Error.failwith (`Invalid (pp_strf pp e))
 
 	let fold ok err = function
 		| Ok x -> ok x
@@ -138,4 +140,3 @@ module Lwt_r = struct
 		)
 end
 let ok_lwt x = Lwt.map R.ok x
-let pp_strf pp obj = Format.asprintf "%a" pp obj

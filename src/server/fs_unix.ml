@@ -1,19 +1,21 @@
 open Passe
 open Lwt
 open Common
-open Filesystem
+open Fs_ext
 
-module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
+module Atomic : AtomicSig = functor (Fs:Augmented) -> struct
+	include AtomicTypes
+
 	let readable _fs name = Lwt.return (Ok name)
 
 	let with_writable fs dest fn =
 		(* let dest = Fs.Path.to_unix dest in *)
 		let success = Ok () in
-		let tmpname = Fs.Path.modify_filename (fun name -> name ^ ".tmp") dest in
-		let dest_unix = Fs.Path.to_unix dest in
-		let tmpname_unix = Fs.Path.to_unix tmpname in
+		let tmpname = Path.modify_filename (fun name -> name ^ ".tmp") dest in
+		let dest_unix = Path.to_unix dest in
+		let tmpname_unix = Path.to_unix tmpname in
 		let cleanup result = result
-			|> Lwt_r.and_then (fun () -> Fs.destroy_if_exists_s fs tmpname_unix) in
+			|> Lwt_r.and_then (fun () -> Fs.destroy_if_exists fs tmpname_unix) in
 
 		Fs.ensure_empty fs tmpname_unix |> Lwt_r.bind (fun () ->
 			fn tmpname |> Lwt.bindr (function

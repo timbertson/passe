@@ -1,5 +1,4 @@
 module J = Json_ext
-open Common
 
 (* TODO: hide these type implementations behind signature *)
 
@@ -153,7 +152,7 @@ module Make (Server:Server.Sig) = struct
 			|> J.get_field username_key
 			|> Option.bind (J.as_string)
 			|> Option.default_fn (fun () ->
-					raise (AssertionError ("no username found in auth token")))
+				Error.failwith (`AssertionError ("no username found in auth token")))
 		in (user, token)
 
 	let get_response_credentials response =

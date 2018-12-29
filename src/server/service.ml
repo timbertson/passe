@@ -40,7 +40,6 @@ let content_type_header v = Header.init_with content_type_key v
 let json_content_type = content_type_header "application/json"
 let text_content_type = content_type_header "text/plain"
 let no_cache h = Header.add h "Cache-control" "no-cache"
-type error = Kv_store.Core.error
 
 let string_of_method = function
 	| `GET -> "GET"
@@ -75,7 +74,7 @@ module Make
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Request.t
-			-> (Auth.User.t option, Kv.error) result Lwt.t
+			-> (Auth.User.t option, Error.t) result Lwt.t
 
 		val implicit_user : Request.t
 			-> [`Anonymous | `Sandstorm_user of User.sandstorm_user] option
@@ -142,7 +141,7 @@ module Make
 
 	let db_path_for user =
 		let components = ["user_db"; (string_of_uid user) ^ ".json"] in
-		Kv.Path.make components
+		Path.make components
 
 	let respond_json ~status ~body () =
 		Server.respond_string
@@ -162,7 +161,7 @@ module Make
 
 	let fallible_stream_of_results : ('a, 'e) result Lwt_stream.t -> 'a Lwt_stream.t
 	= fun stream ->
-		stream |> Lwt_stream.map (R.assert_ok Kv_store.Core.string_of_error)
+		stream |> Lwt_stream.map (R.assert_ok Error.pp)
 
 	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
 
@@ -172,7 +171,7 @@ module Make
 
 		let adopt_data_root root =
 			let data_kv : Kv.t = make_data_kv root in
-			let user_db_path = Kv.Path.make ["users.db.json"] |> R.assert_ok Kv.string_of_error in
+			let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
 			(data_kv,
 				Data_res.init data_kv,
 				new Auth.storage clock data_kv user_db_path
@@ -190,7 +189,7 @@ module Make
 				| Error e ->
 					Server.respond_error
 						~status:(`Code 500)
-						~body:("internal error: " ^ (Kv_store.Core.string_of_error e)) ()
+						~body:(Format.asprintf "internal error: %a" Error.pp e) ()
 			)
 		in
 
@@ -205,7 +204,7 @@ module Make
 
 		let wipe_user_db = (fun uid ->
 			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
-			let path = db_path_for uid |> R.assert_ok Kv.string_of_error in
+			let path = db_path_for uid |> R.assert_ok Error.pp in
 			Kv.delete !data_kv path
 		) in
 
@@ -213,8 +212,8 @@ module Make
 			Server.respond_error ~status:`Not_found ~body:"not found" in
 
 		let respond_file_error = function
-			| `Invalid -> Server.respond_error ~status:`Bad_request ~body:"invalid" ()
-			| `Failed e -> Server.respond_error ~status:(`Code 500) ~body:("internal error: " ^ e) ()
+			| `Invalid e -> Server.respond_error ~status:`Bad_request ~body:("invalid request: " ^ e) ()
+			| `Failed e | `AssertionError e -> Server.respond_error ~status:(`Code 500) ~body:("internal error: " ^ e) ()
 		in
 
 		let maybe_read_file path =
@@ -242,7 +241,7 @@ module Make
 				)
 			in
 
-			let etag_of_chunks chunks : (string, error) result Lwt.t =
+			let etag_of_chunks chunks : (string, Error.t) result Lwt.t =
 				etag_buidler (fun add_chunk complete ->
 					let rec consume () =
 						Lwt_stream.get chunks |> LwtMonad.bind (function
@@ -294,14 +293,14 @@ module Make
 
 			match contents with
 				| `File path -> (
-					return (Static_res.key path) |> Lwt_r.bind (fun key : (http_response option, error) result Lwt.t ->
-						let respond_chunks etag chunks : (http_response, error) result Lwt.t =
+					return (Static_res.key path) |> Lwt_r.bind (fun key : (http_response option, Error.t) result Lwt.t ->
+						let respond_chunks etag chunks : (http_response, Error.t) result Lwt.t =
 							let rec last = function [] -> assert false | [x] -> x | _::tail -> last tail in
 							let ext = String.cut ~rev:true ~sep:"." (last path) |> Option.map snd in
 							respond_file_chunks ~ext ~etag:etag (fallible_stream_of_results chunks)
 								|> Lwt.map (R.ok)
 						in
-						let static_etag : (string option, error) result Lwt.t = Static_res.etag static key etag_of_chunks in
+						let static_etag : (string option, Error.t) result Lwt.t = Static_res.etag static key etag_of_chunks in
 						static_etag |> Lwt_r.bind (function
 							| Some _ as etag -> Static_res.read_s static key (respond_chunks etag)
 							| None -> (

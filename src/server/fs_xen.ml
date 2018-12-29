@@ -1,6 +1,6 @@
 open Passe
 open Common
-open Filesystem
+open Fs_ext
 
 (* pure abstraction over the state of an "atomic" file *)
 module Journal = struct
@@ -33,8 +33,9 @@ module Journal = struct
 
 end
 
-module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
-	include Fs
+module Atomic : AtomicSig = functor (Fs:Augmented) -> struct
+	open Fs
+	include AtomicTypes
 
 	let try_read_char fs name =
 		read fs name 0 1 |> Lwt.map (function
@@ -56,12 +57,12 @@ module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 			|> Lwt.map (R.reword_error as_write_error)
 			|> Lwt_r.bind (fun dest_ext ->
 				let newdest = Path.modify_filename (Journal.apply_ext dest_ext) dest in
+				let newdest_s = Path.to_unix newdest in
 				let rollback result =
 					result |> Lwt_r.and_then (fun () ->
-						destroy_if_exists fs newdest
+						destroy_if_exists fs newdest_s
 					)
 				in
-				let newdest_s = Path.to_unix newdest in
 				let cruft_path = Path.modify_filename (Journal.apply_ext (Journal.cruft dest_ext)) dest in
 				ensure_empty fs newdest_s |> Lwt_r.bind (fun () ->
 					fn newdest |> Lwt.bindr (function
@@ -71,7 +72,7 @@ module Atomic : AtomicSig = functor (Fs:Fs_ext.Impl) -> struct
 							Cstruct.set_char journal_byte 0 (Journal.byte dest_ext);
 							ensure_exists fs journal >>= fun () ->
 							write fs journal 0 journal_byte >>= fun () ->
-							destroy_if_exists fs cruft_path
+							destroy_if_exists fs (Path.to_unix cruft_path)
 						)
 						| Ok `Rollback -> rollback (Ok ())
 						| Error _ as result -> rollback result

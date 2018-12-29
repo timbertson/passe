@@ -5,11 +5,6 @@ type datastore = {
 module Impl : Kv_store.Sig = struct
 	include Kv_store.Core
 	type t = unit
-	module Path = struct
-		type t = unit
-		let pp = Fmt.nop
-		let make = Obj.magic
-	end
 
 	let read = Obj.magic
 	let write = Obj.magic
