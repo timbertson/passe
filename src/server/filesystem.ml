@@ -24,12 +24,13 @@ end
 
 module type AtomicSig = functor(Fs:Fs_ext.Impl) -> sig
 	val with_writable: Fs.t -> Fs.Path.t
-		-> (string -> (Fs.write_commit, Fs.write_error) result Lwt.t)
+		-> (Fs.Path.t -> (Fs.write_commit, Fs.write_error) result Lwt.t)
 		-> (unit, Fs.write_error) result Lwt.t
 
-	val readable:  Fs.t -> Fs.Path.t -> (string, Fs.error) result Lwt.t
+	val readable:  Fs.t -> Fs.Path.t -> (Fs.Path.t, Fs.error) result Lwt.t
 end
 
+(* TODO: remove; use Kv_store instead *)
 module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 	module Fs = Fs_ext.Make(Fs)
 	module Atomic = Atomic(Fs)
@@ -66,7 +67,8 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 
 	let write_file_s fs path ?proof stream : (unit, write_error) result Lwt.t =
 		locked_atomic_write fs path ?proof (fun _proof path ->
-			Log.debug (fun m->m "Writing file stream: %s" path);
+			let unix_path = Fs.Path.to_unix path in
+			Log.debug (fun m->m "Writing file stream: %s" unix_path);
 			Lwt_stream.fold_s (fun instruction result ->
 				(return result) |> Lwt_r.bind (fun offset -> match instruction with
 					| `Rollback ->
@@ -75,8 +77,8 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 						return (Error (`Rollback))
 					| `Output chunk ->
 						let size = String.length chunk in
-						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path offset);
-						write fs path offset (Cstruct.of_string chunk)
+						Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size unix_path offset);
+						write fs unix_path offset (Cstruct.of_string chunk)
 							|> Lwt.map (function
 								| Ok () -> Ok (offset + size)
 								| Error err -> Error (`fs err)
@@ -84,7 +86,7 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 				)
 			) stream (Ok 0) |> Lwt.map (function
 				| Ok (_:int) ->
-					Log.debug (fun m->m "comitting file write: %s" path);
+					Log.debug (fun m->m "comitting file write: %s" unix_path);
 					(Ok `Commit)
 				| Error (`Rollback) -> (Ok `Rollback)
 				| Error (`fs err) -> Error err
@@ -99,7 +101,8 @@ module Make (Fs:Fs_ext.FS)(Atomic:AtomicSig) : (Sig with type t = Fs.t) = struct
 			match readable_path with
 				| Error _ as read_err ->
 					Lwt.return read_err
-				| Ok unix_path ->
+				| Ok readable_path ->
+					let unix_path = Fs.Path.to_unix readable_path in
 					Log.debug (fun m->m "Reading file stream: %a" Path.pp path);
 					let offset = ref 0 in
 					let eof = ref false in

@@ -6,9 +6,9 @@ open Common
 module Log = (val Logging.log_module "service")
 
 module HTTP = Cohttp_lwt_unix.Server
-module Fs = Filesystem.Make(FS_unix)(Filesystem_unix.Atomic)
 
-module Kv_fs = Kv_store.Of_fs(Fs)
+module Fs_ext = Fs_ext.Make(FS_unix)
+module Kv_fs = Kv_store.Of_fs(Fs_ext)(Filesystem_unix.Atomic)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 

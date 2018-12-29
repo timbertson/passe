@@ -31,7 +31,9 @@ module type Sig = sig
 		val pp_full : t Fmt.t
 		val base : string -> base
 		val make : base -> string list -> (t, invalid_path) result
+		val modify_filename : (string -> string) -> t -> t
 		val to_unix : t -> string
+		val string_of_invalid_path : invalid_path -> string
 	end
 
 	module PathMap : Map.S with type key = Path.t
@@ -78,6 +80,7 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 		type t = string * (string list)
 		type relative = string list
 		type invalid_path = [ `Invalid_path ]
+		let string_of_invalid_path = function `Invalid_path -> "Invalid_path"
 		let base path =
 			if (Filename.is_relative path)
 				then failwith ("relative path used for Path.base:" ^ (path))
@@ -87,13 +90,24 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 			| "" -> true
 			| part -> String.is_prefix ~affix:"." part || String.is_infix ~affix:"/" part
 
+		(* TODO: this would be more efficient if we stored `t` as (string * string list * string) *)
+		let modify_filename modifier (base, parts) =
+			match (List.rev parts) with
+				| f :: tail ->
+					let modified = modifier f in
+					if invalid_component modified
+						then raise (AssertionError "`Invalid_path")
+						else (base, (List.rev tail) @ [modified])
+				| [] ->
+					(* not possible to construct, just for type-completeness *)
+					raise (AssertionError "`Invalid_path")
+
 		let make base parts =
 			if (parts = []) || (parts |> List.any invalid_component)
 				then Error `Invalid_path
 				else Ok (base, parts)
 
 		let _pp ~full formatter (base, path) =
-			(* don't print base, assume it's constant *)
 			let fmt_slash = Fmt.const Fmt.string Filename.dir_sep in
 			let parts = if full then [base] @ path else path in
 			(Fmt.list ~sep:fmt_slash Fmt.string) formatter parts

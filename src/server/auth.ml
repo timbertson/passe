@@ -443,23 +443,21 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) =
 			-> (Lock.proof -> (User.db_user, Kv.error) result Lwt_stream.t -> (a, err) result Lwt.t)
 			-> (a, err) result Lwt.t
 		= fun ~cast_read_err fn ->
-			Kv.read_for_writing fs path (fun proof response_f ->
-				Lwt.bind response_f (fun response ->
-					response |> R.fold (function
-						| None ->
-							Log.debug (fun m->m "Ignoring missing user DB");
-							fn proof (Lwt_stream.of_list [])
-						| Some stream ->
-							let lines = lines_stream stream in
-							let db_users: (User.db_user, Kv.error) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
-								line |> R.map (fun line ->
-									Option.non_empty ~zero:"" line |>
-										Option.map (fun line -> J.from_string line |> User.of_json)
-								) |> Option_r.unwrap
-							) in
-							fn proof db_users
-					) (fun err -> Lwt.return (Error (cast_read_err err)))
-				)
+			Kv.read_for_writing fs path (fun proof response ->
+				response |> R.fold (function
+					| None ->
+						Log.debug (fun m->m "Ignoring missing user DB");
+						fn proof (Lwt_stream.of_list [])
+					| Some stream ->
+						let lines = lines_stream stream in
+						let db_users: (User.db_user, Kv.error) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
+							line |> R.map (fun line ->
+								Option.non_empty ~zero:"" line |>
+									Option.map (fun line -> J.from_string line |> User.of_json)
+							) |> Option_r.unwrap
+						) in
+						fn proof db_users
+				) (fun err -> Lwt.return (Error (cast_read_err err)))
 			)
 		in
 		let default_commit_policy = function

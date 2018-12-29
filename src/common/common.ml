@@ -10,6 +10,10 @@ module R = struct
 		| Ok v -> v
 		| Error e -> fn e
 
+	let bind_error : ('b -> ('a, 'c) result) -> ('a, 'b) result -> ('a, 'c) result = fun fn -> function
+		| Ok v -> Ok v
+		| Error e -> fn e
+
 	let assert_ok convert =
 		function Ok x -> x | Error e -> raise (AssertionError (convert e))
 
