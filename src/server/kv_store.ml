@@ -72,49 +72,25 @@ module Of_fs(Fs: Fs_ext.Impl)(AtomicF: Filesystem.AtomicSig) : Sig = struct
 			Lwt.return_unit
 		]
 
-	(* let locked_atomic_write fs path ?proof fn = _with_lock ?proof path (fun proof -> *)
-	(* 	Atomic.with_writable fs path (fn proof) *)
-	(* ) *)
+	let locked_atomic_write fs path ?proof fn = _with_lock ?proof path (fun proof ->
+		Atomic.with_writable fs path (fn proof)
+	)
 
 	let locked_atomic_read fs path ?proof fn = _with_lock ?proof path (fun proof ->
 		Atomic.readable fs path |> Lwt.bindr (fn proof)
 	)
 
-	(* let write_file_s fs path ?proof stream : (unit, write_error) result Lwt.t = *)
-	(* 	locked_atomic_write fs path ?proof (fun _proof path -> *)
-	(* 		Log.debug (fun m->m "Writing file stream: %s" path); *)
-	(* 		Lwt_stream.fold_s (fun instruction result -> *)
-	(* 			(return result) |> Lwt_r.bind (fun offset -> match instruction with *)
-	(* 				| `Rollback -> *)
-	(* 					(* result := `Rollback; *) *)
-	(* 					Log.debug (fun m->m "aborted write at offset %d" offset); *)
-	(* 					return (Error (`Rollback)) *)
-	(* 				| `Output chunk -> *)
-	(* 					let size = String.length chunk in *)
-	(* 					Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path offset); *)
-	(* 					write fs path offset (Cstruct.of_string chunk) *)
-	(* 						|> Lwt.map (function *)
-	(* 							| Ok () -> Ok (offset + size) *)
-	(* 							| Error err -> Error (`fs err) *)
-	(* 						) *)
-	(* 			) *)
-	(* 		) stream (Ok 0) |> Lwt.map (function *)
-	(* 			| Ok (_:int) -> *)
-	(* 				Log.debug (fun m->m "comitting file write: %s" path); *)
-	(* 				(Ok `Commit) *)
-	(* 			| Error (`Rollback) -> (Ok `Rollback) *)
-	(* 			| Error (`fs err) -> Error err *)
-	(* 		) *)
-	(* 	) *)
-  (*  *)
-	(* let write_file fs path ?proof contents = *)
-	(* 	write_file_s fs path ?proof (Lwt_stream.of_list [`Output contents]) *)
 
-	let cast_read_err : Fs.error -> error = fun err ->
-		match err with
-			| `Is_a_directory -> `Invalid
-			| `Not_a_directory -> `Invalid
-			| other -> `Failed (pp_strf Fs.pp_error other)
+	let cast_read_err : Fs.error -> error = function
+		| `Is_a_directory -> `Invalid
+		| `Not_a_directory -> `Invalid
+		| other -> `Failed (pp_strf Fs.pp_error other)
+
+	let cast_write_err : Fs.write_error -> error = function
+		(* TODO: this repeats above, but I can't pull out the common vaiants from error + write_error *)
+		| `Is_a_directory -> `Invalid
+		| `Not_a_directory -> `Invalid
+		| other -> `Failed (pp_strf Fs.pp_write_error other)
 
 	let result_of_read_err : Fs.error -> ('a option, error) result = fun err ->
 		match err with
@@ -185,16 +161,43 @@ module Of_fs(Fs: Fs_ext.Impl)(AtomicF: Filesystem.AtomicSig) : Sig = struct
 			) stream (Ok "")
 		)
 
-	let write_s = Obj.magic
-	let write = Obj.magic
-	(* TODO: ensure_exists before write *)
-			(* let dbdir = db_path_for ?user:None new_data_root |> R.assert_ok string_of_invalid_path in *)
-			(* Kv.stat db dbdir |> Lwt.bindr (function *)
-			(* 	| Ok _ -> return (Ok ()) *)
-			(* 	| Error `No_directory_entry -> Db.mkdir db dbdir *)
-			(* 	| Error e -> return (Error (e |> Db.as_write_error)) *)
-			(* ) *)
+	type write_cancellation = [ `Rollback | `Fs of Fs.write_error ]
 
-	let delete = Obj.magic
+	let write_s fs path ?proof stream : (unit, error) result Lwt.t =
+		Fs.mkdir_p fs path |> Lwt_r.bind (fun () ->
+			locked_atomic_write fs path ?proof (fun _proof path ->
+				let path_s = Fs.Path.to_unix path in
+				Log.debug (fun m->m "Writing file stream: %s" path_s);
+				Lwt_stream.fold_s (fun instruction result ->
+					(return result) |> Lwt_r.bind (fun offset -> match instruction with
+						| `Rollback ->
+							Log.debug (fun m->m "aborted write at offset %d" offset);
+							return (Error (`Rollback))
+						| `Output chunk ->
+							let size = String.length chunk in
+							Log.debug (fun m->m "writing chunk of len %d to %s at offset %d" size path_s offset);
+							Fs.write fs path_s offset (Cstruct.of_string chunk)
+								|> Lwt.map (function
+									| Ok () -> Ok (offset + size)
+									| Error err -> Error (`Fs err)
+								)
+					)
+				) stream (Ok 0) |> Lwt.map (function
+					| Ok (_:int) ->
+						Log.debug (fun m->m "comitting file write: %s" path_s);
+						(Ok `Commit)
+					| Error (`Rollback) -> (Ok `Rollback)
+					| Error (`Fs err) -> Error err
+				)
+			)
+		) |> Lwt.map (R.reword_error cast_write_err)
+
+	let write fs path contents =
+		write_s fs path (Lwt_stream.of_list [`Output contents])
+
+	let delete fs path =
+		Fs.destroy fs (Fs.Path.to_unix path)
+		|> Lwt.map (R.reword_error cast_write_err)
+
 	let connect = Obj.magic
 end

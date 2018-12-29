@@ -50,7 +50,7 @@ module type Sig = sig
 
 	val stat : t -> Path.t -> (stat, error) result Lwt.t
 
-	val mkdir : t -> Path.t -> (unit, write_error) result Lwt.t
+	val mkdir_p : t -> Path.t -> (unit, write_error) result Lwt.t
 
 	val destroy_if_exists : t -> Path.t -> (unit, write_error) result Lwt.t
 end
@@ -179,6 +179,15 @@ module Make (Fs:FS) : (Impl with type t = Fs.t) = struct
 
 	let destroy_if_exists fs = destroy_if_exists_s fs % Path.to_unix
 	let stat fs = stat fs % Path.to_unix
-	let mkdir fs = mkdir fs % Path.to_unix
+
+	let mkdir_p fs p =
+		let rec mkdir_p path = mkdir fs path |> Lwt.bindr (function
+			| Error `No_directory_entry ->
+				let parent = (Filename.dirname path) in
+				assert (path <> parent);
+				mkdir_p parent |> Lwt_r.bind (fun () -> mkdir_p path)
+			| other -> return other
+		) in
+		mkdir_p (Path.to_unix p)
 
 end
