@@ -33,8 +33,9 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	Log.info (fun m->m "Listening on: %s %d" host port);
 	Log.info (fun m->m "Document root: %s" document_root);
 	Log.info (fun m->m "Data root: %s" data_root);
-	let static_store = Static_files.init (Kv_fs.connect document_root) in
-	let make_data_kv root = Data.connect (root |> Option.default data_root) in
+	let%lwt fs = FS_unix.connect "/" in
+	let static_store = Static_files.init (Kv_fs.connect fs document_root) in
+	let data_kv : Data.t = Obj.magic () in
 
 	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
@@ -43,7 +44,7 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
 		~static:static_store
-		~make_data_kv
+		~data_kv
 		~clock
 		~enable_rc
 		~development

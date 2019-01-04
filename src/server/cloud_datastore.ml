@@ -14,7 +14,7 @@ module Impl : Kv_store.Sig = struct
 	let write_s = Obj.magic
 
 	let delete = Obj.magic
-	let connect = Obj.magic
+	let reconnect = Obj.magic
 end
 
 include Impl

@@ -27,10 +27,10 @@ module type Sig = sig
 
 	val delete : t -> Path.relative -> (unit, Error.t) result Lwt.t
 
-	val connect : string -> t
+	val reconnect : t -> string -> t
 end
 
-module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) : Sig = struct
+module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 	include Core
 	type t = (Fs.t * Path.base)
 	module Atomic = AtomicF(Fs)
@@ -181,5 +181,7 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) : Sig = struct
 		Fs.destroy fs (Path.to_unix (Path.join base path))
 		|> Lwt.map (R.reword_error cast_write_err)
 
-	let connect = Obj.magic
+	let connect t base = (t, Path.base base)
+
+	let reconnect : t -> string -> t = fun (fs, _) base -> (fs, Path.base base)
 end

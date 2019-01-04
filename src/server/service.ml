@@ -165,13 +165,13 @@ module Make
 
 	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
 
-	let handler ~static ~clock ~make_data_kv ~enable_rc ~development =
+	let handler ~static ~clock ~data_kv:initial_data_kv ~enable_rc ~development =
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
+		let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
 
 		let adopt_data_root root =
-			let data_kv : Kv.t = make_data_kv root in
-			let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
+			let data_kv : Kv.t = root |> Option.fold (Kv.reconnect initial_data_kv) initial_data_kv in
 			(data_kv,
 				Data_res.init data_kv,
 				new Auth.storage clock data_kv user_db_path

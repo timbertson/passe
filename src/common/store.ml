@@ -180,7 +180,7 @@ module Make (Re:Re_ext.Sig) = struct
 				| [(_,rv)] ->
 					pairs := remainder;
 					Some rv
-				| _ -> Error.failwith (`AssertionError "multiple identical keys")
+				| _ -> Error.raise_assert "multiple identical keys"
 
 		method contains key =
 			find_safe (fun (k,_v) -> k = key) !pairs
@@ -193,7 +193,7 @@ module Make (Re:Re_ext.Sig) = struct
 						let keys = List.map Tuple.fst p in
 						let msg = "Un-processed keys after parsing: " ^
 							String.concat ", " keys in
-						Error.failwith (`AssertionError msg)
+						Error.raise_assert msg
 		
 		method use : 'a. ('self -> 'a) -> 'a = fun fn ->
 			let rv = fn self in

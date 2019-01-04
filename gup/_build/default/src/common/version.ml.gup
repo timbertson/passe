@@ -36,7 +36,7 @@ module Make(Re:Re_ext.Sig) = struct
 		let parts = List.map int_of_string parts in
 		match parts with
 			| maj :: min :: patch :: _ -> (maj, min, patch)
-			| _ -> Error.failwith (\`AssertionError ("unparseable version: " ^ v))
+			| _ -> Error.raise_assert ("unparseable version: " ^ v)
 
 	let minor (maj, min, _patch) = (maj, min)
 

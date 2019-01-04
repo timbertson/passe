@@ -79,8 +79,8 @@ let string_of_message = function
 	| Account_settings msg -> "Account_settings " ^ (Account_settings.string_of_message msg)
 
 let check cond = Printf.ksprintf (function s ->
-	if cond then () else raise (AssertionError s)
-	)
+	if cond then () else Error.raise_assert s
+)
 
 let is_within min max i = i >= min && i <= max
 let within min max i = Pervasives.min (Pervasives.max i min) max

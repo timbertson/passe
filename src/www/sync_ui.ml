@@ -124,7 +124,7 @@ let sync_state sync =
 	let last_sync_signal = sync.last_sync#signal in
 	let last_sync_time = last_sync_signal |> signal_lift_opt (function
 		| `Float t -> t
-		| _ -> raise @@ AssertionError ("invalid `last_sync` value")
+		| _ -> Error.raise_assert ("invalid `last_sync` value")
 	) in
 	let sync_running = sync.sync_running in
 	S.bind sync_running (fun is_running ->

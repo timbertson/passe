@@ -152,7 +152,7 @@ module Make (Server:Server.Sig) = struct
 			|> J.get_field username_key
 			|> Option.bind (J.as_string)
 			|> Option.default_fn (fun () ->
-				Error.failwith (`AssertionError ("no username found in auth token")))
+				Error.raise_assert ("no username found in auth token"))
 		in (user, token)
 
 	let get_response_credentials response =

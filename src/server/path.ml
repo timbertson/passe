@@ -46,7 +46,7 @@ end = struct
 					else (base, (List.rev tail) @ [modified])
 			| [] ->
 				(* not possible to construct, just for type-completeness *)
-				Error.failwith (`AssertionError "invalid path")
+				Error.raise_assert "invalid path"
 
 	let make parts =
 		if (parts = []) || (parts |> List.any invalid_component)

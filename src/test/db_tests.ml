@@ -48,7 +48,7 @@ let suite = "db" >:::
 				"unknown_key", `String "...";
 			]) in
 			assert_raises
-				(Common.AssertionError "Un-processed keys after parsing: unknown_key")
+				(Error.Throwable (`AssertionError "Un-processed keys after parsing: unknown_key"))
 				(fun () -> Format.parse_record json)
 		);
 	];

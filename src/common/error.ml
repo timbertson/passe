@@ -12,9 +12,11 @@ type failure = [
 
 type t = [ invalid | assertion_error | failure ]
 
-exception BaseError of t
+exception Throwable of t
 
-let failwith t = raise (BaseError t)
+let failwith t = raise (Throwable t)
+
+let raise_assert s = failwith (`AssertionError s)
 
 let pp = fun formatter error ->
 	Format.pp_print_string formatter (match error with
