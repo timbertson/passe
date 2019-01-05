@@ -1,15 +1,12 @@
-open Passe
-
 type datastore = {
 	url : string;
 }
 
-module Impl : Dynamic_store.Concrete = struct
+module Impl = struct
 	include Dynamic_store.Core
 	type t = datastore
 
-	let connect_str url = { url }
-	let connect_unix_fs _ _ = Error.raise_assert "Not implemented"
+	let connect url = { url }
 
 	let read = Obj.magic
 	let write = Obj.magic

@@ -30,12 +30,6 @@ module type Sig = sig
 	val reconnect : t -> string -> t
 end
 
-module type Concrete = sig
-	include Sig
-	val connect_unix_fs : FS_unix.t -> Path.base -> t
-	val connect_str : string -> t
-end
-
 module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 	include Core
 	type t = (Fs.t * Path.base)
@@ -193,8 +187,7 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 		Fs.destroy fs (Path.to_unix (Path.join base path))
 		|> Lwt.map (R.reword_error cast_write_err)
 
-	let connect_unix_fs fs base = (fs, base)
-	let connect_str _ = Error.raise_assert "Not implemented"
+	let connect fs base = (fs, base)
 
 	let reconnect : t -> string -> t = fun (fs, _) base -> (fs, Path.base base)
 end

@@ -25,25 +25,26 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let%lwt fs = FS_unix.connect "/" in
 
 	let module Data = (val match data_source with
-		| `Cloud_datastore _ -> (module Cloud_datastore: Dynamic_store.Concrete)
-		| `Fs _ -> (module Dynamic_fs : Dynamic_store.Concrete)
+		| `Cloud_datastore _ -> (module Cloud_datastore: Dynamic_store.Sig)
+		| `Fs _ -> (module Dynamic_fs : Dynamic_store.Sig)
 	) in
 
-	let data = match data_source with
+	(* Each branch produces an appropriate Data.t corresponding to above module, but we
+	 * need to cast with Obj.magic because it can't be statically proven *)
+	let data : Data.t = match data_source with
 		| `Cloud_datastore url ->
 			Log.info (fun m->m "Datastore url: %s" url);
-			Data.connect_str url
+			Obj.magic (Cloud_datastore.connect url: Cloud_datastore.t)
 		| `Fs root ->
 			Log.info (fun m->m "Data root: %s" root);
-			Data.connect_unix_fs fs (Path.base root)
+			Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t)
 	in
 
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
 	let module Static_files = Static.Of_dynamic(Dynamic_fs) in
 	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
-
-	let static_store = Static_files.init (Dynamic_fs.connect_unix_fs fs (Path.base document_root)) in
+	let static_store = Static_files.init (Dynamic_fs.connect fs (Path.base document_root)) in
 
 	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
