@@ -61,16 +61,16 @@ let maybe_add_header k v headers =
 module Make
 	(Version: Version.Sig)
 	(Clock: Mirage_types.PCLOCK)
-	(Kv: Kv_store.Sig)
+	(Data: Dynamic_store.Sig)
 	(Static_res:Static.Sig)
 	(Server:Cohttp_lwt.S.Server)
 	(Server_config:Server_config.Sig)
-	(Auth:Auth.Sig with module Kv = Kv and module Clock = Clock)
+	(Auth:Auth.Sig with module Store = Data and module Clock = Clock)
 	(Re:Re_ext.Sig)
 = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
-	module Data_res = Static.Store(Kv)
+	module Data_res = Static.Of_dynamic(Data)
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Request.t
@@ -165,20 +165,20 @@ module Make
 
 	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
 
-	let handler ~static ~clock ~data_kv:initial_data_kv ~enable_rc ~development =
+	let handler ~static ~clock ~data:initial_data ~enable_rc ~development =
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 		let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
 
 		let adopt_data_root root =
-			let data_kv : Kv.t = root |> Option.fold (Kv.reconnect initial_data_kv) initial_data_kv in
-			(data_kv,
-				Data_res.init data_kv,
-				new Auth.storage clock data_kv user_db_path
+			let data : Data.t = root |> Option.fold (Data.reconnect initial_data) initial_data in
+			(data,
+				Data_res.init data,
+				new Auth.storage clock data user_db_path
 			)
 		in
 
-		let data_kv, data_ro, user_db =
+		let data, data_ro, user_db =
 			let (a,b,c) = adopt_data_root None in
 			(ref a, ref b, ref c)
 		in
@@ -196,8 +196,8 @@ module Make
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot : unit ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
-			let new_data_kv, new_data_ro, new_user_db = adopt_data_root (Some newroot) in
-			data_kv := new_data_kv;
+			let new_data, new_data_ro, new_user_db = adopt_data_root (Some newroot) in
+			data := new_data;
 			data_ro := new_data_ro;
 			user_db := new_user_db
 		) in
@@ -205,7 +205,7 @@ module Make
 		let wipe_user_db = (fun uid ->
 			Log.warn (fun m->m "wiping user DB for %s" (string_of_uid uid));
 			let path = db_path_for uid |> R.assert_ok Error.pp in
-			Kv.delete !data_kv path
+			Data.delete !data path
 		) in
 
 		let respond_not_found =
@@ -218,7 +218,7 @@ module Make
 
 		let maybe_read_file path =
 			(* XXX streaming? *)
-			Kv.read !data_kv path
+			Data.read !data path
 		in
 
 		let serve_file ~req ?headers contents = (
@@ -505,7 +505,7 @@ module Make
 										Auth.delete_user ~storage user password |> Lwt_r.bind (fun deleted ->
 											if deleted then (
 												Log.warn (fun m->m "deleted user %s" (User.string_of_uid uid));
-												Kv.delete !data_kv db_path |> Lwt_r.bindM (fun () ->
+												Data.delete !data db_path |> Lwt_r.bindM (fun () ->
 													respond_json ~status:`OK ~body:(J.empty) ()
 												)
 											) else respond_error "Couldn't delete user (wrong password?)" |> ok_lwt
@@ -542,7 +542,7 @@ module Make
 												version = new_version;
 											} in
 											let payload = updated_core |> json_of_core |> J.to_string in
-											Kv.write !data_kv db_path payload |> Lwt_r.map (fun () ->
+											Data.write !data db_path payload |> Lwt_r.map (fun () ->
 												updated_core
 											)
 										) in

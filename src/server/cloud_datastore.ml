@@ -4,8 +4,8 @@ type datastore = {
 	url : string;
 }
 
-module Impl : Kv_store.Concrete = struct
-	include Kv_store.Core
+module Impl : Dynamic_store.Concrete = struct
+	include Dynamic_store.Core
 	type t = datastore
 
 	let connect_str url = { url }

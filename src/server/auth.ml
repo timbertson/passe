@@ -50,7 +50,7 @@ type cancel = [`Cancel]
 let rollback e = `Rollback e
 
 module type Sig = sig
-	module Kv : Kv_store.Sig
+	module Store : Dynamic_store.Sig
 	module Clock : Mirage_types.PCLOCK
 
 	type 'err cancel_write = [
@@ -81,7 +81,7 @@ module type Sig = sig
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
-	class storage : Clock.t -> Kv.t -> Path.relative -> object
+	class storage : Clock.t -> Store.t -> Path.relative -> object
 		method clock : Clock.t
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
@@ -109,8 +109,8 @@ module type Sig = sig
 	val delete_user : storage:storage -> User.db_user -> string -> (bool, Error.t) result Lwt.t
 end
 
-module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) = struct
-	module Kv = Kv
+module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_store.Sig) = struct
+	module Store = Store
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
 	let time clock = Clock.now_d_ps clock |> Ptime.v
@@ -433,7 +433,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) =
 			-> (Lock.proof -> (User.db_user, Error.t) result Lwt_stream.t -> (a, err) result Lwt.t)
 			-> (a, err) result Lwt.t
 		= fun ~cast_read_err fn ->
-			Kv.read_for_writing fs path (fun proof response ->
+			Store.read_for_writing fs path (fun proof response ->
 				response |> R.fold (function
 					| None ->
 						Log.debug (fun m->m "Ignoring missing user DB");
@@ -505,7 +505,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) =
 					return output#close
 				)) in
 				Log.info (fun m->m"joining write_s and write_result");
-				let write_io = Kv.write_s fs path ~proof output_chunks in
+				let write_io = Store.write_s fs path ~proof output_chunks in
 
 				write_io |> LwtMonad.bind (function
 					| Ok () -> write_result

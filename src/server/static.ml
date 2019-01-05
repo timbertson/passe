@@ -19,13 +19,13 @@ module type Sig = sig
 		-> (string option, Error.t) result Lwt.t
 end
 
-module type Kv_RO = sig
+module type Mirage_kv_RO = sig
 	include Mirage_kv.RO
 	with type page_aligned_buffer = Cstruct.t
 	and type 'a io = 'a Lwt.t
 end
 
-module Readonly(Impl:Kv_RO) : sig
+module Readonly(Impl:Mirage_kv_RO) : sig
 	include Sig
 	val init : Impl.t -> t
 end = struct
@@ -58,13 +58,7 @@ end = struct
 				)
 end
 
-module type Kv_sig = sig
-	include Sig
-	type impl
-	val init : impl -> t
-end
-
-module Store(Impl:Kv_store.Sig) : sig
+module Of_dynamic(Impl:Dynamic_store.Sig) : sig
 	include Sig
 	val init : Impl.t -> t
 end = struct

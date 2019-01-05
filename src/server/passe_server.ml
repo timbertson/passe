@@ -8,7 +8,7 @@ module Log = (val Logging.log_module "service")
 module HTTP = Cohttp_lwt_unix.Server
 
 module Fs_ext = Fs_ext.Augment(FS_unix)
-module Kv_fs = Kv_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
+module Dynamic_fs = Dynamic_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 
@@ -25,11 +25,11 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let%lwt fs = FS_unix.connect "/" in
 
 	let module Data = (val match data_source with
-		| `Cloud_datastore _ -> (module Cloud_datastore: Kv_store.Concrete)
-		| `Fs _ -> (module Kv_fs : Kv_store.Concrete)
+		| `Cloud_datastore _ -> (module Cloud_datastore: Dynamic_store.Concrete)
+		| `Fs _ -> (module Dynamic_fs : Dynamic_store.Concrete)
 	) in
 
-	let data_kv = match data_source with
+	let data = match data_source with
 		| `Cloud_datastore url ->
 			Log.info (fun m->m "Datastore url: %s" url);
 			Data.connect_str url
@@ -39,11 +39,11 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	in
 
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
-	let module Static_files = Static.Store(Kv_fs) in
+	let module Static_files = Static.Of_dynamic(Dynamic_fs) in
 	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
 
-	let static_store = Static_files.init (Kv_fs.connect_unix_fs fs (Path.base document_root)) in
+	let static_store = Static_files.init (Dynamic_fs.connect_unix_fs fs (Path.base document_root)) in
 
 	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
@@ -52,7 +52,7 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
 		~static:static_store
-		~data_kv
+		~data
 		~clock
 		~enable_rc
 		~development
