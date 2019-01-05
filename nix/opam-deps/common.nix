@@ -1,4 +1,5 @@
 [
+	"astring"
 	"cohttp"
 	"hex"
 	"jbuilder"

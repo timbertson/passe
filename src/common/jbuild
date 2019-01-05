@@ -7,6 +7,7 @@
 	(flags (:include ../flags))
 	(modules (:standard version domain_list))
 	(libraries (
+		astring
 		logs
 		re
 		rresult

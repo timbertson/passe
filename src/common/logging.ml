@@ -1,3 +1,5 @@
+open Astring
+
 let default_verbosity = 1 (* Warn *)
 
 let tagging_reporter parent =
@@ -30,6 +32,13 @@ let apply_verbosity verbosity =
 		| n -> if n <= 0 then Error else Debug
 	in
 	set_level ~all:true (Some log_level);
+
+	(* Quiet, cohttp *)
+	Logs.Src.list () |> List.iter (fun src ->
+		if String.is_prefix ~affix:"cohttp." (Logs.Src.name src) then
+			Logs.Src.set_level src (Some Info)
+	);
+
 	log_level
 
 let log_module name = Logs.src_log (Logs.Src.create name)
