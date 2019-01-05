@@ -9,7 +9,6 @@ module Atomic : AtomicSig = functor (Fs:Augmented) -> struct
 	let readable _fs name = Lwt.return (Ok name)
 
 	let with_writable fs dest fn =
-		(* let dest = Fs.Path.to_unix dest in *)
 		let success = Ok () in
 		let tmpname = Path.modify_filename (fun name -> name ^ ".tmp") dest in
 		let dest_unix = Path.to_unix dest in

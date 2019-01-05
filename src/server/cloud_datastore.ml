@@ -1,10 +1,15 @@
+open Passe
+
 type datastore = {
 	url : string;
 }
 
-module Impl : Kv_store.Sig = struct
+module Impl : Kv_store.Concrete = struct
 	include Kv_store.Core
-	type t = unit
+	type t = datastore
+
+	let connect_str url = { url }
+	let connect_unix_fs _ _ = Error.raise_assert "Not implemented"
 
 	let read = Obj.magic
 	let write = Obj.magic

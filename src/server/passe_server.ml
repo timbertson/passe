@@ -19,23 +19,31 @@ type data_source = [
 ]
 
 let start_server ~host ~port ~development ~document_root ~data_source () =
-	let (data_module, data_root) =
-		match data_source with
-			| `Cloud_datastore url -> (module Cloud_datastore: Kv_store.Sig), url
-			| `Fs root -> (module Kv_fs : Kv_store.Sig), root
+
+	Log.info (fun m->m "Listening on: %s %d" host port);
+	Log.info (fun m->m "Document root: %s" document_root);
+	let%lwt fs = FS_unix.connect "/" in
+
+	let module Data = (val match data_source with
+		| `Cloud_datastore _ -> (module Cloud_datastore: Kv_store.Concrete)
+		| `Fs _ -> (module Kv_fs : Kv_store.Concrete)
+	) in
+
+	let data_kv = match data_source with
+		| `Cloud_datastore url ->
+			Log.info (fun m->m "Datastore url: %s" url);
+			Data.connect_str url
+		| `Fs root ->
+			Log.info (fun m->m "Data root: %s" root);
+			Data.connect_unix_fs fs (Path.base root)
 	in
 
-	let module Data = (val data_module) in
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
 	let module Static_files = Static.Store(Kv_fs) in
 	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
-	Log.info (fun m->m "Listening on: %s %d" host port);
-	Log.info (fun m->m "Document root: %s" document_root);
-	Log.info (fun m->m "Data root: %s" data_root);
-	let%lwt fs = FS_unix.connect "/" in
-	let static_store = Static_files.init (Kv_fs.connect fs document_root) in
-	let data_kv : Data.t = Obj.magic () in
+
+	let static_store = Static_files.init (Kv_fs.connect_unix_fs fs (Path.base document_root)) in
 
 	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in

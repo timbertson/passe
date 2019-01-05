@@ -30,9 +30,16 @@ module type Sig = sig
 	val reconnect : t -> string -> t
 end
 
+module type Concrete = sig
+	include Sig
+	val connect_unix_fs : FS_unix.t -> Path.base -> t
+	val connect_str : string -> t
+end
+
 module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 	include Core
 	type t = (Fs.t * Path.base)
+
 	module Atomic = AtomicF(Fs)
 	module PathMap = Path.PathMap
 
@@ -47,9 +54,14 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 				lock
 			end in
 		(try%lwt
-			Lock.use ?proof lock fn with e -> raise e
+			Log.debug (fun m->m "acquiring lock for %a" Path.pp_full path);
+			Lock.use ?proof lock (fun proof ->
+				Log.debug (fun m->m "acquired lock for %a" Path.pp_full path);
+				fn proof
+			)
+		with e -> raise e
 		) [%lwt.finally
-			Log.debug (fun m->m "finished with mutex %a; no_open_locks = %b" Path.pp_full path (Lock.is_empty lock));
+			Log.debug (fun m->m "released lock for %a; is_empty = %b" Path.pp_full path (Lock.is_empty lock));
 			if (Lock.is_empty lock) then (
 				locks := PathMap.remove path !locks
 			);
@@ -146,7 +158,7 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 
 	let write_s (fs,base) path ?proof stream : (unit, Error.t) result Lwt.t =
 		let path = Path.join base path in
-		Fs.mkdir_p fs (Path.to_unix path) |> Lwt_r.bind (fun () ->
+		Fs.mkdir_p fs (Path.to_unix path |> Filename.dirname) |> Lwt_r.bind (fun () ->
 			locked_atomic_write fs path ?proof (fun _proof path ->
 				let path_s = Path.to_unix path in
 				Log.debug (fun m->m "Writing file stream: %s" path_s);
@@ -181,7 +193,8 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 		Fs.destroy fs (Path.to_unix (Path.join base path))
 		|> Lwt.map (R.reword_error cast_write_err)
 
-	let connect t base = (t, Path.base base)
+	let connect_unix_fs fs base = (fs, base)
+	let connect_str _ = Error.raise_assert "Not implemented"
 
 	let reconnect : t -> string -> t = fun (fs, _) base -> (fs, Path.base base)
 end

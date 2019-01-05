@@ -46,15 +46,6 @@ let lines_stream stream =
 				read_more ()
 	)
 
-let lwt_join2 a b =
-	let ra = ref (Obj.magic ()) in
-	let rb = ref (Obj.magic ()) in
-	Lwt.join [
-		(a |> Lwt.map ((:=) ra));
-		(b |> Lwt.map ((:=) rb));
-	] >>= fun () -> return (!ra, !rb)
-
-
 type cancel = [`Cancel]
 let rollback e = `Rollback e
 
@@ -492,7 +483,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) =
 				let user = { user with User.active_tokens = active_tokens } in
 				let json = User.to_json user in
 				let line = J.to_single_line_string json in
-				Log.debug (fun m->m "writing output user... %s with %d tokens"
+				Log.debug (fun m->m "writing output user `%s` with %d tokens"
 					(user.User.name)
 					(List.length active_tokens)
 				);
@@ -513,11 +504,12 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Kv:Kv_store.Sig) =
 					Log.debug (fun m->m "closing output");
 					return output#close
 				)) in
+				Log.info (fun m->m"joining write_s and write_result");
 				let write_io = Kv.write_s fs path ~proof output_chunks in
-				lwt_join2 write_io write_result |> Lwt.map (fun (write_io, write_result) ->
-					match write_io with
-						| Ok () -> write_result
-						| Error err -> Error (write_error err)
+
+				write_io |> LwtMonad.bind (function
+					| Ok () -> write_result
+					| Error err -> Lwt.return (Error (write_error err))
 				)
 			)
 		)
