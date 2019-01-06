@@ -1,3 +1,6 @@
+open Passe
+module Log = (val Logging.log_module "lock")
+
 type lock = Lwt_mutex.t
 type proof = {
 	lock: lock;
@@ -29,3 +32,33 @@ let use ?proof lock fn =
 				Lwt.return_unit
 			]
 		)
+
+
+module Map (Ord: OrderedType.S) ( ) = struct
+	module LockMap = Map.Make(Ord)
+
+	let locks = ref LockMap.empty
+
+	let acquire key ?proof fn =
+		let lock =
+			try LockMap.find key !locks
+			with Not_found -> begin
+				let lock = create () in
+				locks := LockMap.add key lock !locks;
+				lock
+			end in
+		(try%lwt
+			Log.debug (fun m->m "acquiring lock for %a" Ord.pp key);
+			use ?proof lock (fun proof ->
+				Log.debug (fun m->m "acquired lock for %a" Ord.pp key);
+				fn proof
+			)
+		with e -> raise e
+		) [%lwt.finally
+			Log.debug (fun m->m "released lock for %a; is_empty = %b" Ord.pp key (is_empty lock));
+			if (is_empty lock) then (
+				locks := LockMap.remove key !locks
+			);
+			Lwt.return_unit
+		]
+end

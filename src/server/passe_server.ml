@@ -9,6 +9,7 @@ module HTTP = Cohttp_lwt_unix.Server
 
 module Fs_ext = Fs_ext.Augment(FS_unix)
 module Dynamic_fs = Dynamic_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
+module Cloud_datastore = Cloud_datastore.Make(Cohttp_lwt_unix.Client)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 

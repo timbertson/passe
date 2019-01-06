@@ -15,8 +15,10 @@ module Path : sig
 	val modify_filename : (string -> string) -> full -> full
 	val join : base -> relative -> full
 	val to_unix : full -> string
+	val to_string : relative -> string
 
-	module PathMap : Map.S with type key = full
+	module Full : OrderedType.S with type t = full
+	module Relative : OrderedType.S with type t = relative
 end = struct
 	(* base is an absolute unix path *)
 	type base = string
@@ -59,27 +61,35 @@ end = struct
 
 	let pp_full formatter (base, parts) = pp formatter (base :: parts)
 
-	let to_unix (base, path) =
-		(String.concat ~sep:Filename.dir_sep (base :: path))
+	let to_string path =
+		(String.concat ~sep:Filename.dir_sep path)
+
+	let to_unix (base, path) = to_string (base :: path)
 
 	let join base rel = (base, rel)
 
-	module PathMap = Map.Make (struct
+	module Relative = struct
+		type t = relative
+		let compare_one : string -> string -> int = Pervasives.compare
+		let rec compare a b = (
+			match (a,b) with
+				| [], [] -> 0
+				| [], _ -> -1
+				| _, [] -> 1
+				| (a1::a, b1::b) -> (match compare_one a1 b1 with
+					| 0 -> compare a b
+					| diff -> diff
+				)
+		)
+		let pp = pp
+	end
+
+	module Full = struct
 		type t = full
-		let compare (abase,a) (bbase,b) =
-			let compare_one : string -> string -> int = Pervasives.compare in
-			let rec compare_parts a b = (
-				match (a,b) with
-					| [], [] -> 0
-					| [], _ -> -1
-					| _, [] -> 1
-					| (a1::a, b1::b) -> (match compare_one a1 b1 with
-						| 0 -> compare_parts a b
-						| diff -> diff
-					)
-			) in
-			compare_parts (abase::a) (bbase::b)
-	end)
+		let compare (abase,a) (bbase,b) = Relative.compare (abase::a) (bbase::b)
+		let pp = pp_full
+	end
+
 end
 
 include Path
