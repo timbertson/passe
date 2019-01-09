@@ -71,7 +71,6 @@ module Make
 = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
-	module Data_res = Static.Fs(Fs)
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Request.t
@@ -173,14 +172,13 @@ module Make
 			let base = Fs.Path.base root in
 			let user_db_path = Fs.Path.make base ["users.db.json"] |> R.assert_ok string_of_invalid_path in
 			(base,
-				Data_res.init ~fs base,
 				new Auth.storage clock fs user_db_path
 			)
 		in
 
-		let data_root, data_ro, user_db =
-			let (a,b,c) = adopt_data_root initial_data_root in
-			(ref a, ref b, ref c)
+		let data_root, user_db =
+			let (a,b) = adopt_data_root initial_data_root in
+			(ref a, ref b)
 		in
 
 		(* result / lwt helpers *)
@@ -202,9 +200,8 @@ module Make
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
-			let new_data_root, new_data_ro, new_user_db = adopt_data_root newroot in
+			let new_data_root, new_user_db = adopt_data_root newroot in
 			data_root := new_data_root;
-			data_ro := new_data_ro;
 			user_db := new_user_db;
 
 			let dbdir = db_path_for ?user:None new_data_root |> R.assert_ok string_of_invalid_path in
@@ -295,18 +292,7 @@ module Make
 					return (Static_res.key static path) |> Lwt_r.bind (fun key ->
 						Static_res.etag static key etag_of_chunks |> Lwt.bindr (function
 							| Ok etag -> return (Ok (etag, Static_res.read_s static key))
-							| Error `Invalid_path | Error `Read_error _ as e -> return e
-							| Error `Not_found -> (
-								(* try data *)
-								Log.debug (fun m->m "Path %s not found in static files; trying data"
-									(String.concat ~sep:"/" path)
-								);
-								let data_ro = !data_ro in
-								return (Data_res.key data_ro path) |> Lwt_r.bind (fun key ->
-									Data_res.etag data_ro key etag_of_chunks
-									|> Lwt_r.map (fun etag -> (etag, Data_res.read_s data_ro key))
-								)
-							)
+							| Error _ as e -> return e
 						)
 					) |> Lwt.bindr (function
 						| Ok (etag, read) -> (
