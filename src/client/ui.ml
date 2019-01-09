@@ -146,6 +146,7 @@ let delete ~sync_state ~(existing:Store.domain) ~term () =
 let sync_ui state =
 	let%lwt term = Lazy.force LTerm.stderr in
 	let open Sync in
+	let%lwt () = LTerm.fprintlf term "Syncing with %s" (Uri.to_string !Server.root_url) in
 
 	let login_prompt user =
 		let%lwt user = match user with
