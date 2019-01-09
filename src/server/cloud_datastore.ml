@@ -6,13 +6,29 @@ open Common
 module J = Json_ext
 module Log = (val Passe.Logging.log_module "cloud_datastore")
 
-type datastore = {
-	url : Uri.t;
-	account : string;
-	token_uri : string;
-	private_key : Nocrypto.Rsa.priv;
-	token : string option ref;
-}
+let lwt_unix_ctx () =
+	(* appengine has crippled some unix syscalls for service / host resolution, so we need to roll our own resolvers *)
+	let service proto =
+		Lwt.return (match proto with
+			| "http" -> Some { Resolver.name = "http"; port = 80; tls = false }
+			| "https" -> Some { Resolver.name = "https"; port = 443; tls = true }
+			| _ -> None
+		)
+	in
+	let dns = Dns_resolver_unix.create () in
+	let resolve svc uri = (match Uri.host uri with
+		| None -> Lwt.return (`Unknown "No host")
+		| Some host ->
+			dns |> LwtMonad.bind (fun dns ->
+				Dns_resolver_unix.gethostbyname dns host
+			) |> Lwt.map (function
+				| [] -> `Unknown ("Couldn't resolve host " ^ host)
+				| addr :: _ -> `TCP (addr, svc.Resolver.port)
+			)
+	) in
+	let resolver = Resolver_lwt.init ~service ~rewrites:["", resolve] () in
+	(* Resolver_lwt.set_service ~f:service Resolver_lwt_unix.system; *)
+	Cohttp_lwt_unix.Client.custom_ctx ~resolver:resolver ()
 
 type request_error = [
 	| Error.t
@@ -95,13 +111,20 @@ module Keys = struct
 end
 
 module Make (Client:Cohttp_lwt.S.Client) = struct
-	module Impl = (struct
+	module Impl = (struct (* ( ) *)
 		include Dynamic_store.Types
-		type t = datastore
+		type t = {
+			url : Uri.t;
+			account : string;
+			token_uri : string;
+			private_key : Nocrypto.Rsa.priv;
+			token : string option ref;
+			ctx : Client.ctx;
+		}
 
-		module PathLock = Lock.Map(Path.Relative)( )
+		module PathLock = Lock.Map(Path.Relative)()
 
-		let _post ~bearer ~body url : ((Response.t * Body.t), request_error) result Lwt.t =
+		let _post ~ctx ~bearer ~body url : ((Response.t * Body.t), request_error) result Lwt.t =
 			let headers = let base = Header.init () in
 				match bearer with
 					| Some b -> Header.add base "Authorization" ("Bearer " ^ b)
@@ -109,10 +132,18 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 			in
 			Log.debug (fun m->m"Posting (%s) to %a with body %s"
 				(match bearer with Some _ -> "authenticated" | None -> "unauthenticated") Uri.pp_hum url body);
-			Client.post ~headers ~body:(Body.of_string body) url
-				|> Lwt.map result_of_response
+
+			try%lwt
+				Client.post ~ctx ~headers ~body:(Body.of_string body) url
+					|> Lwt.map result_of_response
+			with e -> Lwt.return (
+				let msg = Format.asprintf "exception thrown in POST to %a" Uri.pp_hum url in
+				Log.debug (fun m->m"%s: %s" msg (Printexc.to_string e));
+				Error (`Failed msg)
+			)
 
 		let get_access_token t =
+			(* see https://developers.google.com/identity/protocols/OAuth2ServiceAccount *)
 			let jwt =
 				let header = `Assoc [
 					"alg", `String "RS256";
@@ -127,8 +158,8 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 					"iat", `Int now;
 				] |> J.to_string in
 
+				(* from https://hackernoon.com/rs256-in-ocaml-reasonml-9ae579b9420a *)
 				let rs256_sign data =
-					(* Taken from https://github.com/mmaker/ocaml-letsencrypt *)
 					let data = Cstruct.of_string data in
 					let h = Nocrypto.Hash.SHA256.digest data in
 					let pkcs1_digest = X509.Encoding.pkcs1_digest_info_to_cstruct (`SHA256, h) in
@@ -145,7 +176,7 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 				grant_type, `String "urn:ietf:params:oauth:grant-type:jwt-bearer";
 				assertion, `String jwt;
 			] |> J.to_string in
-			_post ~bearer:None ~body (Uri.of_string t.token_uri (*"https://www.googleapis.com/oauth2/v4/token" *))
+			_post ~ctx:t.ctx ~bearer:None ~body (Uri.of_string t.token_uri)
 				|> Lwt_r.bind (fun (_, body) ->
 					Body.to_string body |> Lwt.map (fun body ->
 						parse_json body
@@ -159,7 +190,7 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 				)
 
 		let post instance ~body url =
-			let _post token = _post ~bearer:(Some token) ~body url in
+			let _post token = _post ~ctx:instance.ctx ~bearer:(Some token) ~body url in
 
 			let refresh_token () =
 				instance.token := None;
@@ -261,7 +292,7 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 			post t ~body url |> LwtMonad.bind to_standard_error
 				|> Lwt_r.bindM consume_and_log_body
 
-		let connect key_file =
+		let connect ~ctx key_file =
 			let key_json = J.from_file key_file in
 			let prop key = json_field key key_json |> Option.bind json_string |> Option.default_fn (fun () ->
 				failwith "Invalid JSON"
@@ -276,9 +307,10 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 				token_uri = "https://www.googleapis.com/oauth2/v4/token";
 				token = ref None;
 				url;
+				ctx;
 			}
 
-		let reconnect _ = connect
+		let reconnect _ _ = failwith "Reconnection not supported"
 	end)
 
 	include Impl

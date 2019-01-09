@@ -7,6 +7,8 @@
 	(flags (:include ../flags))
 	(libraries (
 		extlib
+		conduit-lwt-unix
+		dns-lwt-unix
 		hex
 		mirage-clock-unix
 		mirage-fs-unix

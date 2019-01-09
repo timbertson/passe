@@ -9,7 +9,7 @@ module HTTP = Cohttp_lwt_unix.Server
 
 module Fs_ext = Fs_ext.Augment(FS_unix)
 module Dynamic_fs = Dynamic_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
-module Cloud_datastore = Cloud_datastore.Make(Cohttp_lwt_unix.Client)
+module Cloud_data = Cloud_datastore.Make(Cohttp_lwt_unix.Client)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 
@@ -26,7 +26,7 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let%lwt fs = FS_unix.connect "/" in
 
 	let module Data = (val match data_source with
-		| `Cloud_datastore _ -> (module Cloud_datastore: Dynamic_store.Sig)
+		| `Cloud_datastore _ -> (module Cloud_data: Dynamic_store.Sig)
 		| `Fs _ -> (module Dynamic_fs : Dynamic_store.Sig)
 	) in
 
@@ -35,7 +35,8 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let data : Data.t = match data_source with
 		| `Cloud_datastore spec ->
 			Log.info (fun m->m "Datastore spec: %s" spec);
-			Obj.magic (Cloud_datastore.connect spec: Cloud_datastore.t)
+			let ctx = Cloud_datastore.lwt_unix_ctx () in
+			Obj.magic (Cloud_data.connect ~ctx spec: Cloud_data.t)
 		| `Fs root ->
 			Log.info (fun m->m "Data root: %s" root);
 			Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t)
