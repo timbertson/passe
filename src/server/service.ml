@@ -70,7 +70,6 @@ module Make
 = struct
 	module Store = Store.Make(Re)
 	module User = Auth.User
-	module Data_res = Static.Of_dynamic(Data)
 
 	module type AuthContext = sig
 		val validate_user : Auth.storage -> Request.t
@@ -172,15 +171,12 @@ module Make
 
 		let adopt_data_root root =
 			let data : Data.t = root |> Option.fold (Data.reconnect initial_data) initial_data in
-			(data,
-				Data_res.init data,
-				new Auth.storage clock data user_db_path
-			)
+			(data, new Auth.storage clock data user_db_path)
 		in
 
-		let data, data_ro, user_db =
-			let (a,b,c) = adopt_data_root None in
-			(ref a, ref b, ref c)
+		let data, user_db =
+			let (a,b) = adopt_data_root None in
+			(ref a, ref b)
 		in
 
 		let response_of_result result =
@@ -196,9 +192,8 @@ module Make
 		(* hooks for unit test controlling *)
 		let override_data_root = (fun newroot : unit ->
 			Log.warn (fun m->m "setting data_root = %s" newroot);
-			let new_data, new_data_ro, new_user_db = adopt_data_root (Some newroot) in
+			let new_data, new_user_db = adopt_data_root (Some newroot) in
 			data := new_data;
-			data_ro := new_data_ro;
 			user_db := new_user_db
 		) in
 
@@ -303,21 +298,7 @@ module Make
 						let static_etag : (string option, Error.t) result Lwt.t = Static_res.etag static key etag_of_chunks in
 						static_etag |> Lwt_r.bind (function
 							| Some _ as etag -> Static_res.read_s static key (respond_chunks etag)
-							| None -> (
-								(* try data *)
-								Log.debug (fun m->m "Path %s not found in static files; trying data"
-									(String.concat ~sep:"/" path)
-								);
-								let data_ro = !data_ro in
-								return (Data_res.key path) |> Lwt_r.bind (fun key ->
-									(* TODO: this reads the file twice... *)
-									Data_res.read_s data_ro key (fun chunks ->
-										Data_res.etag data_ro key etag_of_chunks |> Lwt_r.bind (fun etag ->
-											respond_chunks etag chunks
-										)
-									)
-								)
-							)
+							| None -> Lwt.return (Ok None)
 						)
 					) |> Lwt.bindr (function
 						| Ok (Some response) -> return response
