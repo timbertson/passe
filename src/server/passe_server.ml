@@ -33,9 +33,9 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	(* Each branch produces an appropriate Data.t corresponding to above module, but we
 	 * need to cast with Obj.magic because it can't be statically proven *)
 	let data : Data.t = match data_source with
-		| `Cloud_datastore url ->
-			Log.info (fun m->m "Datastore url: %s" url);
-			Obj.magic (Cloud_datastore.connect url: Cloud_datastore.t)
+		| `Cloud_datastore spec ->
+			Log.info (fun m->m "Datastore spec: %s" spec);
+			Obj.magic (Cloud_datastore.connect spec: Cloud_datastore.t)
 		| `Fs root ->
 			Log.info (fun m->m "Data root: %s" root);
 			Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t)

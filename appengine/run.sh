@@ -9,7 +9,7 @@ exec "$base/lib/ld.so" \
 	--data "/tmp/data" \
 	--timestamp \
 	--port "$PORT" \
-	--cloud-datastore "$GOOGLE_CLOUD_PROJECT" \
+	--cloud-datastore secrets/passe.json \
 	-vv \
 	"$@"
 	;

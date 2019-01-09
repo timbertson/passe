@@ -10,3 +10,4 @@ _digests
 /build
 !/build/native/bin/server.native
 /app/lib
+/secrets

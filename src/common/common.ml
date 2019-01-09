@@ -102,6 +102,9 @@ module ResultT(M:Monad) = struct
 			| Error _ as e -> M.return e
 		)
 
+	let bindR (type a)(type b)(type err): (a -> (b, err) result) -> (a, err) result M.t -> (b, err) result M.t =
+		fun f r -> r |> M.map (R.bindr f)
+
 	let reword_error (type a)(type err)(type err2)
 		: (err -> err2) -> (a, err) result M.t -> (a, err2) result M.t =
 		fun fn r -> M.map (R.reword_error fn) r
