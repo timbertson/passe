@@ -9,7 +9,7 @@ open Common
 
 module Log = (val Logging.log_module "passe")
 
-let too_many_args () = raise @@ SafeError "too many arguments"
+let too_many_args () = Error.failwith @@ `Invalid "too many arguments"
 
 module Actions = struct
 	let generate ~use_clipboard ~one_time ~edit ~length ~suffix env args =
@@ -52,7 +52,7 @@ module Actions = struct
 		let state = Sync.build env in
 		let open Store in
 		match S.value (state.Sync.db_signal) with
-		| None -> raise @@ SafeError "No current user; try --sync first"
+		| None -> Error.failwith @@ `Invalid "No current user; try --sync first"
 		| Some _db -> begin
 			let db = state.Sync.db_fallback in
 			let get_defaults db = Store.get_defaults (S.value db) in
@@ -63,7 +63,7 @@ module Actions = struct
 			}] in
 			let lookup key =
 				try List.find (fun f -> f.key = key) fields
-				with Not_found -> raise @@ SafeError ("Unknown config key: "^key)
+				with Not_found -> Error.failwith @@ `Invalid ("Unknown config key: "^key)
 			in
 			let print_field field = Log.app (fun m->m "%s: %s" (field.key) (field.get db)) in
 
@@ -153,7 +153,7 @@ let main () =
 				| Some conf -> conf
 				| None ->
 					let conf = getenv "HOME" |> Option.map (fun home -> Filename.concat home ".config") in
-					Option.get_exn conf (SafeError "neither $XDG_CONFIG_HOME or $HOME are defined")
+					Option.get_exn conf (Error.throwable (`Invalid "neither $XDG_CONFIG_HOME or $HOME are defined"))
 			in
 			let path = Filename.concat config_dir "passe/db.json" in
 			new Config_storage.provider path
@@ -164,6 +164,6 @@ let main () =
 		} in
 		Options.action env posargs
 	with
-		| SafeError e -> (prerr_endline e; exit 1)
+		| Error.Throwable (`Invalid e) -> (prerr_endline e; exit 1)
 		| LTerm_read_line.Interrupt | Sys.Break -> exit 1
 		| e -> raise e

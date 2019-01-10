@@ -9,10 +9,8 @@ module HTTP = Cohttp_lwt_unix.Server
 
 module Fs_ext = Fs_ext.Augment(FS_unix)
 module Dynamic_fs = Dynamic_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
-module Cloud_data = Cloud_datastore.Make(Cohttp_lwt_unix.Client)
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
-
 
 type data_source = [
 	| `Cloud_datastore of string
@@ -26,27 +24,31 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let%lwt fs = FS_unix.connect "/" in
 
 	let module Data = (val match data_source with
-		| `Cloud_datastore _ -> (module Cloud_data: Dynamic_store.Sig)
+		| `Cloud_datastore _ -> (module Cloud_datastore.Cloud_datastore_unix: Dynamic_store.Sig)
 		| `Fs _ -> (module Dynamic_fs : Dynamic_store.Sig)
 	) in
 
 	(* Each branch produces an appropriate Data.t corresponding to above module, but we
 	 * need to cast with Obj.magic because it can't be statically proven *)
-	let data : Data.t = match data_source with
+	let data = (match data_source with
 		| `Cloud_datastore spec ->
 			Log.info (fun m->m "Datastore spec: %s" spec);
-			let ctx = Cloud_datastore.lwt_unix_ctx () in
-			Obj.magic (Cloud_data.connect ~ctx spec: Cloud_data.t)
+			Data.connect (Cloud_datastore.Cloud_datastore spec)
 		| `Fs root ->
 			Log.info (fun m->m "Data root: %s" root);
-			Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t)
+			Data.connect (Dynamic_fs.Fs (fs, (Path.base root)));
+			(* Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t) *)
+	) |> R.assert_ok Error.pp
 	in
 
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
 	let module Static_files = Static.Of_dynamic(Dynamic_fs) in
 	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
-	let static_store = Static_files.init (Dynamic_fs.connect fs (Path.base document_root)) in
+	let static_store =
+		let connector = Dynamic_fs.Fs (fs, (Path.base document_root)) in
+		let dynamic_store = Dynamic_fs.connect connector |> R.assert_ok Error.pp in
+		Static_files.init dynamic_store in
 
 	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
@@ -118,7 +120,6 @@ let main () =
 	if (Opt.get timestamp) then (
 		let clock = Pclock.connect () |> Lwt_main.run in
 		Logs.set_reporter @@
-			(* TODO: this order seems backwards... *)
 			Logging.tagging_reporter @@
 			Timed_log.reporter ~clock @@
 			Logging.default_reporter

@@ -2,7 +2,6 @@
 (jbuild_version 1)
 
 (library (
-	; TODO: rename passe_common
 	(name passe)
 	(flags (:include ../flags))
 	(modules (:standard version domain_list))

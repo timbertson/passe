@@ -1,8 +1,5 @@
 type ('a, 'err) result = ('a, 'err) Pervasives.result
 
-(* TODO: use Error.t *)
-exception SafeError of string
-
 let pp_strf pp obj = Format.asprintf "%a" pp obj
 
 module R = struct

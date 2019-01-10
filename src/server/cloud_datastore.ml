@@ -6,29 +6,7 @@ open Common
 module J = Json_ext
 module Log = (val Passe.Logging.log_module "cloud_datastore")
 
-let lwt_unix_ctx () =
-	(* appengine has crippled some unix syscalls for service / host resolution, so we need to roll our own resolvers *)
-	let service proto =
-		Lwt.return (match proto with
-			| "http" -> Some { Resolver.name = "http"; port = 80; tls = false }
-			| "https" -> Some { Resolver.name = "https"; port = 443; tls = true }
-			| _ -> None
-		)
-	in
-	let dns = Dns_resolver_unix.create () in
-	let resolve svc uri = (match Uri.host uri with
-		| None -> Lwt.return (`Unknown "No host")
-		| Some host ->
-			dns |> LwtMonad.bind (fun dns ->
-				Dns_resolver_unix.gethostbyname dns host
-			) |> Lwt.map (function
-				| [] -> `Unknown ("Couldn't resolve host " ^ host)
-				| addr :: _ -> `TCP (addr, svc.Resolver.port)
-			)
-	) in
-	let resolver = Resolver_lwt.init ~service ~rewrites:["", resolve] () in
-	(* Resolver_lwt.set_service ~f:service Resolver_lwt_unix.system; *)
-	Cohttp_lwt_unix.Client.custom_ctx ~resolver:resolver ()
+type Dynamic_store.connector += Cloud_datastore of string
 
 type request_error = [
 	| Error.t
@@ -292,7 +270,19 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 			post t ~body url |> LwtMonad.bind to_standard_error
 				|> Lwt_r.bindM consume_and_log_body
 
-		let connect ~ctx key_file =
+		let reconnect _ _ = failwith "Reconnection not supported"
+	end)
+
+	include Impl
+	include Dynamic_store.Augment(Impl)
+end
+
+module Cloud_datastore_unix = struct
+	(* Will need to extract this into a module if we ever use it in mirage *)
+	include Make(Cohttp_lwt_unix.Client)
+
+	let connect = function
+		| Cloud_datastore key_file ->
 			let key_json = J.from_file key_file in
 			let prop key = json_field key key_json |> Option.bind json_string |> Option.default_fn (fun () ->
 				failwith "Invalid JSON"
@@ -301,18 +291,40 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 			let private_key = match prop "private_key" |> Cstruct.of_string |> X509.Encoding.Pem.Private_key.of_pem_cstruct1 with
 				| `RSA key -> key
 			in
-			{
+
+			let ctx =
+				(* appengine has crippled some unix syscalls for service / host resolution, so we need to roll our own resolvers *)
+				let service proto =
+					Lwt.return (match proto with
+						| "http" -> Some { Resolver.name = "http"; port = 80; tls = false }
+						| "https" -> Some { Resolver.name = "https"; port = 443; tls = true }
+						| _ -> None
+					)
+				in
+				let dns = Dns_resolver_unix.create () in
+				let resolve svc uri = (match Uri.host uri with
+					| None -> Lwt.return (`Unknown "No host")
+					| Some host ->
+						dns |> LwtMonad.bind (fun dns ->
+							Dns_resolver_unix.gethostbyname dns host
+						) |> Lwt.map (function
+							| [] -> `Unknown ("Couldn't resolve host " ^ host)
+							| addr :: _ -> `TCP (addr, svc.Resolver.port)
+						)
+				) in
+				let resolver = Resolver_lwt.init ~service ~rewrites:["", resolve] () in
+				(* Resolver_lwt.set_service ~f:service Resolver_lwt_unix.system; *)
+				Cohttp_lwt_unix.Client.custom_ctx ~resolver:resolver ()
+			in
+
+			Ok {
 				account = prop "client_email";
+				ctx;
 				private_key;
 				token_uri = "https://www.googleapis.com/oauth2/v4/token";
 				token = ref None;
 				url;
-				ctx;
 			}
 
-		let reconnect _ _ = failwith "Reconnection not supported"
-	end)
-
-	include Impl
-	include Dynamic_store.Augment(Impl)
+		| _ -> Error (`Invalid "connect")
 end

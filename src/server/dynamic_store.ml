@@ -9,6 +9,8 @@ module Types = struct
 	type write_instruction = [ `Output of string | `Rollback ]
 end
 
+type connector = ..
+
 module type Base = sig
 	include module type of Types
 	type t
@@ -29,6 +31,8 @@ module type Sig = sig
 	val write : t -> Path.relative -> string -> (unit, Error.t) result Lwt.t
 
 	val read_s : t -> Path.relative -> ((string, Error.t) result Lwt_stream.t -> ('a, Error.t) result Lwt.t) -> ('a option, Error.t) result Lwt.t
+
+	val connect : connector -> (t, Error.t) result
 end
 
 module Augment(T:Base) = struct
@@ -55,6 +59,7 @@ module Augment(T:Base) = struct
 end
 
 module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
+	type connector += Fs of Fs.t * Path.base
 	module Impl = (struct
 		include Types
 		type t = (Fs.t * Path.base)
@@ -71,7 +76,6 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 		)
 
 		let cast_write_err : Fs.write_error -> Error.t = function
-			(* TODO: this repeats above, but I can't pull out the common vaiants from error + write_error *)
 			| `Is_a_directory -> `Invalid "Is_a_directory"
 			| `Not_a_directory -> `Invalid "Not_a_directory"
 			| other -> `Failed (pp_strf Fs.pp_write_error other)
@@ -174,5 +178,7 @@ module Of_fs(Fs: Fs_ext.Augmented)(AtomicF: Fs_ext.AtomicSig) = struct
 	include Impl
 	include Augment(Impl)
 
-	let connect fs base = (fs, base)
+	let connect = function
+		| Fs (fs, base) -> Ok (fs, base)
+		| _ -> Error (`Invalid "connect")
 end

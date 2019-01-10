@@ -10,6 +10,6 @@ exec "$base/lib/ld.so" \
 	--timestamp \
 	--port "$PORT" \
 	--cloud-datastore secrets/passe.json \
-	-vv \
+	-v \
 	"$@"
 	;

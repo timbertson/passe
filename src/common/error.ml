@@ -14,7 +14,9 @@ type t = [ invalid | assertion_error | failure ]
 
 exception Throwable of t
 
-let failwith t = raise (Throwable t)
+let throwable t = Throwable t
+
+let failwith t = raise (throwable t)
 
 let raise_assert s = failwith (`AssertionError s)
 
