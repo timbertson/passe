@@ -53,9 +53,7 @@ end = struct
 
 	let pp formatter (parts, fname) =
 		let fmt_slash = Fmt.const Fmt.string Filename.dir_sep in
-		(Fmt.list ~sep:fmt_slash Fmt.string) formatter parts;
-		fmt_slash formatter ();
-		Fmt.string formatter fname
+		(Fmt.list ~sep:fmt_slash Fmt.string) formatter (parts @ [fname])
 
 	let pp_full formatter (base, (parts, fname)) = pp formatter ((base :: parts), fname)
 
