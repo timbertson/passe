@@ -4,7 +4,7 @@
 
 <img src="http://gfxmonk.net/dist/status/project/passe.png">
 
-There is a public instance running on [openshift](https://passe-passe.a3c1.starter-us-west-1.openshiftapps.com/),
+There is a public instance running on [https://passe.gfxmonk.net/](),
 but I make no guarantees about its uptime / stability.
 If you prefer, you can [run your own instance](#run-own).
 
@@ -144,13 +144,6 @@ This is not really recommended (because it there is no uninstall)
 but if you're cool with that, run:
 
 	./install.sh <destination>
-
-<a name="run-own"/>
-
-# Run your own openshift instance:
-
-To build a portable image, run `gup openshift/all` from a nix shell. That'll make a self-contained
-installation including all required libraries, as long as you're building on an x86_64 machine.
 
 # Licence
 

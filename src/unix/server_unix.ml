@@ -9,7 +9,7 @@ module Impl : Server.IMPL = struct
 	module Header = Cohttp.Header
 	module Body = Cohttp_lwt.Body
 
-	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe-passe.a3c1.starter-us-west-1.openshiftapps.com/"
+	let default_root = try Unix.getenv "PASSE_SERVER" with Not_found -> "https://passe.gfxmonk.net/"
 	let root_url =
 		(* XXX take from config *)
 		Uri.of_string default_root
