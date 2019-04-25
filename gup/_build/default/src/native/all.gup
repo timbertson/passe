@@ -1,4 +1,4 @@
 #!bash -eu
-jbuilder build @bin/all
+dune build @bin/all
 gup -u share bin/{client,server}
 

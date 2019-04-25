@@ -1,8 +1,8 @@
 [
 	"astring"
-	"cohttp"
+	{ name = "cohttp"; constraint = ">=2.1.2"; }
 	"hex"
-	"jbuilder"
+	"dune"
 	"logs"
 	{ name = "lwt"; constraint = ">=3.1.0"; }
 	"lwt_react"
@@ -12,7 +12,6 @@
 	"mirage-fs-unix"
 	"mirage-types"
 	"mirage-types-lwt"
-	{ name = "nocrypto"; constraint = ">=0.5.4"; }
 	"ocamlfind"
 	"ocamlbuild"
 	"opam-installer"
@@ -21,5 +20,5 @@
 	"react"
 	"rresult"
 	{ name = "uri"; constraint = ">=1.9.4"; }
-	"yojson"
+	{ name = "yojson"; constraint = "<1.6.0"; }
 ]

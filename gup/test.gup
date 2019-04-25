@@ -4,7 +4,7 @@ gup --always
 # not strictly necessary, but saves us from
 # firing up the test suite only to find the server
 # doesn't compile.
-jbuilder build _build/default/src/server/main.exe
+dune build _build/default/src/server/main.exe
 
 set -x
 ./tools/test

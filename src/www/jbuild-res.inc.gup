@@ -1,9 +1,0 @@
-#!bash -eu
-gup --always
-touch "$2"
-gup -u ../../_build/default/src/www/jbuild-res.inc.gen
-function promote() {
-	jbuilder build @jbuild-res.inc --auto-promote
-}
-promote || promote # workaround for https://github.com/ocaml/dune/issues/256#issuecomment-371345385
-gup --leave

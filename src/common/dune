@@ -1,0 +1,24 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+
+(library
+ (name passe)
+ (flags
+  (:include ../flags))
+ (modules :standard version domain_list)
+ (libraries astring logs re rresult uri lwt react yojson)
+ (preprocess
+  (pps lwt_ppx)))
+
+(rule
+ (mode fallback)
+ (targets version.ml)
+ (deps (universe))
+ (action
+  (run gup -u %{targets})))
+
+(rule
+ (targets domain_list.ml)
+ (deps
+  (file domain_list))
+ (action
+  (run gup -u %{targets})))

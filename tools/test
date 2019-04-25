@@ -4,7 +4,7 @@ if [ "${GUP_XTRACE:-}" = 1 ]; then
 	set -x
 fi
 t="_build/default/src/test/main.exe"
-jbuilder build "$t"
+dune build "$t"
 # we poke the server on test boundaries,
 # which requires the sequential runner
 # to make sure tests don't overlap

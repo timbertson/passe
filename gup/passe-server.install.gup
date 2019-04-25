@@ -4,14 +4,14 @@ from __future__ import print_function
 import os,sys,subprocess
 
 tmp_dest, target = sys.argv[1:]
-jbuilder_dest='_build/default/'
+dune_dest='_build/default/'
 
 try:
 	subprocess.check_call(['gup', '--always'])
 
-	res_include_file='src/www/jbuild-res.inc'
+	res_include_file='src/www/dune-res.inc'
 	subprocess.check_call(['gup', '-u', res_include_file])
-	subprocess.check_call(['jbuilder', 'build', target])
-	subprocess.check_call(['gup', '--contents', jbuilder_dest + target])
+	subprocess.check_call(['dune', 'build', target])
+	subprocess.check_call(['gup', '--contents', dune_dest + target])
 except subprocess.CalledProcessError:
 	sys.exit(1)

@@ -1,0 +1,21 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+
+(library
+ (name passe_server)
+ (flags
+  (:include ../flags))
+ (libraries extlib conduit-lwt-unix dns-lwt-unix hex mirage-clock-unix
+   mirage-fs-unix mirage-types nocrypto nocrypto.lwt passe passe_unix ptime
+   safepass)
+ (modules :standard \ main)
+ (preprocess
+  (pps lwt_ppx)))
+
+(executable
+ (name main)
+ (public_name passe-server)
+ (package passe-server)
+ (libraries passe_server)
+ (modules main)
+ (flags
+  (:include ../flags)))

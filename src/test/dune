@@ -1,0 +1,9 @@
+; vim: set syntax=lisp commentstring=;\ %s:
+
+(executable
+ (name main)
+ (libraries oUnit passe passe_unix)
+ (preprocess
+  (pps lwt_ppx))
+ (flags
+  (:include ../flags)))

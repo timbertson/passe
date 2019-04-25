@@ -5,7 +5,7 @@ gup --always
 cd ..
 installfile=_build/default/passe-server.install
 pwd
-jbuilder build "$installfile"
+dune build "$installfile"
 opam-installer "$installfile" --prefix="$dest.full"
 mv "$dest.full/share/passe-server" "$dest"
 rm -r "$dest.full"
