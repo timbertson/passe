@@ -1,6 +1,13 @@
 [
 	"astring"
-	{ name = "cohttp"; constraint = ">=2.1.2"; }
+	"cohttp"
+
+	# I don't care about base64, but `cohttp` uses it so we need to carefully select
+	# a version which doesn't clash with `extlib` (at least 2.x, but before 3.x)
+	# See https://github.com/mirage/ocaml-base64/pull/25
+	# TODO: should be >=2.0.0 as well, but opam2nix doesn't support that yet
+	# { name = "base64"; constraint = "<=3.0.0 & >=2.0.0"; } (TODO: support multiple constraints in opam2nix)
+	{ name = "base64"; constraint = "<=3.0.0"; }
 	"hex"
 	"dune"
 	"logs"

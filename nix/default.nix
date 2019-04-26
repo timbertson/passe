@@ -61,14 +61,19 @@ let
 		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
 	};
 
+	src = if lib.isStorePath ../. then ../.
+		else lib.warn "Importing opam2nix src from ${./src.json} since ${builtins.toString ../.} is not a store path"
+		(nix-update-source.fetch ./src.json).src;
+
 	makeTarget = target: { buildTargets, opamDepsFile, drvAttrs }:
 		stdenv.mkDerivation ({
-			inherit (nix-update-source.fetch ./src.json) src;
+			inherit src;
 			name = "passe-${target}";
 			buildPhase = ''
 				echo "building passe ${target} (gup ${lib.concatStringsSep " " buildTargets})..."
 				gup ${lib.concatStringsSep " " buildTargets}
 			'';
+			DUNE_PROFILE = "release";
 			stripDebugList = [ "_build" ];
 			installPhase = "./install.sh $out";
 
