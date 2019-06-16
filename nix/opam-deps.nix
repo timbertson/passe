@@ -7,6 +7,7 @@ let
 	specs = opam2nix.toSpecs (import (./opam-deps + "/${target}.nix" ));
 	opamArgs = {
 		inherit ocamlAttr specs;
+		OPAMSOLVERTIMEOUT = 500;
 		extraRepos = [
 			vdoml.opam2nix.repo
 		];
