@@ -6,21 +6,24 @@ open Lwt_react
 
 module Log = (val Logging.log_module "ui")
 
-class password_prompt term text = object(self)
+class password_prompt term (text:string) = object(self)
 	inherit LTerm_read_line.read_password ()
-	inherit [Zed_utf8.t] LTerm_read_line.term term
+	inherit [Zed_string.t] LTerm_read_line.term term
 	initializer
-		self#set_prompt (S.const (LTerm_text.of_string text))
+		self#set_prompt (S.const (LTerm_text.of_string (Zed_string.of_utf8 text)))
+	method run_string = self#run |> Lwt.map Zed_string.to_utf8
 end
 
-class plain_prompt term text = object(self)
+class plain_prompt term (text:string) = object(self)
 	inherit LTerm_read_line.read_line ()
-	inherit [Zed_utf8.t] LTerm_read_line.term term
+	inherit [Zed_string.t] LTerm_read_line.term term
 
 	method! show_box = false
 
+	method run_string = self#run |> Lwt.map Zed_string.to_utf8
+
 	initializer
-		self#set_prompt (S.const (LTerm_text.of_string text))
+		self#set_prompt (S.const (LTerm_text.of_string (Zed_string.of_utf8 text)))
 end
 
 let copy_to_clipboard text =
@@ -44,15 +47,17 @@ let output_password ~use_clipboard ~term ~domain text =
 
 module Input_map = Zed_input.Make(LTerm_key)
 
+let text widget = widget#text |> Zed_string.to_utf8
+
 let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 	let open CamomileLibraryDefault.Camomile in (* ??? *)
 	let frame = new LTerm_widget.vbox in
 
-	let add_field ~label initial =
+	let add_field ~label (initial:string) =
 		let line = new LTerm_widget.hbox in
 		line#add ~expand:false (new LTerm_widget.label label);
 		let editor = new LTerm_edit.edit () in
-		Zed_edit.insert editor#context (Zed_rope.of_string initial);
+		Zed_edit.insert editor#context (Zed_rope.of_string (Zed_string.of_utf8 initial));
 		line#add editor;
 		frame#add ~expand:false line;
 		editor
@@ -95,10 +100,10 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 			Log.debug (fun m->m "Saving changes");
 			try
 				edited := Some (Store.({
-					domain = e_domain#text;
-					note = Option.non_empty ~zero:"" e_note#text;
-					suffix = Option.non_empty ~zero:"" e_suffix#text;
-					length = int_of_string e_length#text;
+					domain = text e_domain;
+					note = Option.non_empty ~zero:"" (text e_note);
+					suffix = Option.non_empty ~zero:"" (text e_suffix);
+					length = int_of_string (text e_length);
 				}));
 				wakeup wakener ();
 				true
@@ -130,7 +135,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 
 let delete ~sync_state ~(existing:Store.domain) ~term () =
 	let open Store in
-	let%lwt text = (new plain_prompt term ("Really delete "^(existing.domain)^"? (Y/n) "))#run in
+	let%lwt text = (new plain_prompt term ("Really delete "^(existing.domain)^"? (Y/n) "))#run_string in
 	match text with
 		| "" | "y" | "Y" ->
 			if Sync.save_change ~state:sync_state ~original:(Some (Domain existing)) None
@@ -151,11 +156,11 @@ let sync_ui state =
 	let login_prompt user =
 		let%lwt user = match user with
 			| Some existing ->
-				let%lwt text = (new plain_prompt term ("Username ["^existing^"]: "))#run in
+				let%lwt text = (new plain_prompt term ("Username ["^existing^"]: "))#run_string in
 				return (if text = "" then existing else text)
-			| None -> (new plain_prompt term "Username: ")#run
+			| None -> (new plain_prompt term "Username: ")#run_string
 		in
-		let%lwt password = (new password_prompt term "Password: ")#run in
+		let%lwt password = (new password_prompt term "Password: ")#run_string in
 		Sync.login state ~user ~password
 	in
 
@@ -245,7 +250,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~length ~suffix ~env () =
 
 		let%lwt domain = match domain with
 			| Some d -> return d
-			| None -> (new plain_prompt term "Domain: ")#run
+			| None -> (new plain_prompt term "Domain: ")#run_string
 		in
 		let domain_text = Domain.guess domain |> Option.force in
 		let get_stored () = user_db () |> Option.bind (Store.lookup domain_text) in
@@ -298,7 +303,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~length ~suffix ~env () =
 							actions
 							|> List.map (fun (_, text, _) -> " " ^ text)
 							|> String.concat "\n")
-						^ "\n -- What next? [c] "))#run in
+						^ "\n -- What next? [c] "))#run_string in
 				let response = if response = "" then "c" else response in
 				Log.debug (fun m->m "response: [%s]" response);
 				let%lwt () = LTerm.fprintlf term "" in
@@ -334,7 +339,7 @@ let main ~domain ~edit ~one_time ~use_clipboard ~length ~suffix ~env () =
 						domain.note |> Option.may (fun note -> (Log.app (fun m->m " - Note: %s" note)));
 			end;
 
-			let%lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run in
+			let%lwt password = (new password_prompt term ("Password for " ^ domain_text ^ ": "))#run_string in
 			let generated = Password.generate ~domain password in
 			let%lwt () = output_password ~use_clipboard ~term ~domain:domain_text generated in
 			if one_time
