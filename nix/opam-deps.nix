@@ -1,9 +1,7 @@
 let ocamlAttr = "ocaml-ng.ocamlPackages_4_05.ocaml"; in
-{target, pkgs, opam2nix, vdoml ? null }:
+{target, pkgs, opam2nix, vdoml }:
 with pkgs;
-let _vdoml = if vdoml == null then pkgs.callPackage ./vdoml.nix { inherit opam2nix ocamlAttr; } else vdoml; in
 let
-	vdoml = _vdoml;
 	specs = opam2nix.toSpecs (import (./opam-deps + "/${target}.nix" ));
 	opamArgs = {
 		inherit ocamlAttr specs;

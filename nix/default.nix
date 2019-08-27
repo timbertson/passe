@@ -1,8 +1,8 @@
 let defaultTarget = "devel"; in
 { pkgs, lib,
 	nix-update-source,
-	opam2nix ? import ./opam2nix-packages {},
-	vdoml ? null,
+	opam2nix,
+	vdoml,
 	target ? null
 }:
 
@@ -61,9 +61,7 @@ let
 		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
 	};
 
-	src = if lib.isStorePath ../. then ../.
-		else lib.warn "Importing opam2nix src from ${./src.json} since ${builtins.toString ../.} is not a store path"
-		(nix-update-source.fetch ./src.json).src;
+	src = null;
 
 	makeTarget = target: { buildTargets, opamDepsFile, drvAttrs }:
 		stdenv.mkDerivation ({

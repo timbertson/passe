@@ -22,3 +22,4 @@
 /.sandstorm
 /openshift/app
 /appengine/app
+nix/wrangle-local.json
