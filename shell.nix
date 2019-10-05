@@ -1,23 +1,19 @@
-{pkgs ? import <nixpkgs> {}, target ? null}:
-with pkgs;
+with import <nixpkgs> {};
 let
-	# XXX upstream these
-	sandstormPackages = import /home/tim/dev/nix/sandstorm/deps.nix { inherit pkgs; };
+	nix-wrangle = callPackage /Users/tcuthbertson/Code/nix/nix-wrangle/nix/default.nix {};
+	opam2nix = callPackage /Users/tcuthbertson/Code/ocaml/opam2nix/default.nix {
+		inherit nix-wrangle;
+	};
+	ocaml = ocaml-ng.ocamlPackages_4_08.ocaml;
+	api = opam2nix.api { inherit opam2nix; }; # cheat
+	opamArgs = {
+		deps = ./opam-packages.nix;
+		inherit ocaml;
+		src = builtins.fetchGit { url = ./.; ref="HEAD"; };
+	};
 in
-lib.overrideDerivation
-	(import ./default.nix { inherit pkgs; callArgs = {}; }
-		(nix-pin.api {}).callPackage ./nix/default.nix {
-			inherit target;
-		}
-	) (orig: {
-	# add some dev utils
-	buildInputs = orig.buildInputs ++ (
-		if (builtins.getEnv "PASSE_SANDSTORM") == "1" then (
-			with sandstormPackages; [
-				sandstorm-spk
-				vagrant-spk
-				vagrant
-			]
-		) else []
-	);
-})
+stdenv.mkDerivation {
+	name = "test";
+	buildInputs = api.buildInputs opamArgs;
+	passthru = api.build opamArgs;
+}
