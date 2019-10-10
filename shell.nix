@@ -9,11 +9,16 @@ let
 	opamArgs = {
 		deps = ./opam-packages.nix;
 		inherit ocaml;
-		src = builtins.fetchGit { url = ./.; ref="HEAD"; };
+		src = let
+			passe = builtins.fetchGit { url = ./.; ref="HEAD"; };
+			vdoml = builtins.fetchGit { url = ../vdoml; ref="HEAD"; };
+		in {
+			inherit vdoml;
+			passe-client = passe;
+			passe-server = passe;
+			passe-common = passe;
+			passe-unix-common = passe;
+		};
 	};
 in
-stdenv.mkDerivation {
-	name = "test";
-	buildInputs = api.buildInputs opamArgs;
-	passthru = api.build opamArgs;
-}
+(api.build opamArgs).passe-server

@@ -1,0 +1,18 @@
+opam-version: "2.0"
+name: passe-server
+build: [
+  [make]
+]
+depends: [
+	"passe-common" { ="%{version}%" }
+	"passe-unix-common" { ="%{version}%" }
+
+	"conduit" { < "2.0.0" }
+	"dns-lwt-unix"
+	"js_of_ocaml" { >="3.2.0" }
+	"nocrypto" { >="0.5.4" }
+	"re"
+	"safepass"
+	"tcpip"
+	"vdoml"
+]

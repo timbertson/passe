@@ -1,0 +1,12 @@
+opam-version: "2.0"
+name: passe-client
+build: [
+  [make]
+]
+depends: [
+	"passe-common" { ="%{version}%" }
+	"passe-unix-common" { ="%{version}%" }
+
+	"lambda-term"
+	"tls"
+]
