@@ -1,9 +1,0 @@
-opam-version: "2.0"
-name: passe
-build: [
-  [make]
-]
-depends: [
-	"passe-client" { ="%{version}%" }
-	"passe-server" { ="%{version}%" }
-]

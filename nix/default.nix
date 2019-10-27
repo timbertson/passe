@@ -1,48 +1,10 @@
-let defaultTarget = "devel"; in
 { pkgs, lib,
-	nix-update-source,
 	opam2nix,
 	vdoml,
-	target ? null
+	self,
 }:
-
-let targetArg = target; in
-let target = pkgs.lib.findFirst (t: t != "" && t != null) defaultTarget [targetArg (builtins.getEnv "PASSE_TARGET")]; in
 with pkgs;
 let
-	targetParams =
-		let
-			generic = target: {
-				buildTargets = ["www" target];
-				opamDepsFile = (import ./opam-deps.nix {inherit target pkgs opam2nix vdoml;});
-				drvAttrs = wwwVars;
-			};
-		in
-		{
-			# client + server, plus local development utils
-			devel = generic "devel" // {
-				buildTargets = ["all"];
-			};
-
-			# client-only
-			client = generic "client" // {
-				buildTargets = ["client"];
-				drvAttrs = {};
-			};
-
-			# unix server
-			server = generic "server";
-
-			# xen unikernel
-			mirage-xen = generic "mirage-xen";
-
-			# unix unikernel
-			mirage-unix = generic "mirage-unix";
-
-			# ukvm unikernel
-			mirage-ukvm = generic "mirage-ukvm";
-		};
-
 	wwwVars =
 		let
 			nodeEnv = let base = pkgs.callPackage ./node-env.nix {}; in base // {
@@ -63,40 +25,54 @@ let
 
 	src = null;
 
-	makeTarget = target: { buildTargets, opamDepsFile, drvAttrs }:
-		stdenv.mkDerivation ({
-			inherit src;
-			name = "passe-${target}";
-			buildPhase = ''
-				echo "building passe ${target} (gup ${lib.concatStringsSep " " buildTargets})..."
-				gup ${lib.concatStringsSep " " buildTargets}
-			'';
-			DUNE_PROFILE = "release";
-			stripDebugList = [ "_build" ];
-			installPhase = "./install.sh $out";
+	combinedShell = deps: mkShell {
+		buildInputs = lib.concatMap (dep:
+			(dep.drvAttrs.buildInputs or []) ++
+			(dep.drvAttrs.propagatedBuildInputs or [])
+		) deps;
+	};
 
-			passthru = rec {
-				inherit (opamDepsFile) opam2nix names selections selectionsFile vdoml;
-				selectionNames = lib.attrNames selections;
-			};
-			buildInputs = [
-				gup
-				git
-				coreutils
-				python
-				openssl
-				which
-			]
-			++ opamDepsFile.deps;
+	opamCommon = {
+		inherit (ocaml-ng.ocamlPackages_4_08) ocaml;
+		src = {
+			passe-client = self;
+			passe-server = self;
+			passe-common = self;
+			passe-unix-common = self;
+			inherit vdoml;
+		};
+	};
 
-			# # XXX this seems to be necessary for .byte targets only
-			# # (but we like those during development / testing).
-			# # Seems very fragile though.
-			LD_LIBRARY_PATH = lib.concatStringsSep ":" (lib.remove null (lib.mapAttrsToList (name: loc:
-				if builtins.isAttrs loc then "${loc}/lib/${name}" else null
-			) opamDepsFile.selections));
-		} // drvAttrs);
+	importSelection = selection:
+		opam2nix.build (opamCommon // {
+			inherit selection;
+		});
 
-	targets = lib.mapAttrs makeTarget targetParams;
+	selection = importSelection ./opam-selection.nix;
+	mirageUnixSelection = importSelection ./opam-selection-mirage-unix.nix;
+	mirageXenSelection = importSelection ./opam-selection.-mirage-xen;
+
+	resolve = { selection }:
+		opam2nix.resolve (opamCommon // { inherit selection; }) [
+			"--define" ../passe-common.opam
+			"--define" ../passe-unix-common.opam
+			"--define" "${vdoml}/vdoml.opam"
+			../passe-server.opam
+			../passe-client.opam
+		];
 in
-	lib.getAttr target targets
+{
+	inherit vdoml opam2nix resolve;
+
+	# client + server, plus local development utils
+	shell = combinedShell [
+		selection.passe-client
+		selection.passe-server
+	];
+
+	inherit selection;
+	inherit (selection) passe-client passe-server;
+	# TODO: get these working
+	# mirage-unix = mirageUnixSelection;
+	# mirage-xen = mirageXenSelection;
+}

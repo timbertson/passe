@@ -1,8 +1,0 @@
-{
-	"type": "fetchFromGitHub",
-	"repo": "passe",
-	"owner": "timbertson",
-	"localRepo": "..",
-	"rev": "refs/heads/master"
-}
-
