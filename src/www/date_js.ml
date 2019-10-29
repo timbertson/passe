@@ -1,3 +1,4 @@
+open Js_of_ocaml
 open Passe
 open Js
 include Date_common

@@ -12,7 +12,7 @@
 (executable
  (name main)
  (public_name passe)
- (package passe-client)
+ (package passe)
  (libraries passe_client)
  (modules main)
  (flags

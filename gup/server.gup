@@ -1,5 +1,9 @@
 #!bash -eu
 gup --always
+
+# awkward workaround for dune, it needs files in `src/` to be present on first build
+gup -u src/www/res/all
+
 gup -u \
 	passe-server.install \
 	_build/docroot \

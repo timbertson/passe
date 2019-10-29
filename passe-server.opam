@@ -1,7 +1,7 @@
 opam-version: "2.0"
 name: passe-server
 build: [
-  [make]
+  [make "server"]
 ]
 depends: [
 	"passe-common" { ="%{version}%" }
@@ -15,4 +15,5 @@ depends: [
 	"safepass"
 	"tcpip"
 	"vdoml"
+	"opam-installer" { build }
 ]

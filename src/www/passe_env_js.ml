@@ -1,3 +1,4 @@
+open Js_of_ocaml
 open Passe
 module J = Json_ext
 open Js

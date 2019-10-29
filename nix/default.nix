@@ -20,26 +20,29 @@ let
 		LESSC = "${less}/${lesscPath}";
 		TWITTER_BOOTSTRAP = "${nodePath bootstrap}/bootstrap";
 		NODE_PATH = lib.concatMapStringsSep ":" nodePath [ less less-plugin-clean-css bootstrap ];
-		MARKDOWN = "${pythonPackages.markdown}/bin/markdown_py";
+		MARKDOWN = "${python3Packages.markdown}/bin/markdown_py";
 	};
 
 	src = null;
 
-	combinedShell = deps: mkShell {
+	combinedShell = deps: mkShell (wwwVars // {
 		buildInputs = lib.concatMap (dep:
 			(dep.drvAttrs.buildInputs or []) ++
 			(dep.drvAttrs.propagatedBuildInputs or [])
 		) deps;
-	};
+	});
 
 	opamCommon = {
 		inherit (ocaml-ng.ocamlPackages_4_08) ocaml;
 		src = {
-			passe-client = self;
+			passe = self;
 			passe-server = self;
 			passe-common = self;
 			passe-unix-common = self;
 			inherit vdoml;
+		};
+		override = {}: {
+			passe-server = super: super.overrideAttrs (o: wwwVars);
 		};
 	};
 
@@ -58,7 +61,7 @@ let
 			"--define" ../passe-unix-common.opam
 			"--define" "${vdoml}/vdoml.opam"
 			../passe-server.opam
-			../passe-client.opam
+			../passe.opam
 		];
 in
 {
@@ -66,12 +69,12 @@ in
 
 	# client + server, plus local development utils
 	shell = combinedShell [
-		selection.passe-client
+		selection.passe
 		selection.passe-server
 	];
 
 	inherit selection;
-	inherit (selection) passe-client passe-server;
+	inherit (selection) passe passe-server;
 	# TODO: get these working
 	# mirage-unix = mirageUnixSelection;
 	# mirage-xen = mirageXenSelection;

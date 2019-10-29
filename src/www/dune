@@ -7,7 +7,7 @@
  (libraries js_of_ocaml js_of_ocaml-lwt js_of_ocaml.weak passe lwt_react
    vdoml)
  (js_of_ocaml
-  (flags :standard --source-map --pretty))
+  (flags :standard --source-map))
  (preprocess
   (pps lwt_ppx js_of_ocaml.ppx)))
 
@@ -25,33 +25,35 @@
 
 (rule
  (targets index.appcache)
- (deps style.less main.bc.js ../server/index.ml)
+ (deps
+  (alias res)
+  style.less
+  main.bc.js
+  ../server/index.ml)
  (action
   (run gup -u %{targets})))
 
 (rule
- (targets res.files)
+ (targets dune-res.inc)
+ (mode promote)
  (deps (universe))
  (action
   (run gup -u %{targets})))
 
-; see https://github.com/ocaml/dune/issues/256#issuecomment-361242074
-
-(rule
- (targets dune-res.inc.gen)
- (action
-  (run gup -u %{targets})))
-
-(alias
- (name dune-res.inc)
- (action
-  (diff dune-res.inc dune-res.inc.gen)))
 
 (include dune-res.inc)
 
 (alias
+  (name res)
+  (deps (universe))
+  (action
+    (run gup -u ../../../../src/www/res/all)
+  )
+)
+
+(alias
  (name all)
- (deps main.bc.js style.css index.appcache))
+ (deps dune-res.inc main.bc.js style.css index.appcache))
 
 (install
  (package passe-server)

@@ -1,3 +1,4 @@
+open Js_of_ocaml
 open Passe
 open Lwt
 module Xhr = Lwt_xmlHttpRequest

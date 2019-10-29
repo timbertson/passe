@@ -1,10 +1,4 @@
 #!bash -eu
-if [ -z "${TWITTER_BOOTSTRAP:-}" ]; then
-	TWITTER_BOOTSTRAP=../node_modules/bootstrap
-	gup -u "$TWITTER_BOOTSTRAP"
-else
-	echo "Using twitter bootstrap at $TWITTER_BOOTSTRAP" >&2
-	gup --always
-	echo "$TWITTER_BOOTSTRAP" | gup --contents
-fi
+gup --always
+echo "$TWITTER_BOOTSTRAP" | gup --contents
 ln -s "$TWITTER_BOOTSTRAP" "$1"

@@ -1,3 +1,5 @@
+open Js_of_ocaml
+
 let global_event_listener ?(target:#Dom_html.eventTarget Js.t option) ?capture event handler =
 	let target = match target with
 		| Some target -> (target:>Dom_html.eventTarget Js.t)

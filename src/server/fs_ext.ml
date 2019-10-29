@@ -47,6 +47,7 @@ module Augment (Fs:FS) : (Augmented with type t = Fs.t) = struct
 		| `Is_a_directory -> `Is_a_directory
 		| `No_directory_entry -> `No_directory_entry
 		| `Not_a_directory -> `Not_a_directory
+		| _ -> failwith "Unknown error type"
 
 	(* returns whether the file was created *)
 	let _ensure_exists fs path =

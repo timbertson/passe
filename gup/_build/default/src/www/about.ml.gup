@@ -2,5 +2,5 @@
 set -o pipefail
 echo 'let aboutHtml = "\' > "$1"
 gup -u about.md
-"${MARKDOWN:-markdown}" about.md | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/$/ \\/' >> "$1"
+"${MARKDOWN:-markdown_py}" about.md | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/$/ \\/' >> "$1"
 echo -e '\n"' >> "$1"

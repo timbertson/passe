@@ -1,5 +1,4 @@
-#!python
-from __future__ import print_function
+#!python3
 import os, sys
 import subprocess
 
@@ -34,7 +33,7 @@ try:
 
 	for fname in (sources):
 		print("reading " + fname)
-		with open(fname) as input:
+		with open(fname, 'rb') as input:
 			while True:
 				chunk = input.read(1024)
 				if not chunk:

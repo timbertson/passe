@@ -1,3 +1,4 @@
+open Js_of_ocaml
 open Passe
 type t = Regexp.regexp
 let split = Regexp.split
