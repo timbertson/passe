@@ -63,19 +63,23 @@ let
 			../passe-server.opam
 			../passe.opam
 		];
+	
+	result = {
+		inherit vdoml opam2nix resolve;
+
+		# client + server, plus local development utils
+		shell = combinedShell [
+			selection.passe
+			selection.passe-server
+		];
+
+		inherit selection;
+		inherit (selection) passe passe-server;
+		# TODO: get these working
+		# mirage-unix = mirageUnixSelection;
+		# mirage-xen = mirageXenSelection;
+	};
 in
-{
-	inherit vdoml opam2nix resolve;
-
-	# client + server, plus local development utils
-	shell = combinedShell [
-		selection.passe
-		selection.passe-server
-	];
-
-	inherit selection;
-	inherit (selection) passe passe-server;
-	# TODO: get these working
-	# mirage-unix = mirageUnixSelection;
-	# mirage-xen = mirageXenSelection;
-}
+result.passe.overrideAttrs (super: {
+	passthru = result;
+})
