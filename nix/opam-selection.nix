@@ -3,14 +3,14 @@
 self:
 let
     lib = self.lib;
-    opam-commit = "f70ee2a206e7e8c563c6b604c6075f1a3a23a1f7";
+    opam-commit = "feef05dfa6dd1dc66616abae311e41bc0830d59b";
     pkgs = self.pkgs;
     repo = (pkgs.fetchFromGitHub) 
     {
       owner = "ocaml";
       repo = "opam-repository";
       rev = opam-commit;
-      sha256 = "0lljsssl5vh6snxc0f186sarsv2z54vcad810qdbh4aj19sfjziy";
+      sha256 = "0pal75rixcd77vf8366852n6m2mw3azpqahvslah7nfc58s8ml28";
     };
     repoPath = self.repoPath;
     selection = self.selection;
@@ -471,8 +471,7 @@ in
     };
     conf-autoconf = 
     {
-      buildInputs = [ (pkgs.autoconf or null) (pkgs."devel/autoconf" or null)
-                       (pkgs."sys-devel/autoconf" or null) ];
+      buildInputs = [ (pkgs.autoconf) ];
       opamInputs = {
                      conf-which = selection.conf-which;
       };
@@ -484,6 +483,21 @@ in
       pname = "conf-autoconf";
       src = null;
       version = "0.1";
+    };
+    conf-git = 
+    {
+      buildInputs = [ (pkgs.git) ];
+      opamInputs = {
+                     conf-which = selection.conf-which;
+      };
+      opamSrc = repoPath repo 
+      {
+        hash = "sha256:118r64z1qzba40ryqjhwh4sf9g3hc6fkjjawwbn3y32kjbbhymff";
+        package = "packages/conf-git/conf-git.1.0";
+      };
+      pname = "conf-git";
+      src = null;
+      version = "1.0";
     };
     conf-gmp = 
     {
@@ -502,7 +516,7 @@ in
     };
     conf-m4 = 
     {
-      buildInputs = [ (pkgs.m4 or null) ];
+      buildInputs = [ (pkgs.m4) ];
       opamInputs = {
       };
       opamSrc = repoPath repo 
@@ -516,7 +530,7 @@ in
     };
     conf-perl = 
     {
-      buildInputs = [ (pkgs.perl or null) (pkgs.perl-Pod-Html or null) ];
+      buildInputs = [ (pkgs.perl) ];
       opamInputs = {
       };
       opamSrc = repoPath repo 
@@ -530,10 +544,7 @@ in
     };
     conf-python-2-7 = 
     {
-      buildInputs = [ (pkgs."dev-lang/python:2.7" or null)
-                       (pkgs."lang/python27" or null) (pkgs.python or null)
-                       (pkgs."python/2.7" or null) (pkgs.python2 or null)
-                       (pkgs."python2.7" or null) (pkgs.python27 or null) ];
+      buildInputs = [ (pkgs.python27) ];
       opamInputs = {
       };
       opamSrc = repoPath repo 
@@ -547,10 +558,7 @@ in
     };
     conf-python-3 = 
     {
-      buildInputs = [ (pkgs."dev-lang/python:3.6" or null)
-                       (pkgs.epel-release or null)
-                       (pkgs."lang/python36" or null) (pkgs.python3 or null)
-                       (pkgs.python36 or null) ];
+      buildInputs = [ (pkgs.python3) ];
       opamInputs = {
       };
       opamSrc = repoPath repo 
@@ -564,7 +572,7 @@ in
     };
     conf-which = 
     {
-      buildInputs = [ (pkgs.debianutils or null) (pkgs.which or null) ];
+      buildInputs = [ (pkgs.which) ];
       opamInputs = {
       };
       opamSrc = repoPath repo 
@@ -827,16 +835,16 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1ki5q3czl28bj1xdc0fw7h7qw7fxk9n3az2za12521z56yxlgfiq";
-        package = "packages/duration/duration.0.1.3";
+        hash = "sha256:107j8nxhvmk8jxfq6jxaqwyhaj2mar0cp9c1xciv4qmhh5n7jssm";
+        package = "packages/duration/duration.0.1.2";
       };
       pname = "duration";
       src = pkgs.fetchurl 
       {
-        sha256 = "0m9r0ayhpl98g9vdxrbjdcllns274jilic5v8xj1x7dphw21p95h";
-        url = "https://github.com/hannesm/duration/releases/download/0.1.3/duration-0.1.3.tbz";
+        sha256 = "1disr6wjy05g76fz8xfgkykrc62cxgxlrvpyil2f9fyskd26xzp2";
+        url = "https://github.com/hannesm/duration/releases/download/0.1.2/duration-0.1.2.tbz";
       };
-      version = "0.1.3";
+      version = "0.1.2";
     };
     easy-format = 
     {
@@ -971,16 +979,16 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1n0qzs0bp894y497cwac42gkyhifvhflk1vda48k0603h1v8jdvv";
-        package = "packages/functoria/functoria.3.0.1";
+        hash = "sha256:0lv2xjyfqmmv1k056ghzfa0sl5kpq1jq82gvvzpfc0ggs5yb5cfv";
+        package = "packages/functoria/functoria.2.2.4";
       };
       pname = "functoria";
       src = pkgs.fetchurl 
       {
-        sha256 = "0pa342kgbw3v60jngiazfyr5i36p033a4nk9685nk9r157fhazz3";
-        url = "https://github.com/mirage/functoria/releases/download/v3.0.1/functoria-v3.0.1.tbz";
+        sha256 = "0gq8z51r87ypqhzrzbyh9qfikv9zz8b29c8lwwvzv3pcw4gi4804";
+        url = "https://github.com/mirage/functoria/releases/download/v2.2.4/functoria-v2.2.4.tbz";
       };
-      version = "3.0.1";
+      version = "2.2.4";
     };
     functoria-runtime = 
     {
@@ -990,20 +998,21 @@ in
         cmdliner = selection.cmdliner;
         dune = selection.dune;
         fmt = selection.fmt;
+        functoria = selection.functoria or null;
         ocaml = selection.ocaml;
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1gbx68q7wvd3p9x40pmg2m9avz6583fgbx2csvkgbmi13gyw1ynr";
-        package = "packages/functoria-runtime/functoria-runtime.3.0.1";
+        hash = "sha256:02s6zv9z2rq6j7diksd8qdn48i9ka6iazi4rm8mr79l1a8k3h472";
+        package = "packages/functoria-runtime/functoria-runtime.2.2.4";
       };
       pname = "functoria-runtime";
       src = pkgs.fetchurl 
       {
-        sha256 = "0pa342kgbw3v60jngiazfyr5i36p033a4nk9685nk9r157fhazz3";
-        url = "https://github.com/mirage/functoria/releases/download/v3.0.1/functoria-v3.0.1.tbz";
+        sha256 = "0gq8z51r87ypqhzrzbyh9qfikv9zz8b29c8lwwvzv3pcw4gi4804";
+        url = "https://github.com/mirage/functoria/releases/download/v2.2.4/functoria-v2.2.4.tbz";
       };
-      version = "3.0.1";
+      version = "2.2.4";
     };
     hashcons = 
     {
@@ -1507,7 +1516,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:010dxraccm0gh0fwn4akp1qkk35x6aq682c815qdgk3k6700xml7";
+        hash = "sha256:1m3ph75gj6zara1x4isaamyc4ms8s8x1n3xl6j1lzpj2dxly3p03";
         package = "packages/mirage-block/mirage-block.1.2.0";
       };
       pname = "mirage-block";
@@ -1532,7 +1541,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0b65nwraknbw6b5azm6gh17n8ni16yg5q3p94mrqcnjsgzvpwbzb";
+        hash = "sha256:1s6nxsbnsnk1mz62rp76fg41z82zypz0m2mhc8dzl9iwf8blm588";
         package = "packages/mirage-block-lwt/mirage-block-lwt.1.2.0";
       };
       pname = "mirage-block-lwt";
@@ -1553,7 +1562,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1vss2h0k73f9zwvkwlqh32wsqadgyg9qr8jl2hz305k4laqapb6i";
+        hash = "sha256:0gssf5jnbd8a65bsmsp3svll16j6yzjp3vpni287br16bqhv3y0b";
         package = "packages/mirage-channel/mirage-channel.3.2.0";
       };
       pname = "mirage-channel";
@@ -1581,7 +1590,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:07gz3w7jssbm8dvymky67qa04scanwyigrqdqsfg4nh6445wsijr";
+        hash = "sha256:10yrpc377l9v2b9bll2lwcw5zxc134aj2cql02k1sq2fhxcj7vr9";
         package = "packages/mirage-channel-lwt/mirage-channel-lwt.3.2.0";
       };
       pname = "mirage-channel-lwt";
@@ -1603,7 +1612,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1zhnq9ykfyahy216zlss923mgfik7a3pbk9f1xx5cv1nvghrlkq8";
+        hash = "sha256:0r71g5bzhmg4b4zxfnb7q5q0zjszwjgxjh9752hm1b20fmm65v18";
         package = "packages/mirage-clock/mirage-clock.2.0.0";
       };
       pname = "mirage-clock";
@@ -1626,7 +1635,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:090k886va14jz5vbgz95l7inaflfm7km5070j62f26874y04nhpq";
+        hash = "sha256:1gr4gk72x0z8glsggs5s11ivdvlyndkfprj86an8169j58pcc9fk";
         package = "packages/mirage-clock-lwt/mirage-clock-lwt.2.0.0";
       };
       pname = "mirage-clock-lwt";
@@ -1649,7 +1658,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:110385fx5y9fcq7np7w3nijmc2ih9s8mmgiwdfjwvvcsvcgf4if4";
+        hash = "sha256:0him40vcmq4i13k6jlg9gd31093543bz72a7kz4xmjv92qqbawxi";
         package = "packages/mirage-clock-unix/mirage-clock-unix.2.0.0";
       };
       pname = "mirage-clock-unix";
@@ -1671,7 +1680,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0cdjgvgbrzpcs12qdg71gyjd104c5rlam2xnhxx991r5dzc8ajbf";
+        hash = "sha256:0g0hznr8dvbz337lfsv0dinwb3j5zq41fxc89xnhg59adj42zqw7";
         package = "packages/mirage-console/mirage-console.2.4.3";
       };
       pname = "mirage-console";
@@ -1694,7 +1703,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0gyfqrrcqqgb7qgzbi1yzjrfrdj83i6127fhr94dfncy6ppnsam0";
+        hash = "sha256:05c119ihq70rcdkclmpl16jmxz0iw5a46p0ddjiq2ahy5cb8282y";
         package = "packages/mirage-console-lwt/mirage-console-lwt.2.4.3";
       };
       pname = "mirage-console-lwt";
@@ -1762,7 +1771,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0wn8xd8ac0s16n8g4j71pjiy7bfk17lw72d06j9bvxqvq3ac3n2s";
+        hash = "sha256:0r7fk61nrhkcn5avpr1gnxaddffhyr4wkp8nj4jcy8fj27pj72dj";
         package = "packages/mirage-flow-lwt/mirage-flow-lwt.1.6.0";
       };
       pname = "mirage-flow-lwt";
@@ -1784,7 +1793,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:185wa6ig8s1cj9pkbp52wdfaxnq15k27mc8m4qkz72h4jiazmppq";
+        hash = "sha256:17sgm17halxqidjsn9lx58amqyp7pi227yf589anj9j93h4bsb23";
         package = "packages/mirage-fs/mirage-fs.2.0.0";
       };
       pname = "mirage-fs";
@@ -1809,7 +1818,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0bqd52a0gf33wnsifpcn7jv1a7adiidz9v80mrv33k3m4rn2m83y";
+        hash = "sha256:0bzvnzxgcvszisrs67m227jdn535ibczfy545bq0qimp18792a19";
         package = "packages/mirage-fs-lwt/mirage-fs-lwt.1.2.0";
       };
       pname = "mirage-fs-lwt";
@@ -1838,7 +1847,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0vcfyah8psnqdyjvmgi499aw9bbv0spdhp4xskc0ak84y0rwmk6m";
+        hash = "sha256:1yfhs3jkaf9l9vs9afgn7ga2vl9ykkd2kcxkcvfi9vsbjbxd5888";
         package = "packages/mirage-fs-unix/mirage-fs-unix.1.6.0";
       };
       pname = "mirage-fs-unix";
@@ -1860,7 +1869,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:04wm9qjr5nz0b379wcilw7zb2x89kx2gsw0py3m4qxx97r1js2jy";
+        hash = "sha256:0zb7cfh6br8b5k02884iyzj05i0bdc21h33cdg8b65x2y5cc3fl3";
         package = "packages/mirage-kv/mirage-kv.1.1.1";
       };
       pname = "mirage-kv";
@@ -1905,7 +1914,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1dgnbdvv1n3hsxnymn89883jr875gj8987b2b9a28y95wjdxjccm";
+        hash = "sha256:1s1nvxn08bg9isscpc0sj48sqyncndnb46c9s7jzkng82k6gh9lz";
         package = "packages/mirage-net/mirage-net.1.2.0";
       };
       pname = "mirage-net";
@@ -2007,7 +2016,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1xk0v8zbnwq5h182dv7sgj75fr4ahs7b3h8sv8adfkxn6cg97jd7";
+        hash = "sha256:0vfkivzviwq6rqglmdnpcndqfl7wnfcv4hdi0lgl37002pfysczk";
         package = "packages/mirage-protocols/mirage-protocols.1.4.1";
       };
       pname = "mirage-protocols";
@@ -2100,7 +2109,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1bz13xgzf5bzw1rq5kha7llmhv2xzfng9m9fn2j332yqpr8almi7";
+        hash = "sha256:0nhfvbk75fxv50l4vchdg3jw79k08y0bfak5f5wg5fyxmsdfhrgm";
         package = "packages/mirage-stack/mirage-stack.1.4.0";
       };
       pname = "mirage-stack";
@@ -2124,7 +2133,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1dj10cipjgy6sky6pbxmp78mw5m40iqsar6v4p4fffl41mizp886";
+        hash = "sha256:117myl7drab09938wssxp4lq3c938j8qqdzgxf87q61l5bq89p0n";
         package = "packages/mirage-stack-lwt/mirage-stack-lwt.1.4.0";
       };
       pname = "mirage-stack-lwt";
@@ -2145,7 +2154,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1in48qxamidsalbjar59ijq3x2casmajvhbmzwh8xnzjlvygk7kv";
+        hash = "sha256:1rpsxycx2yr72q194q4bkql9wziwb3qs9i559pr0jhblx9si1mp4";
         package = "packages/mirage-time/mirage-time.1.3.0";
       };
       pname = "mirage-time";
@@ -2167,7 +2176,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1f60gcdrjjpzs79k0mmwnngqwm4zkz298i7k5s7kf3ijnwianc63";
+        hash = "sha256:0x9j1nkl3z8ks5c8p3ck5py0wsclga9vg3jb2k4cvvka65bkj9d8";
         package = "packages/mirage-time-lwt/mirage-time-lwt.1.3.0";
       };
       pname = "mirage-time-lwt";
@@ -2200,7 +2209,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1d3i2z8h5n8w63yba1sqfp1dqphmgf94x2gqxzhhrhri7hmgvcnz";
+        hash = "sha256:0pnbzp2jvc1znc6vjjj26wasn7cpblwfd03m5sr371s2xdks2514";
         package = "packages/mirage-types/mirage-types.3.4.1";
       };
       pname = "mirage-types";
@@ -2237,7 +2246,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1hjxz6msh9zahzia9njqkipx0z5v1nrcj4hl3vrshpbxljzc67hc";
+        hash = "sha256:1rxby9kw74h05pnib2spd2rhiq39y0gdajy4g6rxm1258f4gpvp9";
         package = "packages/mirage-types-lwt/mirage-types-lwt.3.4.1";
       };
       pname = "mirage-types-lwt";
@@ -2345,6 +2354,23 @@ in
       src = null;
       version = "4.08.1";
     };
+    ocaml-base-compiler = 
+    {
+      opamInputs = {
+      };
+      opamSrc = repoPath repo 
+      {
+        hash = "sha256:1gh1552rac1r3zzw1b7z0776walapin07bk0bpg8j561b4kwcb46";
+        package = "packages/ocaml-base-compiler/ocaml-base-compiler.4.08.1";
+      };
+      pname = "ocaml-base-compiler";
+      src = pkgs.fetchurl 
+      {
+        sha256 = "11fvsm861lr73lk181gl5iczprp8d83fvgc1q6dx8gxqhzad6gmm";
+        url = "https://github.com/ocaml/ocaml/archive/4.08.1.tar.gz";
+      };
+      version = "4.08.1";
+    };
     ocaml-compiler-libs = 
     {
       opamInputs = 
@@ -2403,19 +2429,6 @@ in
         url = "https://github.com/ocaml-ppx/ocaml-migrate-parsetree/releases/download/v1.4.0/ocaml-migrate-parsetree-v1.4.0.tbz";
       };
       version = "1.4.0";
-    };
-    ocaml-system = 
-    {
-      opamInputs = {
-      };
-      opamSrc = repoPath repo 
-      {
-        hash = "sha256:11687h71imdvkyhb28aldhs20czhj7bdpyprk19rbzrnhsqn9ylf";
-        package = "packages/ocaml-system/ocaml-system.4.08.1";
-      };
-      pname = "ocaml-system";
-      src = null;
-      version = "4.08.1";
     };
     ocamlbuild = 
     {
@@ -2724,6 +2737,7 @@ in
         astring = selection.astring;
         base64 = selection.base64;
         cohttp = selection.cohttp;
+        conf-git = selection.conf-git;
         conf-python-3 = selection.conf-python-3;
         dune = selection.dune;
         hex = selection.hex;
@@ -2922,7 +2936,7 @@ in
         sha256 = "0i9nh0rs1h6z4jnhahppbdm5d5q47w4xs6hhc8dy6sbjh7rf8fl4";
         url = "https://github.com/ocaml-ppx/ppx_tools/archive/5.3+4.08.0.tar.gz";
       };
-      version = "5.3+4.08.0";
+      version = "5.3-4.08.0";
     };
     ppx_tools_versioned = 
     {
@@ -3329,7 +3343,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:1706nqx8kikbvqvhvvdl0vsz9hc5a19wcag1jyzrf3k2abd1wpdl";
+        hash = "sha256:02cg4lc49c8j88vn5zyy6lf9fn3i78ikng0ga1d6w4f4hww4anv5";
         package = "packages/tcpip/tcpip.3.6.0";
       };
       pname = "tcpip";
@@ -3367,7 +3381,7 @@ in
       };
       opamSrc = repoPath repo 
       {
-        hash = "sha256:0i2gyhlq6mfa8n8bxmmcgmg64d2mqvxg7jdlw5fawr6pcq5ni7gr";
+        hash = "sha256:182h5j8m3mr4m99qbnr8zg74f9d2ilji1qyj28w00b2b3mc40k3w";
         package = "packages/tls/tls.0.9.3";
       };
       pname = "tls";

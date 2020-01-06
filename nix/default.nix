@@ -41,8 +41,14 @@ let
 			passe-unix-common = self;
 			inherit vdoml;
 		};
-		override = {}: {
-			passe-server = super: super.overrideAttrs (o: wwwVars);
+		override = {}:
+		let patchedShebangs = super: super.overrideAttrs (o: {
+			postPatch = (super.postPatch or "") + "\npatchShebangs tools";
+		});
+		in
+		{
+			passe-server = super: (patchedShebangs super).overrideAttrs (o: wwwVars);
+			passe = patchedShebangs;
 		};
 	};
 

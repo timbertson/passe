@@ -8,6 +8,7 @@ depends: [
 	# See https://github.com/mirage/ocaml-base64/pull/25
 	"base64" { <"3.0.0" & >="2.0.0" }
 	"conf-python-3"
+	"conf-git"
 	"hex"
 	"dune"
 	"logs"

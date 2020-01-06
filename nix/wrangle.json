@@ -4,8 +4,8 @@
       "fetch": {
         "owner": "timbertson",
         "repo": "nix-wrangle",
-        "rev": "9f94c04e2ca1053b6af91e42acdf93d345340a13",
-        "sha256": "1y9qrnhkgwmc993clr2d15vrlygwd6p0v7k5d2nvf61xnclpf17m"
+        "rev": "34aa6db098e8bbb9d5196b0f7693239e9d13cd0e",
+        "sha256": "0xr23l2klxi8zjfx0fx4ab0linn1lwx2imf9hq0lnb36bqqrsifq"
       },
       "nix": "default.nix",
       "owner": "timbertson",
@@ -17,8 +17,8 @@
       "fetch": {
         "owner": "timbertson",
         "repo": "opam2nix",
-        "rev": "5ece45d7ed561e365a00ae551326e8c20c9f9710",
-        "sha256": "0b625d4bn7zhckp5yfgzzfipr555v5mb77bg75rspq5q1gr49w60"
+        "rev": "ef9811a3d1b7525923e1aaca73ca5ffef574eaf1",
+        "sha256": "0vdkvvjqdbv4xigf3s08wqr7q3ws0j1c2c8kfifzf4yhr16dlh8y"
       },
       "nix": "nix/",
       "owner": "timbertson",
@@ -37,8 +37,8 @@
       "fetch": {
         "owner": "timbertson",
         "repo": "vdoml",
-        "rev": "146e97877fa771eda430db4120eab50c1d177667",
-        "sha256": "001a2p4z63kcqrcspr6dxllv9yjwb4kxw5w5lvzvqvkf9z2dakji"
+        "rev": "a1ac506ab027105acd1e27dd1d065ad36f7ac5ac",
+        "sha256": "16jyn4ak3g33a0cccr186rp22plqqxs97wshwnqki3518mygl2nj"
       },
       "owner": "timbertson",
       "ref": "master",
