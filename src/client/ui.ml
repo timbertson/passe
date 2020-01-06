@@ -27,7 +27,7 @@ class plain_prompt term (text:string) = object(self)
 end
 
 let copy_to_clipboard text =
-	match%lwt Lwt_process.with_process_out ("", [|"pyperclip"; "-i"|]) (fun proc ->
+	match%lwt Lwt_process.with_process_out ("", [|"pyperclip"; "--copy"|]) (fun proc ->
 		let%lwt () = Lwt_io.write proc#stdin text in
 		proc#close
 	) with
