@@ -1,2 +1,0 @@
-#!bash -eu
-rm -rf ./lib ./bin ./html ./_build
