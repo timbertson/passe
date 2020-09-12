@@ -38,7 +38,7 @@
  (mode promote)
  (deps (universe))
  (action
-  (run gup -u %{targets})))
+   (run gup -u dune-res.inc)))
 
 
 (include dune-res.inc)
