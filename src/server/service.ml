@@ -257,7 +257,6 @@ module Make
 					| ("html" | "css") as t -> "text/" ^ t
 					| ("png" | "ico") as t -> "image/" ^ t
 					| "js" -> "application/javascript"
-					| "appcache" -> "text/plain"
 					| "woff" -> "application/octet-stream"
 					| ext ->
 						Log.warn (fun m->m "Unknown static file type: %s" ext);
@@ -372,9 +371,6 @@ module Make
 							serve_file ~req
 								~headers: (Header.init_with "X-UA-Compatible" "IE=Edge")
 								(`Dynamic ("html", contents))
-
-						| ["index.appcache"] when not offline_access ->
-							respond_not_found ()
 
 						| ["version"] ->
 							Server.respond_string

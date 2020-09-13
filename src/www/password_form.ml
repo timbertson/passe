@@ -1,4 +1,5 @@
 open Js_of_ocaml
+open Js_of_ocaml_lwt
 open Vdoml
 open Passe
 open Passe_js

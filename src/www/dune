@@ -4,13 +4,13 @@
  (name main)
  (flags
   (:include ../flags))
- (libraries js_of_ocaml js_of_ocaml-lwt js_of_ocaml.weak passe lwt_react
+ (libraries js_of_ocaml js_of_ocaml-lwt passe lwt_react
    vdoml)
  (js_of_ocaml
   (flags :standard --source-map))
  (preprocess
-  (pps lwt_ppx js_of_ocaml.ppx)))
-
+  (pps lwt_ppx js_of_ocaml-ppx)))
+  
 (rule
  (targets about.ml)
  (deps (universe))
@@ -24,8 +24,10 @@
   (run gup -u %{targets})))
 
 (rule
- (targets index.appcache)
+ (targets service_worker.js)
  (deps
+  (universe)
+  service_worker_body.js
   (alias res)
   style.less
   main.bc.js
@@ -53,9 +55,9 @@
 
 (alias
  (name all)
- (deps dune-res.inc main.bc.js style.css index.appcache))
+ (deps dune-res.inc main.bc.js style.css service_worker.js))
 
 (install
  (package passe-server)
  (section share)
- (files main.bc.js index.appcache style.css))
+ (files main.bc.js service_worker.js style.css))

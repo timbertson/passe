@@ -1,4 +1,4 @@
-open Js_of_ocaml
+open Js_of_ocaml_lwt
 open Passe
 open Passe_js
 open React_ext

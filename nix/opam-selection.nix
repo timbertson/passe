@@ -23,7 +23,7 @@ let
 in
 {
   format-version = 4;
-  ocaml-version = "4.08.1";
+  ocaml-version = "4.10.0";
   repos = repos;
   selection = 
   {
@@ -2489,12 +2489,12 @@ in
       };
       opamSrc = repoPath (repos.opam-repository.src) 
       {
-        hash = "sha256:1f2v07fzx7rg0lc8pzs1s24vp49y0jyfxf98b9z57giik28dafgp";
-        package = "packages/ocaml/ocaml.4.08.1";
+        hash = "sha256:1j9xgxnbgzrar4rwynm7jd0bi3f5qwwkgyxvk1pd8iazvn81pgya";
+        package = "packages/ocaml/ocaml.4.10.0";
       };
       pname = "ocaml";
       src = null;
-      version = "4.08.1";
+      version = "4.10.0";
     };
     ocaml-base-compiler = 
     {
@@ -2502,16 +2502,16 @@ in
       };
       opamSrc = repoPath (repos.opam-repository.src) 
       {
-        hash = "sha256:1w9h2m91ya63x4jp5lvnnq3vfcnv1izmcq0i5k6n4g27br3l8ga9";
-        package = "packages/ocaml-base-compiler/ocaml-base-compiler.4.08.1";
+        hash = "sha256:0wavwn6cq999v787fsxf0v2z71h1vwhxwqbidznc4f9ccwjcdc76";
+        package = "packages/ocaml-base-compiler/ocaml-base-compiler.4.10.0";
       };
       pname = "ocaml-base-compiler";
       src = pkgs.fetchurl 
       {
-        sha256 = "11fvsm861lr73lk181gl5iczprp8d83fvgc1q6dx8gxqhzad6gmm";
-        url = "https://github.com/ocaml/ocaml/archive/4.08.1.tar.gz";
+        sha256 = "0fdw4abyp37q7acqaqawy64gakpg7xckw5ssfpn8dbwxlzqf1fjq";
+        url = "https://github.com/ocaml/ocaml/archive/4.10.0.tar.gz";
       };
-      version = "4.08.1";
+      version = "4.10.0";
     };
     ocaml-compiler-libs = 
     {

@@ -95,7 +95,7 @@ let main () =
 	add options ~long_name:"host" host;
 	add options ~long_name:"root" document_root;
 	add options ~long_name:"data" data_root;
-	add options ~long_name:"development" ~help:"disable appcache" development;
+	add options ~long_name:"development" ~help:"disable offline caching" development;
 	add options ~long_name:"version" show_version;
 	add options ~long_name:"timestamp" timestamp;
 	add options ~long_name:"cloud-datastore" cloud_datastore_opt;

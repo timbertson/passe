@@ -8,11 +8,6 @@ let string_of_html : html -> string = fun x -> x
 let safe_string_of_json o = o |> J.to_string |> Str.global_replace (Str.regexp "/") "\\u003c"
 
 let html ~implicit_auth ~offline_access () : html =
-	let html_attrs = if offline_access
-		then [ "manifest=\"index.appcache\"" ]
-		else []
-	in
-
 	let passe_env_json = `Assoc [
 		Passe_env.offline_access_key, `Bool offline_access;
 		Passe_env.implicit_auth_key, `Bool implicit_auth;
@@ -65,5 +60,5 @@ let html ~implicit_auth ~offline_access () : html =
 		</body>\
 	") in
 
-	"<html lang=\"en\" " ^ (String.concat " " html_attrs) ^ ">" ^ head ^ body ^ "</html>"
+	"<html lang=\"en\">" ^ head ^ body ^ "</html>"
 

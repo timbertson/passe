@@ -1,35 +1,38 @@
 open Js_of_ocaml
 open Js
 open Passe
-open Common
 module Log = (val Logging.log_module "app_cache")
 
-type cache_event = [
-	| `Updateready
-]
-
-class type application_cache_event = object
-	inherit Dom_html.event
+module Promise = struct
+	class type ['a] promise = object
+		method _then: ('a t -> 'b t) -> 'b promise t meth
+		method _catch: (error t -> unit) -> unit promise t meth
+	end
 end
 
-class type application_cache = object
-	inherit Dom_html.eventTarget
-	method update : unit meth
+module ServiceWorker = struct
+	class type setting = object
+		method scope : js_string t prop
+	end
+
+	let navigator = Unsafe.variable "navigator"
+
+	let instance = (Unsafe.get navigator "serviceWorker" |> def)
+	
+	let scope s = (Unsafe.obj [| "scope", Unsafe.inject (string s) |])
+	
+	let register serviceWorker service setting : unit Promise.promise t =
+		Unsafe.meth_call serviceWorker "register" [| Unsafe.inject service; setting; |]
 end
 
-
-let application_cache : application_cache t optdef = Unsafe.get Unsafe.global "applicationCache"
-let update_ready_event = Dom.Event.make "updateready"
-let update_monitor fn =
-	Optdef.case application_cache
-	(fun () ->
-		Log.warn (fun m->m "applicationCache is undefined, caching disabled");
-		Lwt.return_unit
-	) (fun application_cache -> Lwt_js_events.seq_loop
-		(Lwt_js_events.make_event update_ready_event)
-		application_cache
-		(fun (_:application_cache_event Js.t) _ ->
-			fn ()
-		)
+let install () =
+	Optdef.iter ServiceWorker.instance (fun sw ->
+		let register = ServiceWorker.register sw "/service_worker.js" (ServiceWorker.scope "/") in
+		(register##_then(fun x ->
+			Log.info (fun m->m"Registered serviceWorker");
+			x
+		))##_catch(fun err ->
+			Log.err (fun m->m"Error registering serviceWorker: %s" (Js.to_string err##toString));
+			()
+		) |> ignore
 	)
-

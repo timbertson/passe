@@ -1,0 +1,70 @@
+#!python3
+import os, sys, json
+import subprocess
+
+try:
+	def path(file, uri=None):
+		if uri is None:
+			uri = file
+		return (file, uri)
+
+	def paths_in(root, uri):
+		results = []
+		for (base, dirs, files) in os.walk(root, followlinks=True):
+			def make_path(file):
+				relative = base[len(root):].lstrip('/')
+				print('make_path: root=%s, base=%s, file=%s, relative=%s' % (root,base,file, relative))
+				return path(os.path.join(base, file), '/'.join([uri, relative, file]))
+
+			results.extend([make_path(file) for file in files if not file.startswith('.')])
+			for dir in dirs[:]:
+				if dir.startswith('.'):
+					dirs.remove(dir)
+
+		return results
+
+	res_root = '../../../../src/www/res'
+	subprocess.check_call(["gup", "-u", res_root+'/fonts', res_root+'/images'])
+
+	listed_sources = paths_in(res_root, 'res') + [
+		path("main.bc.js"),
+		path("style.css"),
+	]
+
+	sources = listed_sources + [
+		path("../server/index.ml", '/'),
+	]
+
+	source_files = [p[0] for p in sources]
+	source_uris = [p[1] for p in sources if 'service_worker' not in p]
+
+	def print_list(desc, items):
+		print('== '+desc+' ==')
+		for item in items:
+			print(repr(item))
+	print_list('sources', (sources))
+	print_list('files', (source_files))
+	print_list('uris', (source_uris))
+	subprocess.check_call(["gup", "-u"] + source_files)
+
+	import hashlib
+	digest = hashlib.md5()
+
+	for fname in (source_files):
+		print("reading " + fname)
+		with open(fname, 'rb') as input:
+			while True:
+				chunk = input.read(1024)
+				if not chunk:
+					break
+				digest.update(chunk)
+
+	with open(sys.argv[1], 'w') as output:
+		output.write('var files = ' + json.dumps(source_uris) + '\n')
+		output.write('var version = "' + digest.hexdigest() + '"\n')
+		with open(sys.argv[2].replace('.js', '_body.js')) as base:
+			for line in base:
+				if not line.startswith('// '):
+					output.write(line)
+except subprocess.CalledProcessError as e:
+	sys.exit(1)

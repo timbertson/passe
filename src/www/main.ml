@@ -316,23 +316,7 @@ let () = Lwt.async_exception_hook := print_exc "Uncaught LWT"
 let main ~show_debug ~storage_provider sync = (
 	let tasks = Ui.Tasks.init () in
 	if Lazy.force Passe_env_js.offline_access
-		then Ui.Tasks.async tasks (fun _instance ->
-			App_cache.update_monitor (fun () ->
-				Log.info (fun m->m "appcache update ready");
-				let busy = document##.body##querySelector (Js.string"input:focus")
-					|> Opt.to_option
-					|> Option.map (fun elem ->
-							let value = (Js.Unsafe.get elem (Js.string"value")) in
-							value##.length > 0
-					) |> Option.default false
-				in
-				begin if busy then
-					Log.warn (fun m->m "Not reloading; active input is nonempty")
-				else
-					Dom_html.window##.location##reload
-				end;
-				return_unit)
-		)
+		then Ui.Tasks.sync tasks (fun _instance -> App_cache.install ())
 		else Log.info (fun m->m "Offline access disabled");
 	Ui.main ~tasks ~root:"main" (component ~show_debug ~tasks ~storage_provider sync) ()
 )

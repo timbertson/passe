@@ -1,7 +1,7 @@
 open Js_of_ocaml
 open Passe
 open Lwt
-module Xhr = Lwt_xmlHttpRequest
+module Xhr = Js_of_ocaml_lwt.XmlHttpRequest
 module J = Json_ext
 module Version = Version.Make(Re_js)
 
@@ -47,7 +47,7 @@ module Impl : Server.IMPL = struct
 					Lwt.wakeup w {
 						url = url;
 						code = req##.status;
-						content = Js.to_string req##.responseText;
+						content = Js.Opt.to_option (req##.responseText) |> Option.map Js.to_string |> Option.default "";
 						content_xml = (fun () ->
 							match Js.Opt.to_option (req##.responseXML) with
 							| None -> None
