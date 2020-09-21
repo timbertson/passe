@@ -30,3 +30,6 @@ depends: [
 	"uri" { >="1.9.4" }
 	"yojson" { <"1.6.0" }
 ]
+depexts: [
+	["gup"] {os-distribution = "nixos"}
+]

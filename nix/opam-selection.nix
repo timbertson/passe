@@ -13,8 +13,8 @@ let
         {
           owner = "ocaml";
           repo = "opam-repository";
-          rev = "54b0223dcacb6311aa12f5342c34e1be684a79a3";
-          sha256 = "19j0q1c83n4271s04kh7v7vkkssqcz4rx7kf90ry6gh5x8j7k8rb";
+          rev = "4c7cc1ac40795b4b8975c751ed5badf37803ea33";
+          sha256 = "19w8vkc25grk7rbabsj9vlcbgfdag1fkf761b50daa3d7may0igq";
         };
         src = (pkgs.fetchFromGitHub) fetch;
       };
@@ -2874,6 +2874,7 @@ in
     };
     passe-common = 
     {
+      buildInputs = [ (pkgs.gup) ];
       opamInputs = 
       {
         astring = selection.astring;
@@ -3732,16 +3733,16 @@ in
       };
       opamSrc = repoPath (repos.opam-repository.src) 
       {
-        hash = "sha256:10y477fjig8d6chpmgdmpv683h78kshkmw3dmhi6sjid4gk6pc52";
-        package = "packages/zarith/zarith.1.9.1";
+        hash = "sha256:1mkp3sdw3wsxs8c1wadbc35b1cmbddvaybhbwi3db4xmf3q5kg5r";
+        package = "packages/zarith/zarith.1.10";
       };
       pname = "zarith";
       src = pkgs.fetchurl 
       {
-        sha256 = "0pfa271476dic5pvn6kxz3dfswxs6kqm2cxmhdx5xq2ayca05gj9";
-        url = "https://github.com/ocaml/Zarith/archive/release-1.9.1.tar.gz";
+        sha256 = "1qxrl0v2mk9wghc1iix3n0vfz2jbg6k5wpn1z7p02m2sqskb0zhb";
+        url = "https://github.com/ocaml/Zarith/archive/release-1.10.tar.gz";
       };
-      version = "1.9.1";
+      version = "1.10";
     };
     zed = 
     {
