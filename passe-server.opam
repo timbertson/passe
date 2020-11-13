@@ -1,5 +1,7 @@
 opam-version: "2.0"
-name: passe-server
+name: "passe-server"
+maintainer: "tim@gfxmonk.net"
+synopsis: "Passe"
 build: [
 	[make "server"]
 ]
