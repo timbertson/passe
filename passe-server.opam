@@ -9,10 +9,10 @@ depends: [
 	"passe-common" { ="%{version}%" }
 	"passe-unix-common" { ="%{version}%" }
 
-	"conduit" { < "2.0.0" }
+	"conduit"
 	"dns-lwt-unix"
-	"js_of_ocaml" { >="3.2.0" }
-	"nocrypto" { >="0.5.4" }
+	"js_of_ocaml"
+	"nocrypto"
 	"re"
 	"safepass"
 	"tcpip"

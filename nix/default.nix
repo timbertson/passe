@@ -33,7 +33,7 @@ let
 	});
 
 	opamCommon = {
-		inherit (ocaml-ng.ocamlPackages_4_10) ocaml;
+		inherit (ocaml-ng.ocamlPackages_4_12) ocaml;
 		src = {
 			passe = self;
 			passe-server = self;
