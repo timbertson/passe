@@ -198,18 +198,19 @@ let sync_ui state =
 	)
 
 let lterm_reporter term =
-	let ppf, flush =
+	let ppf, swap =
 		let b = Buffer.create 255 in
-		let flush () = let s = Buffer.contents b in Buffer.clear b; s in
-		Format.formatter_of_buffer b, flush
+		let swap () = let s = Buffer.contents b in Buffer.clear b; s in
+		Format.formatter_of_buffer b, swap
 	in
 
 	let lterm_print _src _level ~over k msgf =
 		let k _ =
-			Lwt_main.run (
-				let contents = flush () in
+			let write () =
+				let contents = swap () in
 				LTerm.fprint term contents >>= (fun () -> LTerm.flush term)
-			);
+			in
+			Lwt.finalize write (fun () -> over (); Lwt.return_unit) |> Lwt.ignore_result;
 			over ();
 			k ()
 		in
