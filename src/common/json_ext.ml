@@ -1,4 +1,5 @@
 include Yojson.Safe
+type json = t
 let to_string = pretty_to_string ~std:true
 let print_chan = Yojson.Safe.pretty_to_channel ~std:true
 let print_str () = to_string

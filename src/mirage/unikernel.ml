@@ -1,4 +1,4 @@
-module Main (CON:Conduit_mirage.S) (Static_kv:Passe_server.Static.Kv_RO) (Fs:Passe_server.Filesystem.FS) (Clock:Mirage_types.PCLOCK) = struct
+module Main (CON:Conduit_mirage.S) (Static_kv:Passe_server.Static.Kv_RO) (Fs:Passe_server.Filesystem.FS) (Clock:Mirage_clock.PCLOCK) = struct
   module Cohttp = Cohttp_mirage.Server(Conduit_mirage.Flow)
   module PasseFS = Passe_server.Filesystem.Make(Fs)(Passe_server.Filesystem_xen.Atomic)
   module Cohttp_server = Cohttp

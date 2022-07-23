@@ -34,7 +34,7 @@ module Make (Re:Re_ext.Sig) = struct
 			count := succ !count;
 			(* Log.info (fun m->m "input: %s (%d)" input !count); *)
 			let result = Digest.string input
-			|> Base64.encode ~tbl:sgp_alphabet ~pad:'A' in
+			|> Passe_base64.encode ~tbl:sgp_alphabet ~pad:'A' in
 			(* Log.info (fun m->m "result: %s" result); *)
 			Log.debug (fun m->m "hashed -> %s" result);
 			result

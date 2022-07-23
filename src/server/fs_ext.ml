@@ -3,15 +3,9 @@ open Common
 open Lwt
 open Result
 
-(* necessary to bind underlying Fs type to something usable *)
-module type FS = sig
-	include Mirage_fs_lwt.S
-		with type +'a io = 'a Lwt.t
-end
-
 (* FS plus helpers *)
 module type Augmented = sig
-	include FS
+	include Mirage_fs.S
 
 	val as_write_error : error -> write_error
 
@@ -38,7 +32,7 @@ module type AtomicSig = functor(Fs:Augmented) -> sig
 	val readable:  Fs.t -> Path.full -> (Path.full, Fs.error) result Lwt.t
 end
 
-module Augment (Fs:FS) : (Augmented with type t = Fs.t) = struct
+module Augment (Fs:Mirage_fs.S) : (Augmented with type t = Fs.t) = struct
 	include Fs
 
 	(* this is inelegant... *)

@@ -50,7 +50,6 @@ module Input_map = Zed_input.Make(LTerm_key)
 let text widget = widget#text |> Zed_string.to_utf8
 
 let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
-	let open CamomileLibraryDefault.Camomile in (* ??? *)
 	let frame = new LTerm_widget.vbox in
 
 	let add_field ~label (initial:string) =
@@ -94,7 +93,7 @@ let edit_and_save ~sync_state ~domain ~existing ~term () : bool Lwt.t =
 	let cancel () = wakeup wakener (); true in
 	frame#on_event (function
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Escape } -> cancel ()
-		| LTerm_event.Key { LTerm_key.control = true; meta = false; shift = false; code = LTerm_key.Char ch } when ch = UChar.of_char 'c' -> cancel ()
+		| LTerm_event.Key { LTerm_key.control = true; meta = false; shift = false; code = LTerm_key.Char ch } when ch = Uchar.of_char 'c' -> cancel ()
 		| LTerm_event.Key { LTerm_key.control = false; meta = false; shift = false; code = LTerm_key.Enter } ->
 			begin
 			Log.debug (fun m->m "Saving changes");

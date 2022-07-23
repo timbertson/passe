@@ -25,11 +25,13 @@ let
 
 	src = null;
 
+	devTools = [ selection.utop selection.ocaml-lsp-server selection.dune ];
+		
 	combinedShell = deps: mkShell (wwwVars // {
 		buildInputs = lib.concatMap (dep:
 			(dep.drvAttrs.buildInputs or []) ++
 			(dep.drvAttrs.propagatedBuildInputs or [])
-		) deps;
+		) deps ++ devTools;
 	});
 
 	opamCommon = {
@@ -68,6 +70,8 @@ let
 			"--define" "${vdoml}/vdoml.opam"
 			../passe-server.opam
 			../passe.opam
+			"utop"
+			"ocaml-lsp-server"
 		];
 	
 	result = {

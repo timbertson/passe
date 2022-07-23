@@ -5,7 +5,7 @@
  (flags
   (:include ../flags))
  (libraries extlib conduit-lwt-unix dns-lwt-unix hex mirage-clock-unix
-   mirage-fs-unix mirage-types nocrypto nocrypto.lwt passe passe_unix ptime
+   mirage-fs-unix mirage-crypto mirage-crypto-rng x509 passe passe_unix ptime base64
    safepass)
  (modules :standard \ main)
  (preprocess

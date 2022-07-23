@@ -60,7 +60,7 @@ let maybe_add_header k v headers =
 
 module Make
 	(Version: Version.Sig)
-	(Clock: Mirage_types.PCLOCK)
+	(Clock: Mirage_clock.PCLOCK)
 	(Data: Dynamic_store.Sig)
 	(Static_res:Static.Sig)
 	(Server:Cohttp_lwt.S.Server)
@@ -164,14 +164,14 @@ module Make
 
 	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
 
-	let handler ~static ~clock ~data:initial_data ~enable_rc ~development =
+	let handler ~static ~data:initial_data ~enable_rc ~development =
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 		let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
 
 		let adopt_data_root root =
 			let data : Data.t = root |> Option.fold (Data.reconnect initial_data) initial_data in
-			(data, new Auth.storage clock data user_db_path)
+			(data, new Auth.storage data user_db_path)
 		in
 
 		let data, user_db =
@@ -218,12 +218,12 @@ module Make
 
 		let serve_file ~req ?headers contents = (
 			let etag_buidler (type a): ((string -> unit) -> (unit -> string) -> a) -> a = fun apply ->
-				let open Nocrypto.Hash in
+				let open Mirage_crypto.Hash in
 				(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
-				let hash = SHA256.init () in
-				let append chunk = SHA256.feed hash (Cstruct.of_string chunk) in
-				let finalize () =
-					let digest = hash |> SHA256.get |> Cstruct.to_string |> Base64.encode in
+				let hash = ref SHA256.empty in
+				let append chunk = hash := SHA256.feed !hash (Cstruct.of_string chunk) in
+				let finalize (): string =
+					let digest = !hash |> SHA256.get |> Cstruct.to_string |> Base64.encode |> Error.raise_result in
 					("\"" ^ (digest ) ^ "\"")
 				in
 				apply append finalize

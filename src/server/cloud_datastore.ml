@@ -1,3 +1,4 @@
+module PassePath = Path (* shadowed by something later *)
 open Cohttp
 open Cohttp_lwt
 module Response = Cohttp.Response
@@ -67,7 +68,7 @@ let kind = "doc"
 let append_path p u = Uri.with_path u (Uri.path u ^ p)
 
 let key_of_path path = `Assoc ["path", `List [
-	`Assoc ["name", `String (Path.to_string path); "kind", `String kind]
+	`Assoc ["name", `String (PassePath.to_string path); "kind", `String kind]
 ]]
 
 let parse_json s = try Ok (J.from_string s) with e -> Error (`Failed (Printexc.to_string e))
@@ -89,18 +90,18 @@ module Keys = struct
 end
 
 module Make (Client:Cohttp_lwt.S.Client) = struct
-	module Impl = (struct (* ( ) *)
+	module Impl = (struct
 		include Dynamic_store.Types
 		type t = {
 			url : Uri.t;
 			account : string;
 			token_uri : string;
-			private_key : Nocrypto.Rsa.priv;
+			private_key : Mirage_crypto_pk.Rsa.priv;
 			token : string option ref;
 			ctx : Client.ctx;
 		}
 
-		module PathLock = Lock.Map(Path.Relative)()
+		module PathLock = Lock.Map(PassePath.Relative)()
 
 		let _post ~ctx ~bearer ~body url : ((Response.t * Body.t), request_error) result Lwt.t =
 			let headers = let base = Header.init () in
@@ -139,14 +140,14 @@ module Make (Client:Cohttp_lwt.S.Client) = struct
 				(* from https://hackernoon.com/rs256-in-ocaml-reasonml-9ae579b9420a *)
 				let rs256_sign data =
 					let data = Cstruct.of_string data in
-					let h = Nocrypto.Hash.SHA256.digest data in
-					let pkcs1_digest = X509.Encoding.pkcs1_digest_info_to_cstruct (`SHA256, h) in
-					Nocrypto.Rsa.PKCS1.sig_encode ~key:t.private_key pkcs1_digest |> Cstruct.to_string
+					let h = Mirage_crypto.Hash.SHA256.digest data in
+					let pkcs1_digest = X509.Certificate.encode_pkcs1_digest_info (`SHA256, h) in
+					Mirage_crypto_pk.Rsa.PKCS1.sig_encode ~key:t.private_key pkcs1_digest |> Cstruct.to_string
 				in
 
 				Log.debug (fun m->m "generated JWT claim: %s.%s" header claim);
-				let serialized = (Base64.encode header) ^ "." ^ (Base64.encode claim) in
-				let signature = rs256_sign serialized |> Base64.encode in
+				let serialized = (Base64.encode header |> Error.raise_result) ^ "." ^ (Base64.encode claim |> Error.raise_result) in
+				let signature = rs256_sign serialized |> Base64.encode |> Error.raise_result in
 				serialized ^ "." ^ signature
 			in
 
@@ -288,8 +289,9 @@ module Cloud_datastore_unix = struct
 				failwith "Invalid JSON"
 			) in
 			let url = Uri.of_string ("https://datastore.googleapis.com/v1/projects/" ^ (prop "project_id")) in
-			let private_key = match prop "private_key" |> Cstruct.of_string |> X509.Encoding.Pem.Private_key.of_pem_cstruct1 with
+			let private_key = match prop "private_key" |> Cstruct.of_string |> X509.Private_key.decode_pem |> Error.raise_result with
 				| `RSA key -> key
+				| other -> failwith (Format.asprintf "Loaded wrong type: %a" X509.Key_type.pp (X509.Private_key.key_type other))
 			in
 
 			let ctx =

@@ -26,3 +26,7 @@ let pp = fun formatter error ->
 		| `AssertionError s -> "Assertion failed: " ^ s
 		| `Failed s -> s
 	)
+
+let raise_result = function
+	| Ok(x) -> x
+	| Error(`Msg s) -> failwith (`Failed s)

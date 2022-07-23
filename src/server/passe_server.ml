@@ -50,7 +50,6 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 		let dynamic_store = Dynamic_fs.connect connector |> R.assert_ok Error.pp in
 		Static_files.init dynamic_store in
 
-	let%lwt clock = Pclock.connect () in
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 
@@ -58,11 +57,10 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	let callback = Unix_server.handler
 		~static:static_store
 		~data
-		~clock
 		~enable_rc
 		~development
 	in
-	let%lwt () = Nocrypto_entropy_lwt.initialize () in
+	let () = Mirage_crypto_rng_lwt.initialize () in
 	let config = HTTP.make ~callback ~conn_closed () in
 	let mode = `TCP (`Port port) in
 	let%lwt ctx = Conduit_lwt_unix.init ~src:host () in
@@ -118,10 +116,9 @@ let main () =
 		exit 0
 	end;
 	if (Opt.get timestamp) then (
-		let clock = Pclock.connect () |> Lwt_main.run in
 		Logs.set_reporter @@
 			Logging.tagging_reporter @@
-			Timed_log.reporter ~clock @@
+			Timed_log.reporter @@
 			Logging.default_reporter
 	);
 	

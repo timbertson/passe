@@ -3,7 +3,6 @@ open Passe
 open Common
 module J = Json_ext
 module Str = Re_str
-module Base64 = B64
 
 let re_newline = Str.regexp "\n"
 let lines_stream stream =
@@ -51,7 +50,7 @@ let rollback e = `Rollback e
 
 module type Sig = sig
 	module Store : Dynamic_store.Sig
-	module Clock : Mirage_types.PCLOCK
+	module Clock : Mirage_clock.PCLOCK
 
 	type 'err cancel_write = [
 		| `Cancel
@@ -81,8 +80,7 @@ module type Sig = sig
 		val sandstorm_user : name:string -> id:string -> unit -> sandstorm_user
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
-	class storage : Clock.t -> Store.t -> Path.relative -> object
-		method clock : Clock.t
+	class storage : Store.t -> Path.relative -> object
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
 				-> (User.db_user, Error.t) result Lwt_stream.t (* users *)
@@ -109,11 +107,11 @@ module type Sig = sig
 	val delete_user : storage:storage -> User.db_user -> string -> (bool, Error.t) result Lwt.t
 end
 
-module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_store.Sig) = struct
+module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_store.Sig) = struct
 	module Store = Store
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
-	let time clock = Clock.now_d_ps clock |> Ptime.v
+	let time () = Clock.now_d_ps () |> Ptime.v
 
 	type 'err cancel_write = [
 		| `Cancel
@@ -156,15 +154,15 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 	module Bytes: BYTES = struct
 		type t = Cstruct.t
 		let of_cstruct b = b
-		let to_string b = Base64.encode (Cstruct.to_string b)
-		let of_string s = Cstruct.of_string (Base64.decode s)
+		let to_string b = Base64.encode (Cstruct.to_string b) |> Error.raise_result
+		let of_string s = Cstruct.of_string (Base64.decode s |> Error.raise_result)
 		let to_json b = `String (to_string b)
 		let lift fn bytes = fn (Cstruct.to_string bytes)
 		let field k o : t option = J.string_field k o |> Option.map of_string
 		let length b = Cstruct.len b
 	end
 
-	module Rng = Nocrypto.Rng
+	module Rng = Mirage_crypto_rng
 
 	let random_bytes len: Bytes.t Lwt.t =
 		let bytes = Rng.generate len in
@@ -209,7 +207,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 			let sha256 : string -> string = fun str ->
 				str
 					|> Cstruct.of_string
-					|> Nocrypto.Hash.SHA256.digest
+					|> Mirage_crypto.Hash.SHA256.digest
 					|> Hex.of_cstruct
 					|> Hash.string_of_hex
 			in
@@ -234,8 +232,8 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				("contents", Bytes.to_json t.sensitive_contents);
 			]
 		
-		let create ~clock ~username () : sensitive_token Lwt.t =
-			let now = Clock.now_d_ps clock |> Ptime.v in
+		let create ~username () : sensitive_token Lwt.t =
+			let now = Clock.now_d_ps () |> Ptime.v in
 			let expires : Ptime.t = Ptime.add_span now two_weeks |> Option.force in
 			let%lwt contents = random_bytes 20 in
 			return {
@@ -331,7 +329,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				}
 			}
 
-		let gen_token ~clock user password : (db_user * Token.sensitive_token) option Lwt.t =
+		let gen_token user password : (db_user * Token.sensitive_token) option Lwt.t =
 			if verify user.password password then (
 				let token_alg = user.password.stored_metadata.alg in
 				(* Important: use the hash algorithm corresponding to the _stored_ password.
@@ -342,7 +340,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 					Log.info (fun m->m "upgrading password for %s" user.name);
 					latest_password_format password
 				) else return user.password in
-				let%lwt new_token = Token.create ~clock ~username:user.name () in
+				let%lwt new_token = Token.create ~username:user.name () in
 				let tokens = Token.hash new_token :: user.active_tokens in
 
 				(* limit number of historical tokens to 10 per user *)
@@ -388,9 +386,9 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				("tokens", `List (u.active_tokens |> List.map (Token.to_stored_json)));
 			]
 		
-		let create ~clock ~username password =
+		let create ~username password =
 			return (validate_username username) |> Lwt_r.bind (fun username ->
-				Token.create ~clock ~username () |> Lwt.bindr (fun token ->
+				Token.create ~username () |> Lwt.bindr (fun token ->
 					latest_password_format password |> Lwt.bindr (fun stored_password ->
 						let stored_token = Token.hash token in
 						let user = {
@@ -424,7 +422,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 
 	end
 
-	class storage clock fs path =
+	class storage fs path =
 		let () = Log.info (fun m->m "storage located at %a" Path.pp path) in
 
 		let read_with_write_permission (type a)(type err):
@@ -457,7 +455,6 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 
 
 		object (self)
-		method clock = clock
 		method modify : 'a 'err.
 			((User.db_user -> unit Lwt.t) (* write_user *)
 				-> (User.db_user, Error.t) result Lwt_stream.t (* users *)
@@ -465,7 +462,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 			)
 			-> ('a, 'err cancel_write) result Lwt.t
 		= fun fn -> (
-			let now = time clock in
+			let now = time () in
 			let double_expiry = Ptime.Span.add two_weeks two_weeks in
 			let max_expiry = Ptime.add_span now double_expiry |> Option.force in
 
@@ -571,7 +568,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				| Some (Ok (_:User.db_user)) -> return (Error (`Cancel))
 				| Some (Error e) -> return (Error (write_error e))
 				| None ->
-					User.create ~clock:storage#clock ~username password |> Lwt_r.bind (fun (new_user, token) ->
+					User.create ~username password |> Lwt_r.bind (fun (new_user, token) ->
 						write_user new_user |> Lwt.map (fun () -> Ok token)
 					) |> Lwt.map @@ R.reword_error rollback
 			)
@@ -600,7 +597,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 
 	let login ~(storage:storage) username password : (Token.sensitive_token, string) result Lwt.t =
 		storage#modify_user username (fun write_user user ->
-			match%lwt User.gen_token ~clock:storage#clock user password with
+			match%lwt User.gen_token user password with
 				| Some (user, token) -> write_user user |> Lwt.map (fun () -> Ok token)
 				| None -> return (Error (`Rollback `Authentication_failed))
 		) |> Lwt.map @@ R.reword_error (function
@@ -610,13 +607,13 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				"Authentication error"
 		)
 
-	let token_has_expired ~(storage:storage) info =
+	let token_has_expired info =
 		let expires = info.Token.expires in
-		Ptime.is_earlier expires ~than:(time storage#clock)
+		Ptime.is_earlier expires ~than:(time ())
 
 	let validate ~(storage:storage) token : (User.db_user option, Error.t) result Lwt.t =
 		let info = token.sensitive_metadata in
-		if token_has_expired ~storage info then
+		if token_has_expired info then
 			return (Ok None)
 		else (
 			get_user ~storage (info.Token.user) |> Lwt_r.map (fun user ->
@@ -630,7 +627,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 
 	let logout ~(storage:storage) token : (unit, Error.t) result Lwt.t =
 		let info = token.sensitive_metadata in
-		if token_has_expired ~storage info then
+		if token_has_expired info then
 			return (Ok ())
 		else (
 			let username = info.Token.user in
@@ -648,7 +645,7 @@ module Make (Clock:Mirage_types.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 		: (Token.sensitive_token option, Error.t) result Lwt.t = (
 		if User.verify (user.User.password) old then (
 			storage#modify_user user.User.name (fun write_user db_user ->
-				User.create ~clock:storage#clock ~username:db_user.User.name new_password
+				User.create ~username:db_user.User.name new_password
 					(* |> Lwt.map (R.reword_error rollback) *)
 					|> Lwt.bindr (function
 						| Error e -> return (Error (`Rollback e))

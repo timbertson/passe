@@ -15,7 +15,7 @@ let string_of_hex : Hex.t -> string = function
 	| `Hex s -> s
 
 module Hash_sha256 = struct
-	open Nocrypto.Hash
+	open Mirage_crypto.Hash
 	type t = Cstruct.t
 	let serialize : t -> string = fun t -> Hex.of_cstruct t |> string_of_hex
 	let hash ~count:(_count:int) ~(seed:string) s : t =
