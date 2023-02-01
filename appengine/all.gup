@@ -6,7 +6,8 @@ gup -u "../all"
 rm -rf "./app"
 ../install.sh ./app passe-server.install
 
-cp run.sh app/bin/
-
 # copy dependencies
 gup app/lib
+
+# then patchelf to use them
+patchelf --set-rpath ./app/lib app/bin/passe-server

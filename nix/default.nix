@@ -25,7 +25,7 @@ let
 
 	src = null;
 
-	devTools = [ selection.utop selection.ocaml-lsp-server selection.dune ];
+	devTools = [ selection.utop selection.ocaml-lsp-server selection.dune pkgs.patchelf ];
 		
 	combinedShell = deps: mkShell (wwwVars // {
 		buildInputs = lib.concatMap (dep:
