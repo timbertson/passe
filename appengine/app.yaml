@@ -1,4 +1,4 @@
-runtime: python310
+runtime: python312
 entrypoint: ./run.sh
 instance_class: B1
 basic_scaling:
