@@ -1,0 +1,26 @@
+{
+    "opam2nix": {
+        "branch": "v1",
+        "description": "Generate nix expressions from opam packages",
+        "homepage": null,
+        "owner": "timbertson",
+        "repo": "opam2nix",
+        "rev": "4ca3e2a1a127cfb4b00029ad629eb296e7f5c5ce",
+        "sha256": "0w6hy2b8llpy7406y58kskixx7wznzwb720fzn76jxzpasfpgcjx",
+        "type": "tarball",
+        "url": "https://github.com/timbertson/opam2nix/archive/4ca3e2a1a127cfb4b00029ad629eb296e7f5c5ce.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "vdoml": {
+        "branch": "master",
+        "description": "virtual DOM + OCaml",
+        "homepage": null,
+        "owner": "timbertson",
+        "repo": "vdoml",
+        "rev": "27910bb472e6da4d2c69f959b0c5582f6f1eca6b",
+        "sha256": "15almjk3c5c2iwcfsyawbr3cgj6fvdf15cry9k4vk5m065vn5bw4",
+        "type": "tarball",
+        "url": "https://github.com/timbertson/vdoml/archive/27910bb472e6da4d2c69f959b0c5582f6f1eca6b.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    }
+}

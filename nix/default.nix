@@ -1,10 +1,11 @@
-{ pkgs, lib,
-	opam2nix,
-	vdoml,
-	self,
-}:
+{ pkgs, lib, stdenv }:
 with pkgs;
 let
+	sources = pkgs.callPackage ./sources.nix {};
+	opam2nix = pkgs.callPackage sources.opam2nix {};
+	self = sources.local { url = ../.; };
+	darwinFramework = framework:
+		lib.optional stdenv.isDarwin (lib.getAttr framework pkgs.darwin.apple_sdk.frameworks);
 	wwwVars =
 		let
 			nodeEnv = let base = pkgs.callPackage ./node-env.nix {}; in base // {
@@ -41,17 +42,21 @@ let
 			passe-server = self;
 			passe-common = self;
 			passe-unix-common = self;
-			inherit vdoml;
+			inherit (sources) vdoml;
 		};
 		override = {}:
-		let patchedShebangs = super: super.overrideAttrs (o: {
-			postPatch = (super.postPatch or "") + "\npatchShebangs tools";
-		});
-		in
-		{
-			passe-server = super: (patchedShebangs super).overrideAttrs (o: wwwVars);
-			passe = patchedShebangs;
-		};
+			let patchedShebangs = super: super.overrideAttrs (o: {
+				postPatch = (super.postPatch or "") + "\npatchShebangs tools";
+			});
+			in
+			{
+				passe-server = super: (patchedShebangs super).overrideAttrs (o: wwwVars);
+				passe = patchedShebangs;
+
+				dune = super: super.overrideAttrs (o: {
+					buildInputs = (o.buildInputs or []) ++ (darwinFramework "CoreServices");
+				});
+			};
 	};
 
 	importSelection = selection:
@@ -67,7 +72,7 @@ let
 		opam2nix.resolve (opamCommon // { inherit selection; }) [
 			"--define" ../passe-common.opam
 			"--define" ../passe-unix-common.opam
-			"--define" "${vdoml}/vdoml.opam"
+			"--define" "${sources.vdoml}/vdoml.opam"
 			../passe-server.opam
 			../passe.opam
 			"utop"
@@ -75,7 +80,7 @@ let
 		];
 	
 	result = {
-		inherit vdoml opam2nix resolve;
+		inherit vdoml opam2nix resolve nix-wrangle;
 
 		# client + server, plus local development utils
 		shell = combinedShell [
