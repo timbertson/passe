@@ -26,8 +26,16 @@ let
 
 	src = null;
 
-	devTools = [ selection.utop selection.ocaml-lsp-server selection.dune pkgs.patchelf ];
-		
+	devTools = [
+		selection.utop
+
+		# temporarily not compiling; TODO pick a working version?
+		# selection.ocaml-lsp-server
+
+		selection.dune
+		pkgs.patchelf
+	];
+
 	combinedShell = deps: mkShell (wwwVars // {
 		buildInputs = lib.concatMap (dep:
 			(dep.drvAttrs.buildInputs or []) ++
