@@ -1,3 +1,0 @@
-true: debug, package(fat-filesystem, io-page, mirage-block-xen.front, yojson, hex, lwt, lwt_ppx, mirage-types, mirage-types-lwt, mirage-net-xen, mirage-types,cohttp,nocrypto,lwt, mirage-runtime,mirage-clock,conduit.mirage, mirage-net-xen, tcpip.stack-direct, astring, safepass), annot,bin_annot,strict_sequence,principal
-<src>: include
-<.*>: -traverse

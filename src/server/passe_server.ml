@@ -7,8 +7,7 @@ module Log = (val Logging.log_module "service")
 
 module HTTP = Cohttp_lwt_unix.Server
 
-module Fs_ext = Fs_ext.Augment(FS_unix)
-module Dynamic_fs = Dynamic_store.Of_fs(Fs_ext)(Fs_unix.Atomic)
+module Dynamic_fs = Dynamic_store.Fs
 module Version = Version.Make(Passe_unix.Re)
 module Timed_log = Timed_log.Make(Pclock)
 
@@ -21,7 +20,6 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 
 	Log.info (fun m->m "Listening on: %s %d" host port);
 	Log.info (fun m->m "Document root: %s" document_root);
-	let%lwt fs = FS_unix.connect "/" in
 
 	let module Data = (val match data_source with
 		| `Cloud_datastore _ -> (module Cloud_datastore.Cloud_datastore_unix: Dynamic_store.Sig)
@@ -36,31 +34,24 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 			Data.connect (Cloud_datastore.Cloud_datastore spec)
 		| `Fs root ->
 			Log.info (fun m->m "Data root: %s" root);
-			Data.connect (Dynamic_fs.Fs (fs, (Path.base root)));
+			Data.connect (Dynamic_fs.Fs (Path.base root));
 			(* Obj.magic (Dynamic_fs.connect fs (Path.base root): Dynamic_fs.t) *)
 	) |> R.assert_ok Error.pp
 	in
 
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
-	let module Static_files = Static.Of_dynamic(Dynamic_fs) in
-	let module Unix_server = Service.Make(Version)(Pclock)(Data)(Static_files)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
-
-	let static_store =
-		let connector = Dynamic_fs.Fs (fs, (Path.base document_root)) in
-		let dynamic_store = Dynamic_fs.connect connector |> R.assert_ok Error.pp in
-		Static_files.init dynamic_store in
+	let module Unix_server = Service.Make(Version)(Pclock)(Data)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
-		~static:static_store
 		~data
 		~enable_rc
 		~development
 	in
-	let () = Mirage_crypto_rng_lwt.initialize () in
+	let () = Mirage_crypto_rng_lwt.initialize (module Mirage_crypto_rng.Fortuna) in
 	let config = HTTP.make ~callback ~conn_closed () in
 	let mode = `TCP (`Port port) in
 	let%lwt ctx = Conduit_lwt_unix.init ~src:host () in

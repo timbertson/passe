@@ -1,6 +1,0 @@
-#!bash -eu
-cd "$(dirname "$2")"
-gup --always
-gup -u .configure
-mirage build # --verbose --verbose
-touch "$2"

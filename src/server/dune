@@ -4,9 +4,20 @@
  (name passe_server)
  (flags
   (:include ../flags))
- (libraries extlib conduit-lwt-unix dns-lwt-unix hex mirage-clock-unix
-   mirage-fs-unix mirage-crypto mirage-crypto-rng x509 passe passe_unix ptime base64
-   safepass)
+ (libraries
+  extlib
+  conduit-lwt-unix
+  hex
+  mirage-clock-unix
+  mirage-crypto
+  mirage-crypto-rng
+  x509
+  passe
+  passe_unix
+  ptime
+  base64
+  dns-client-lwt
+  safepass)
  (modules :standard \ main)
  (preprocess
   (pps lwt_ppx)))
