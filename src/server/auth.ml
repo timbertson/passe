@@ -52,12 +52,6 @@ module type Sig = sig
 	module Store : Dynamic_store.Sig
 	module Clock : Mirage_clock.PCLOCK
 
-	type 'err cancel_write = [
-		| `Cancel
-		| `Rollback of 'err
-		| `Write_error of Error.t
-	]
-
 	module Token : sig
 		type sensitive_token
 		type stored_token
@@ -81,24 +75,18 @@ module type Sig = sig
 		val json_of_sandstorm : sandstorm_user -> J.json
 	end
 	class storage : Store.t -> Path.relative -> object
-		method modify : 'a 'err.
-			((User.db_user -> unit Lwt.t) (* write_user *)
-				-> (User.db_user, Error.t) result Lwt_stream.t (* users *)
-				-> ('a, 'err cancel_write) result Lwt.t
-			)
-			-> ('a, 'err cancel_write) result Lwt.t
-		method modify_user : 'a 'err.
-			string
-			-> ?commit:('a option -> ('a, cancel) result)
-			-> ((User.db_user -> unit Lwt.t) -> User.db_user -> ('a, 'err cancel_write) result Lwt.t)
-			-> ('a, 'err cancel_write) result Lwt.t
-		method read: 'a.
-			((User.db_user, Error.t) result Lwt_stream.t -> ('a, Error.t) result Lwt.t)
+		method modify : 'a.
+			(User.db_user list -> (User.db_user list option * 'a) Lwt.t) (* modify *)
 			-> ('a, Error.t) result Lwt.t
+		method modify_user : 'a.
+			string
+			-> (User.db_user -> (User.db_user * 'a, Error.t) result Lwt.t)
+			-> ('a option, Error.t) result Lwt.t
+		method read: (User.db_user list, Error.t) Lwt_r.t
 	end
 
-	val signup : storage:storage -> string -> string -> (Token.sensitive_token, string) result Lwt.t
-	val login : storage:storage -> string -> string -> (Token.sensitive_token, string) result Lwt.t
+	val signup : storage:storage -> string -> string -> (Token.sensitive_token, Error.t) result Lwt.t
+	val login : storage:storage -> string -> string -> (Token.sensitive_token, Error.t) result Lwt.t
 
 	val validate : storage:storage -> Token.sensitive_token -> (User.db_user option, Error.t) result Lwt.t
 	val logout : storage:storage -> Token.sensitive_token -> (unit, Error.t) result Lwt.t
@@ -112,14 +100,6 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 	module Clock = Clock
 	module Log = (val Logging.log_module "auth")
 	let time () = Clock.now_d_ps () |> Ptime.v
-
-	type 'err cancel_write = [
-		| `Cancel
-		| `Rollback of 'err
-		| `Write_error of Error.t
-	]
-
-	let write_error (e:Error.t) = `Write_error e
 
 	let mandatory = J.mandatory
 
@@ -159,7 +139,7 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 		let to_json b = `String (to_string b)
 		let lift fn bytes = fn (Cstruct.to_string bytes)
 		let field k o : t option = J.string_field k o |> Option.map of_string
-		let length b = Cstruct.len b
+		let length b = Cstruct.length b
 	end
 
 	module Rng = Mirage_crypto_rng
@@ -251,7 +231,7 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 	let validate_username name =
 		if (Str.string_match valid_username_pattern name 0)
 			then Ok name
-			else Error `Invalid_username
+			else Error (`Invalid "username")
 
 	module User = struct
 		let max_tokens = 10
@@ -372,7 +352,7 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 		
 		
 		let of_json j =
-			let name =  mandatory J.string_field "name" j in
+			let name = mandatory J.string_field "name" j in
 			{
 				name = name;
 				password = mandatory J.get_field "password" j |> password_of_json;
@@ -420,56 +400,42 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 				{ user with active_tokens = user.active_tokens |> List.filter (fun t -> t != tok) }
 			)
 
+		let matches_name: string -> db_user -> bool =
+			fun name candidate -> candidate.name = name
 	end
 
 	class storage fs path =
 		let () = Log.info (fun m->m "storage located at %a" Path.pp path) in
 
-		let read_with_write_permission (type a)(type err):
-			(* cast_read_err is required due to https://caml.inria.fr/mantis/view.php?id=6137 *)
-			cast_read_err:(Error.t -> err)
-			-> (Lock.proof -> (User.db_user, Error.t) result Lwt_stream.t -> (a, err) result Lwt.t)
-			-> (a, err) result Lwt.t
-		= fun ~cast_read_err fn ->
-			Store.read_for_writing fs path (fun proof response ->
-				response |> R.fold (function
-					| None ->
+		let read_with_write_permission: 'a.
+			(Lock.proof -> User.db_user list -> ('a, Error.t) result Lwt.t)
+			-> ('a, Error.t) result Lwt.t
+		= fun fn ->
+			Store.read_for_writing fs path (fun proof contents ->
+				match contents with
+					| Ok None ->
 						Log.debug (fun m->m "Ignoring missing user DB");
-						fn proof (Lwt_stream.of_list [])
-					| Some stream ->
-						let lines = lines_stream stream in
-						let db_users: (User.db_user, Error.t) result Lwt_stream.t = lines |> Lwt_stream.filter_map (fun line ->
-							line |> R.map (fun line ->
-								Option.non_empty ~zero:"" line |>
-									Option.map (fun line -> J.from_string line |> User.of_json)
-							) |> Option_r.unwrap
-						) in
+						fn proof []
+					| Ok (Some contents) ->
+						let lines = String.split_on_char '\n' contents |> List.filter ((!=) "") in
+						let db_users : User.db_user list = lines
+							|> List.map (fun line -> J.from_string line |> User.of_json)
+						in
 						fn proof db_users
-				) (fun err -> Lwt.return (Error (cast_read_err err)))
+					| Error _ as e -> Lwt.return e
 			)
 		in
-		let default_commit_policy = function
-			| Some x -> Ok x
-			| None -> Error `Cancel
-		in
-
 
 		object (self)
-		method modify : 'a 'err.
-			((User.db_user -> unit Lwt.t) (* write_user *)
-				-> (User.db_user, Error.t) result Lwt_stream.t (* users *)
-				-> ('a, 'err cancel_write) result Lwt.t
-			)
-			-> ('a, 'err cancel_write) result Lwt.t
-		= fun fn -> (
+		method modify: 'a.
+			(User.db_user list -> (User.db_user list option * 'a) Lwt.t) (* modify *)
+			-> ('a, Error.t) Lwt_r.t
+		= fun modify_fn -> (
 			let now = time () in
 			let double_expiry = Ptime.Span.add two_weeks two_weeks in
 			let max_expiry = Ptime.add_span now double_expiry |> Option.force in
 
-			let num_written = ref 0 in
-			let (output_chunks, output) = Lwt_stream.create_bounded 10 in
-
-			let write_user user =
+			let serialize_user user =
 				(* whenever we save a user, trim their tokens to just those
 					* which have not yet expired (with a sanity check that discards
 					* tokens whose expiry is too far in the future, too) *)
@@ -484,128 +450,91 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 					(user.User.name)
 					(List.length active_tokens)
 				);
-				num_written := !num_written + 1;
-				output#push (`Output (line^"\n"))
+				line
 			in
 
-			read_with_write_permission ~cast_read_err:write_error (fun proof users ->
-				(* stream output while processing input *)
-				let write_result = (fn write_user users |> LwtMonad.bind (function
-					| Ok _ as result ->
-						Log.debug (fun m->m "committing changes");
-						return result
-					| Error _ as err ->
-						Log.debug (fun m->m "discarding changes");
-						output#push `Rollback |> Lwt.map (fun () -> err)
-				) |> LwtMonad.tap (fun _ ->
-					Log.debug (fun m->m "closing output");
-					return output#close
-				)) in
-				Log.info (fun m->m"joining write_s and write_result");
-				let write_io = Store.write_s fs path ~proof output_chunks in
-
-				write_io |> LwtMonad.bind (function
-					| Ok () -> write_result
-					| Error err -> Lwt.return (Error (write_error err))
-				)
+			read_with_write_permission (fun proof users ->
+				let%lwt (modified, result) = modify_fn users in
+				let written: (unit, Error.t) Lwt_r.t = (match modified with
+					| Some modified -> (
+						let output = modified |> List.map serialize_user |> String.concat "\n" in
+						Store.write fs path ~proof output
+					)
+					| None -> Lwt_r.return ()
+				) in
+				written |> Lwt_r.map (fun () -> result)
 			)
 		)
 
 		method modify_user : 'a 'err.
 			string
-			-> ?commit:('a option -> ('a, cancel) result)
-			-> ((User.db_user -> unit Lwt.t) -> User.db_user -> ('a, 'err cancel_write) result Lwt.t)
-			-> ('a, 'err cancel_write) result Lwt.t
-		= fun username ?(commit=default_commit_policy) fn -> self#modify (fun write_user users ->
-			Lwt_stream.fold_s (fun user result -> match (result, user) with
-				| (Error _ as e, _) -> return e
-				| (Ok _, Error (e:Error.t)) -> return (Error (write_error e))
-				| Ok result as acc, Ok user -> (
-					if user.User.name = username then (
-						match result with
-						| Some _ ->
-							Log.err (fun m->m "User %s appears more than once in DB" username);
-							return (Error `Cancel)
-						| None -> (
-							fn write_user user |> Lwt.map (function
-								| Ok x -> Ok (Some x)
-								| Error _ as e -> e
-							)
+			-> (User.db_user -> (User.db_user * 'a, Error.t) result Lwt.t)
+			-> ('a option, Error.t) result Lwt.t
+		= fun username modify_user_fn -> self#modify (fun all_users ->
+			let rec loop = fun ~processed_rev -> function
+				| candidate :: unprocessed_users -> (
+					if User.matches_name username candidate then (
+						modify_user_fn candidate |> Lwt.map (function
+							| Ok (updated, ret) ->
+								let full_updated_users = (List.rev processed_rev @ [updated] @ unprocessed_users) in
+								(Some full_updated_users, Ok (Some ret))
+							| Error e -> (None, Error e)
 						)
-					) else (write_user user |> Lwt.map (fun () -> acc))
+					)
+					else loop ~processed_rev:(candidate :: processed_rev) unprocessed_users
 				)
-			) users (Ok None) |> Lwt.map (function
-				| Ok result -> commit result |> R.reword_error (function `Cancel -> `Cancel)
-				| Error _ as e -> e
-			)
-		)
+				| [] ->
+					(* not found *)
+					Lwt.return (None, Ok None)
+			in
+			
+			loop ~processed_rev:[] all_users
+		) |> Lwt.map (R.flatten)
 
-		method read: 'a.
-			((User.db_user, Error.t) result Lwt_stream.t -> ('a, Error.t) result Lwt.t)
-			-> ('a, Error.t) result Lwt.t
-		= fun fn -> read_with_write_permission
-			~cast_read_err:identity (fun _proof -> fn)
-
+		method read: (User.db_user list, Error.t) Lwt_r.t =
+			read_with_write_permission (fun _proof users -> Lwt_r.return users)
 	end
 
-	type signup_result = [
-		| `Conflict
-		| `Invalid_username
-		| `Created of J.json
-		]
+	let signup ~(storage:storage) username password : (Token.sensitive_token, Error.t) result Lwt.t = (
+		let modification: ((Token.sensitive_token, Error.t) result, Error.t) result Lwt.t = storage#modify (fun all_users ->
+			match List.find_opt (User.matches_name username) all_users with
+				(* Don't modify users and return a failure *)
+				| Some existing -> Lwt.return (None, Error (`Failed "Account creation failed"))
+				| None -> (
+					User.create ~username password |> Lwt.map (function
+						| Ok (new_user, token) ->
+							(* insert new user and return its token *)
+							(Some (new_user :: all_users), Ok token)
+						| Error e -> (None, Error e) (* don't write an updated user list and return an error *)
+					)
+				)
+		) in
 
-	let signup ~(storage:storage) username password : (Token.sensitive_token, string) result Lwt.t = (
-		storage#modify (fun write_user users ->
-			let conflict = users |> Lwt_stream.find_s (function
-				| Error _ -> return_true
-				| Ok user ->
-					if user.User.name = username
-						then return_true
-						else (write_user user |> Lwt.bindr (fun () -> return_false))
-			) in
-
-			conflict |> Lwt.bindr (function
-				| Some (Ok (_:User.db_user)) -> return (Error (`Cancel))
-				| Some (Error e) -> return (Error (write_error e))
-				| None ->
-					User.create ~username password |> Lwt_r.bind (fun (new_user, token) ->
-						write_user new_user |> Lwt.map (fun () -> Ok token)
-					) |> Lwt.map @@ R.reword_error rollback
-			)
-		) |> Lwt.map (R.reword_error (fun error ->
-			let failed = "Account creation failed" in
-			match error with
-				| `Rollback `Invalid_username -> "Username must start with a letter and contain only letters, numbers dashes and underscores"
-				| `Cancel -> failed
-				| `Write_error e ->
-						Log.warn (fun m->m "Unexpected error in account creation: %a" Error.pp e);
-						failed
-		))
+		modification
+			|> Lwt.map (R.flatten) (* flatten Ok(Error ...) *)
+			|> Lwt.map (R.on_error (fun e ->
+				Log.warn (fun m->m "Unexpected error in account creation: %a" Error.pp e)
+			))
 	)
 
 	let get_user ~(storage:storage) username : (User.db_user option, Error.t) result Lwt.t =
-		storage#read (fun users ->
-			users |> Lwt_stream.find (function
-				| Ok user -> user.User.name = username
-				| Error _ -> true (* terminate search *)
-			) |> Lwt.map (function
-				| Some (Ok user) -> Ok (Some user)
-				| None -> Ok (None)
-				| Some (Error _ as e) -> e
-			)
+		storage#read |> Lwt_r.map (fun users ->
+			users |> List.find_opt (function user -> user.User.name = username)
 		)
 
-	let login ~(storage:storage) username password : (Token.sensitive_token, string) result Lwt.t =
-		storage#modify_user username (fun write_user user ->
-			match%lwt User.gen_token user password with
-				| Some (user, token) -> write_user user |> Lwt.map (fun () -> Ok token)
-				| None -> return (Error (`Rollback `Authentication_failed))
-		) |> Lwt.map @@ R.reword_error (function
-			| `Cancel | `Rollback `Authentication_failed -> "Authentication failed"
-			| `Write_error e ->
+	let login ~(storage:storage) username password : (Token.sensitive_token, Error.t) result Lwt.t =
+		let login_failed () = Error (`Failed "Authentication failed") in
+		storage#modify_user username (fun user ->
+			User.gen_token user password |> Lwt.map (function
+				| Some (user, token) -> Ok (user, token)
+				| None -> login_failed ()
+			)
+		) |> Lwt_r.bindR (function
+			| None -> login_failed ()
+			| Some token -> Ok token
+		) |> Lwt.map (R.on_error (fun e ->
 				Log.warn (fun m->m "Unexpected error in login: %a" Error.pp e);
-				"Authentication error"
-		)
+		))
 
 	let token_has_expired info =
 		let expires = info.Token.expires in
@@ -631,39 +560,34 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 			return (Ok ())
 		else (
 			let username = info.Token.user in
-			storage#modify_user username (fun write_user user ->
-				match User.remove_token user token with
-					| Some user -> write_user user |> Lwt.map R.ok
-					| None -> return (Error (`Rollback `Invalid_credentials))
-			) |> Lwt.map (function
-				| Error (`Write_error e) -> Error e
-				| Ok () | Error `Cancel | Error (`Rollback `Invalid_credentials) -> Ok ()
+			storage#modify_user username (fun user ->
+				Lwt.return (
+					match User.remove_token user token with
+						| Some user -> Ok (user, ())
+						| None -> Error (`Failed "Invalid credentials")
+				)
+			) |> Lwt_r.bindR (function
+				| Some () -> Ok ()
+				| None -> Ok () (* No such user, but that's OK :shrug: *)
 			)
 		)
 
 	let change_password ~(storage:storage) user old new_password
 		: (Token.sensitive_token option, Error.t) result Lwt.t = (
 		if User.verify (user.User.password) old then (
-			storage#modify_user user.User.name (fun write_user db_user ->
+			storage#modify_user user.User.name (fun db_user ->
 				User.create ~username:db_user.User.name new_password
-					(* |> Lwt.map (R.reword_error rollback) *)
-					|> Lwt.bindr (function
-						| Error e -> return (Error (`Rollback e))
-						| Ok (new_user, token) -> (
-							let open User in
-							(* fields explicitly copied because we need to not overwrite any
-							* future properties we add *)
-							write_user {
-								name=db_user.name;
-								password=new_user.password;
-								active_tokens=new_user.active_tokens;
-							} >>= (fun () -> return (Ok token))
-						)
+					|> Lwt_r.map (fun (new_user, token) ->
+						let open User in
+						(* fields explicitly copied because we need to not overwrite any
+						* future properties we add *)
+						let db_user = {
+							name=db_user.name;
+							password=new_user.password;
+							active_tokens=new_user.active_tokens;
+						} in
+						(db_user, token)
 					)
-			) |> Lwt.map (function
-				| Error (`Write_error e) -> Error e
-				| Error (`Rollback `Invalid_username) | Error `Cancel -> Ok None
-				| Ok x -> Ok (Some x)
 			)
 		) else (
 			return (Ok None)
@@ -672,11 +596,17 @@ module Make (Clock:Mirage_clock.PCLOCK) (Hash_impl:Hash.Sig) (Store:Dynamic_stor
 
 	let delete_user ~(storage:storage) user password : (bool, Error.t) result Lwt.t =
 		if User.verify (user.User.password) password then (
-			storage#modify_user user.User.name (fun _write _user ->
-				return (Ok true)
-			) |> Lwt.map @@ R.reword_error (function
-				| `Rollback _ | `Cancel -> assert false
-				| `Write_error e -> e
+			let is_user = User.matches_name user.User.name in
+			storage#modify (fun all_users ->
+				let filtered = all_users |> List.filter_map (fun candidate ->
+					if is_user candidate then None else Some candidate
+				) in
+				Lwt.return (
+					if filtered = all_users then
+						(None, false)
+					else
+						(Some filtered, true)
+				)
 			)
 		) else (return (Ok false))
 

@@ -1,6 +1,0 @@
-../mirage/build_env.sh.gup:
-	build_env.sh
-../mirage/.configure.gup:
-	.configure
-../mirage/main.native.gup:
-	main.native

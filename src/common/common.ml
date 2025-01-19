@@ -19,6 +19,24 @@ module R = struct
 	let fold ok err = function
 		| Ok x -> ok x
 		| Error x -> err x
+	
+	let sequence : 'a 'err. ('a, 'err) t list -> ('a list, 'err) t = fun results ->
+		let rec loop_rev acc = function
+			| [] -> Ok acc
+			| Ok elem :: tail -> loop_rev (elem :: acc) tail
+			| Error e :: _ -> Error e
+		in
+		loop_rev [] results |> map List.rev
+
+	let on_error (type a)(type err)
+		: (err -> unit) -> (a, err) result -> (a, err) result =
+		fun fn r -> reword_error (fun e -> fn e; e) r
+
+	let flatten (type a)(type err)
+		: ((a, err) result, err) result -> (a, err) result = function
+			| Ok (Ok _ as ok) -> ok
+			| Ok (Error _ as error) -> error
+			| Error _ as error -> error
 end
 
 module Lwt = struct

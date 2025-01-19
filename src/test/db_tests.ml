@@ -1,6 +1,5 @@
 open Test_common
-
-open Store
+open Passe
 
 module J = struct
 	include Json_ext

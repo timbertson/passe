@@ -1,2 +1,0 @@
-true: debug, package(fat-filesystem, io-page, yojson, hex, lwt, lwt_ppx, cohttp, nocrypto, lwt, mirage-clock, conduit.mirage, astring, safepass), annot,bin_annot,strict_sequence,principal <passe/*.cmx>: for-pack(Passe)
-<server/*.cmx>: for-pack(Passe_server)

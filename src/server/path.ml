@@ -17,6 +17,8 @@ module Path : sig
 	val to_unix : full -> string
 	val to_string : relative -> string
 
+	val ext : relative -> string option
+
 	module Full : OrderedType.S with type t = full
 	module Relative : OrderedType.S with type t = relative
 end = struct
@@ -27,6 +29,9 @@ end = struct
 		if (Filename.is_relative path)
 			then Error.failwith (`Invalid ("relative path used for Path.base:" ^ (path)))
 			else path
+
+	let ext path =
+		String.cut ~rev:true ~sep:"." (snd path) |> Option.map snd
 
 	(* relative is guaranteed to be a nonempty sequence of filenames
 	 * - i.e. no part contains slashes or leading dots *)

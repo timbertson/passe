@@ -4,4 +4,6 @@
  (name passe_unix)
  (flags
   (:include ../flags))
+ (preprocess
+  (pps lwt_ppx js_of_ocaml-ppx))
  (libraries passe re.str cohttp-lwt-unix cohttp-lwt))

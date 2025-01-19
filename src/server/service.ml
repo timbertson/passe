@@ -61,8 +61,8 @@ let maybe_add_header k v headers =
 module Make
 	(Version: Version.Sig)
 	(Clock: Mirage_clock.PCLOCK)
+	(Static: Dynamic_store.STATIC)
 	(Data: Dynamic_store.Sig)
-	(Static_res:Static.Sig)
 	(Server:Cohttp_lwt.S.Server)
 	(Server_config:Server_config.Sig)
 	(Auth:Auth.Sig with module Store = Data and module Clock = Clock)
@@ -217,42 +217,7 @@ module Make
 		in
 
 		let serve_file ~req ?headers contents = (
-			let etag_buidler (type a): ((string -> unit) -> (unit -> string) -> a) -> a = fun apply ->
-				let open Mirage_crypto.Hash in
-				(* TODO: we could short-circuit allocations by iterating over cstructs directly *)
-				let hash = ref SHA256.empty in
-				let append chunk = hash := SHA256.feed !hash (Cstruct.of_string chunk) in
-				let finalize (): string =
-					let digest = !hash |> SHA256.get |> Cstruct.to_string |> Base64.encode |> Error.raise_result in
-					("\"" ^ (digest ) ^ "\"")
-				in
-				apply append finalize
-			in
-
-			let etag_of_single chunk =
-				etag_buidler (fun add_chunk complete ->
-					add_chunk chunk;
-					complete ()
-				)
-			in
-
-			let etag_of_chunks chunks : (string, Error.t) result Lwt.t =
-				etag_buidler (fun add_chunk complete ->
-					let rec consume () =
-						Lwt_stream.get chunks |> LwtMonad.bind (function
-							| Some (Ok chunk) -> (
-								add_chunk chunk;
-								consume ()
-							)
-							| Some (Error _ as err) -> return err
-							| None -> return (Ok (complete ()))
-						)
-					in
-					consume ()
-				)
-			in
-
-			let respond_file_chunks ~ext ~etag chunks : http_response Lwt.t = (
+			let respond_file ~ext contents : http_response Lwt.t = (
 				let content_type = ext |> Option.map (function
 					| ("html" | "css") as t -> "text/" ^ t
 					| ("png" | "ico") as t -> "image/" ^ t
@@ -263,51 +228,34 @@ module Make
 						"application/octet-stream"
 				) in
 
-				let client_etag = Header.get (Request.headers req) "if-none-match" in
 				let headers = headers |> Option.default_fn Header.init
 					|> no_cache
 					|> maybe_add_header content_type_key content_type in
 
-				if match etag, client_etag with
-					| Some a, Some b -> a = b
-					| _ -> false
-				then
-					Server.respond
-						~body:Body.empty
-						~headers
-						~status:`Not_modified ()
-				else (
-					let headers = headers |> maybe_add_header "etag" etag in
-					Server.respond
-						~headers
-						~status:`OK
-						~body:(Body.of_stream chunks) ()
-				)
+				Server.respond
+					~headers
+					~status:`OK
+					~body:(Body.of_string contents) ()
 			) in
 
 			match contents with
-				| `File path -> (
-					return (Static_res.key path) |> Lwt_r.bind (fun key : (http_response option, Error.t) result Lwt.t ->
-						let respond_chunks etag chunks : (http_response, Error.t) result Lwt.t =
-							let rec last = function [] -> assert false | [x] -> x | _::tail -> last tail in
-							let ext = String.cut ~rev:true ~sep:"." (last path) |> Option.map snd in
-							respond_file_chunks ~ext ~etag:etag (fallible_stream_of_results chunks)
-								|> Lwt.map (R.ok)
-						in
-						let static_etag : (string option, Error.t) result Lwt.t = Static_res.etag static key etag_of_chunks in
-						static_etag |> Lwt_r.bind (function
-							| Some _ as etag -> Static_res.read_s static key (respond_chunks etag)
-							| None -> Lwt.return (Ok None)
+				| `File path_parts -> (
+					let success_response : (http_response Lwt.t, Error.t) Lwt_r.t =
+						return (Path.make path_parts) |> Lwt_r.bind (fun path ->
+							let ext = Path.ext path in
+							Static.read static path |> Lwt_r.map (function
+								| Some contents -> respond_file ~ext contents
+								| None -> respond_not_found ()
+							)
 						)
-					) |> Lwt.bindr (function
-						| Ok (Some response) -> return response
-						| Ok None -> respond_not_found ()
+					in
+					success_response |> Lwt.bindr (function
+						| Ok response -> response
 						| Error e -> respond_file_error e
 					)
 				)
 				| `Dynamic (ext, contents) -> (
-					let etag = etag_of_single contents in
-					respond_file_chunks ~ext:(Some ext) ~etag:(Some etag) (Lwt_stream.of_list [ contents ])
+					respond_file ~ext:(Some ext) contents
 				)
 		) in
 
@@ -393,7 +341,7 @@ module Make
 					let respond_token token =
 						respond_json ~status:`OK ~body:(match token with
 							| Ok tok -> `Assoc [("token", Auth.Token.to_json tok)]
-							| Error msg -> `Assoc [("error", `String msg)]
+							| Error e -> `Assoc [("error", `String (Error.to_string e))]
 						) ()
 					in
 					let respond_token_lwt token =
