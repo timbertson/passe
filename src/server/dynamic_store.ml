@@ -7,10 +7,14 @@ module Log = (val Passe.Logging.log_module "kv_store")
 
 type connector = ..
 
-module type Sig = sig
+module type STATIC = sig
 	type t
 
 	val read : t -> Path.relative -> (string option, Error.t) result Lwt.t
+end
+
+module type Sig = sig
+	include STATIC
 
 	val read_for_writing : t
 		-> Path.relative

@@ -39,14 +39,17 @@ let start_server ~host ~port ~development ~document_root ~data_source () =
 	) |> R.assert_ok Error.pp
 	in
 
+	let static: Dynamic_fs.t = (Path.base document_root) in
+
 	let module Auth = Auth.Make(Pclock)(Hash_bcrypt)(Data) in
-	let module Unix_server = Service.Make(Version)(Pclock)(Data)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
+	let module Unix_server = Service.Make(Version)(Pclock)(Dynamic_fs)(Data)(HTTP)(Server_config_unix)(Auth)(Passe_unix.Re) in
 
 	let enable_rc = try Unix.getenv "PASSE_TEST_CTL" = "1" with _ -> false in
 	if enable_rc then Log.warn (fun m->m "Remote control enabled (for test use only)");
 
 	let conn_closed (_ch, _conn) = Log.debug (fun m->m "connection closed") in
 	let callback = Unix_server.handler
+		~static
 		~data
 		~enable_rc
 		~development

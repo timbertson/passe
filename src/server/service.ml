@@ -61,6 +61,7 @@ let maybe_add_header k v headers =
 module Make
 	(Version: Version.Sig)
 	(Clock: Mirage_clock.PCLOCK)
+	(Static: Dynamic_store.STATIC)
 	(Data: Dynamic_store.Sig)
 	(Server:Cohttp_lwt.S.Server)
 	(Server_config:Server_config.Sig)
@@ -163,7 +164,7 @@ module Make
 
 	type http_response = Cohttp.Response.t * Cohttp_lwt.Body.t
 
-	let handler ~data:initial_data ~enable_rc ~development =
+	let handler ~static ~data:initial_data ~enable_rc ~development =
 		let module AuthContext = (val auth_context) in
 		let offline_access = if development then false else AuthContext.offline_access in
 		let user_db_path = Path.make ["users.db.json"] |> R.assert_ok Error.pp in
@@ -242,7 +243,7 @@ module Make
 					let success_response : (http_response Lwt.t, Error.t) Lwt_r.t =
 						return (Path.make path_parts) |> Lwt_r.bind (fun path ->
 							let ext = Path.ext path in
-							Data.read !data path |> Lwt_r.map (function
+							Static.read static path |> Lwt_r.map (function
 								| Some contents -> respond_file ~ext contents
 								| None -> respond_not_found ()
 							)
