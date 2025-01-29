@@ -1,8 +1,9 @@
-{ pkgs, lib, stdenv }:
+{ pkgs, lib, stdenv, opam2nix ? null }:
 with pkgs;
+let opam2nixOverride = opam2nix; in
 let
 	sources = pkgs.callPackage ./sources.nix {};
-	opam2nix = pkgs.callPackage sources.opam2nix {};
+	opam2nix = if opam2nixOverride == null then (pkgs.callPackage sources.opam2nix {}) else opam2nixOverride;
 	self = sources.local { url = ../.; };
 	darwinFramework = framework:
 		lib.optional stdenv.isDarwin (lib.getAttr framework pkgs.darwin.apple_sdk.frameworks);
