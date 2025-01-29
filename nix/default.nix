@@ -64,6 +64,10 @@ let
 				dune = super: super.overrideAttrs (o: {
 					buildInputs = (o.buildInputs or []) ++ (darwinFramework "CoreServices");
 				});
+				
+				utop = super: super.overrideAttrs (o: {
+					sourceRoot = ".";
+				});
 			};
 	};
 

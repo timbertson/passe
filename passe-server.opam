@@ -4,6 +4,7 @@ maintainer: "tim@gfxmonk.net"
 synopsis: "Passe"
 build: [
 	[make "server"]
+  ["dune" "build" "-p" "passe-server"]
 ]
 depends: [
 	"passe-common" { ="%{version}%" }
