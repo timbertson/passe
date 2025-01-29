@@ -5,5 +5,5 @@
  (flags
   (:include ../flags))
  (preprocess
-  (pps lwt_ppx js_of_ocaml-ppx))
+  (pps lwt_ppx))
  (libraries passe re.str cohttp-lwt-unix cohttp-lwt))
